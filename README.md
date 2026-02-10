@@ -6,6 +6,14 @@
 
 > **免责声明**：本项目仅供学习交流使用，不对因使用本项目导致的任何问题承担责任。项目处于早期阶段，可能存在 bug 和不稳定之处。
 
+## 快速体验
+
+在本地运行
+```bash
+opencode serve --cors "https://lehhair.github.io"
+```
+然后访问 https://lehhair.github.io/OpenCodeUI/ 
+
 ## 特性
 
 - **完整的 Chat 界面** — 消息流、Markdown 渲染、代码高亮（Shiki）
