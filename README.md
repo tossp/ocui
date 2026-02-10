@@ -1,6 +1,6 @@
 # OpenCodeUI
 
-一个为 [OpenCode](https://github.com/opencode-ai/opencode) 打造的第三方 Web 前端界面。
+一个为 [OpenCode](https://github.com/anomalyco/opencode) 打造的第三方 Web 前端界面。
 
 **本项目完全由 AI 辅助编程（Vibe Coding）完成**——从第一行代码到最终发布，所有功能均通过与 AI 对话驱动开发，累计 162 次提交。
 
