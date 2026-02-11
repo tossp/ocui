@@ -505,7 +505,7 @@ const MobileAperture = memo(function MobileAperture({
         <div className="absolute inset-0 z-[14] bg-bg-100/40 backdrop-blur-sm flex items-start justify-center pt-[30%]">
           <div
             ref={overlayTitleRef}
-            className="text-lg font-semibold text-text-100 px-5 py-2 rounded-xl bg-bg-000/60 backdrop-blur-md shadow-lg max-w-[75vw] text-center pointer-events-none"
+            className="text-lg font-semibold text-text-100 px-5 py-2 max-w-[75vw] text-center pointer-events-none"
             style={{ opacity: 0, transform: 'translateY(4px)', transition: 'opacity 0.15s ease-out, transform 0.15s ease-out' }}
           />
         </div>
@@ -517,7 +517,7 @@ const MobileAperture = memo(function MobileAperture({
         className="
           absolute right-0 top-1/2 -translate-y-1/2 z-[15]
           flex flex-col items-end
-          pr-1.5 py-4
+          pr-1.5 pl-4 py-4
           select-none
         "
         onTouchStart={handleTouchStart}
