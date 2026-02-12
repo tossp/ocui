@@ -68,10 +68,8 @@ jobs:
       # Build ONLY, do not release yet
       - name: Build desktop app
         uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }} # Needed for versioning? actually mostly for release upload.
+          # Build only; release is created in publish-release job
           # We purposefully OMIT releaseName, releaseBody, releaseDraft, prerelease
           # to prevent it from creating/updating a release.
           # However, tauri-action default behavior is to upload if tagName is present?
@@ -79,7 +77,7 @@ jobs:
           # If tagName is omitted, it defaults to checking package.json version?
           # Let's provide tagName but use a specialized args to NOT upload?
           # Actually, tauri-action documentation says it will upload if GITHUB_TOKEN is present.
-          # So we REMOVE GITHUB_TOKEN from env to prevent upload.
+          # So we REMOVE GITHUB_TOKEN and tagName to prevent release/upload.
           args: ${{ matrix.args }}
         
       # Manually find and upload artifacts
