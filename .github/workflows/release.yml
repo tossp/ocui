@@ -12,7 +12,6 @@ concurrency:
 jobs:
   # ============================================
   # Desktop builds (Windows, macOS, Linux)
-  # Uses tauri-action which handles everything
   # ============================================
   publish-desktop:
     permissions:
@@ -72,20 +71,29 @@ jobs:
           releaseBody: |
             See the assets below to download and install.
 
-            **Desktop:** Windows (.msi, .exe), macOS (.dmg), Linux (.deb, .AppImage)
-            **Mobile:** Android (.apk)
+            **Desktop:** Windows (.exe), macOS (.dmg), Linux (.deb, .AppImage, .rpm)
+            **Mobile:** Android (.apk) — arm64, armeabi-v7a
           releaseDraft: false
           prerelease: ${{ contains(github.ref_name, 'canary') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') }}
           args: ${{ matrix.args }}
 
   # ============================================
-  # Android build
-  # tauri-action experimental mobile support
+  # Android builds — per-architecture APKs
   # ============================================
   publish-android:
     permissions:
       contents: write
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-linux-android
+            arch: arm64-v8a
+            label: arm64
+          - target: armv7-linux-androideabi
+            arch: armeabi-v7a
+            label: armv7
     steps:
       - uses: actions/checkout@v4
 
@@ -109,12 +117,13 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+          targets: ${{ matrix.target }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
           workspaces: './src-tauri -> target'
+          key: android-${{ matrix.target }}
 
       - name: Install frontend dependencies
         run: npm ci
@@ -128,18 +137,43 @@ jobs:
           echo "storeFile=$RUNNER_TEMP/keystore.jks" >> keystore.properties
 
       - name: Build Android APK
-        run: npx tauri android build --apk
+        run: npx tauri android build --apk --target ${{ matrix.target }}
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/29.0.14206865
 
-      - name: Find and rename APK
+      - name: Sign and rename APK
         id: apk
         run: |
-          APK_PATH=$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' -type f | head -1)
           VERSION=${{ github.ref_name }}
-          DEST="OpenCodeUI-${VERSION}-android-universal.apk"
-          cp "$APK_PATH" "$DEST"
+          DEST="OpenCodeUI-${VERSION}-android-${{ matrix.label }}.apk"
+
+          # 找到 release APK（优先 signed，回退 unsigned）
+          SIGNED_APK=$(find src-tauri/gen/android/app/build/outputs/apk -path '*/release/*-signed*' -name '*.apk' -type f 2>/dev/null | head -1)
+          RELEASE_APK=$(find src-tauri/gen/android/app/build/outputs/apk -path '*/release/*.apk' -name '*.apk' -type f 2>/dev/null | head -1)
+          APK_PATH="${SIGNED_APK:-$RELEASE_APK}"
+
+          echo "Found APK: $APK_PATH"
+
+          # 检查是否已签名
+          if $ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools/ | tail -1)/apksigner verify "$APK_PATH" 2>/dev/null; then
+            echo "APK is already signed"
+            cp "$APK_PATH" "$DEST"
+          else
+            echo "APK is unsigned, signing manually..."
+            # zipalign
+            $ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools/ | tail -1)/zipalign -v 4 "$APK_PATH" "${APK_PATH}.aligned"
+            # sign
+            $ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools/ | tail -1)/apksigner sign \
+              --ks $RUNNER_TEMP/keystore.jks \
+              --ks-key-alias ${{ secrets.ANDROID_KEY_ALIAS }} \
+              --ks-pass pass:${{ secrets.ANDROID_KEY_PASSWORD }} \
+              --key-pass pass:${{ secrets.ANDROID_KEY_PASSWORD }} \
+              --out "$DEST" \
+              "${APK_PATH}.aligned"
+          fi
+
           echo "path=$DEST" >> $GITHUB_OUTPUT
+          ls -lh "$DEST"
 
       - name: Upload APK to Release
         uses: softprops/action-gh-release@v2
