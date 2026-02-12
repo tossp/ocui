@@ -13,7 +13,7 @@ jobs:
   # ============================================
   # Desktop builds (Windows, macOS, Linux)
   # ============================================
-  publish-desktop:
+  build-desktop:
     permissions:
       contents: write
     strategy:
@@ -22,16 +22,20 @@ jobs:
         include:
           - platform: macos-latest
             args: '--target aarch64-apple-darwin'
-            name: macOS-ARM64
+            arch: aarch64
+            os: macos
           - platform: macos-latest
             args: '--target x86_64-apple-darwin'
-            name: macOS-x64
+            arch: x86_64
+            os: macos
           - platform: ubuntu-22.04
             args: ''
-            name: Linux-x64
+            arch: x86_64
+            os: linux
           - platform: windows-latest
             args: ''
-            name: Windows-x64
+            arch: x86_64
+            os: windows
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -61,26 +65,53 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Build and release (desktop)
+      # Build ONLY, do not release yet
+      - name: Build desktop app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'OpenCodeUI ${{ github.ref_name }}'
-          releaseBody: |
-            See the assets below to download and install.
-
-            **Desktop:** Windows (.exe), macOS (.dmg), Linux (.deb, .AppImage, .rpm)
-            **Mobile:** Android (.apk) — arm64, armeabi-v7a
-          releaseDraft: false
-          prerelease: ${{ contains(github.ref_name, 'canary') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') }}
+          tagName: ${{ github.ref_name }} # Needed for versioning? actually mostly for release upload.
+          # We purposefully OMIT releaseName, releaseBody, releaseDraft, prerelease
+          # to prevent it from creating/updating a release.
+          # However, tauri-action default behavior is to upload if tagName is present?
+          # Let's try to bypass upload by NOT providing tagName?
+          # If tagName is omitted, it defaults to checking package.json version?
+          # Let's provide tagName but use a specialized args to NOT upload?
+          # Actually, tauri-action documentation says it will upload if GITHUB_TOKEN is present.
+          # So we REMOVE GITHUB_TOKEN from env to prevent upload.
           args: ${{ matrix.args }}
+        
+      # Manually find and upload artifacts
+      - name: Prepare artifacts
+        shell: bash
+        run: |
+          mkdir -p release-artifacts
+          
+          # Find and copy build assets to a flat directory
+          if [[ "${{ matrix.os }}" == "windows" ]]; then
+            find src-tauri/target/release/bundle/nsis -name "*.exe" -exec cp {} release-artifacts/ \;
+          elif [[ "${{ matrix.os }}" == "macos" ]]; then
+            find src-tauri/target/release/bundle/dmg -name "*.dmg" -exec cp {} release-artifacts/ \;
+          elif [[ "${{ matrix.os }}" == "linux" ]]; then
+            find src-tauri/target/release/bundle/deb -name "*.deb" -exec cp {} release-artifacts/ \;
+            find src-tauri/target/release/bundle/appimage -name "*.AppImage" -exec cp {} release-artifacts/ \;
+          fi
+          
+          echo "Artifacts to upload:"
+          ls -R release-artifacts
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts-desktop-${{ matrix.os }}-${{ matrix.arch }}
+          path: release-artifacts/*
+          retention-days: 1
 
   # ============================================
-  # Android builds — 单 job 顺序构建所有架构，避免并发上传冲突
+  # Android builds
   # ============================================
-  publish-android:
+  build-android:
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -137,8 +168,7 @@ jobs:
           RELEASE_APK=$(find src-tauri/gen/android/app/build/outputs/apk -path '*/release/*.apk' -name '*.apk' -type f 2>/dev/null | head -1)
           APK_PATH="${SIGNED_APK:-$RELEASE_APK}"
           DEST="OpenCodeUI-${VERSION}-android-arm64.apk"
-          echo "[arm64] Found APK: $APK_PATH"
-
+          
           if $BT/apksigner verify "$APK_PATH" 2>/dev/null; then
             cp "$APK_PATH" "$DEST"
           else
@@ -150,8 +180,9 @@ jobs:
               --key-pass pass:${{ secrets.ANDROID_KEY_PASSWORD }} \
               --out "$DEST" "${APK_PATH}.aligned"
           fi
-          ls -lh "$DEST"
-
+          
+          mkdir -p release-artifacts
+          mv "$DEST" release-artifacts/
           rm -rf src-tauri/gen/android/app/build/outputs/apk
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/29.0.14206865
@@ -167,8 +198,7 @@ jobs:
           RELEASE_APK=$(find src-tauri/gen/android/app/build/outputs/apk -path '*/release/*.apk' -name '*.apk' -type f 2>/dev/null | head -1)
           APK_PATH="${SIGNED_APK:-$RELEASE_APK}"
           DEST="OpenCodeUI-${VERSION}-android-armv7.apk"
-          echo "[armv7] Found APK: $APK_PATH"
-
+          
           if $BT/apksigner verify "$APK_PATH" 2>/dev/null; then
             cp "$APK_PATH" "$DEST"
           else
@@ -180,17 +210,47 @@ jobs:
               --key-pass pass:${{ secrets.ANDROID_KEY_PASSWORD }} \
               --out "$DEST" "${APK_PATH}.aligned"
           fi
-          ls -lh "$DEST"
+          
+          mv "$DEST" release-artifacts/
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/29.0.14206865
 
-      - name: Upload APKs to Release
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts-android
+          path: release-artifacts/*
+          retention-days: 1
+
+  # ============================================
+  # Publish Release (Runs after builds)
+  # ============================================
+  publish-release:
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    needs: [build-desktop, build-android]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Display structure of downloaded files
+        run: ls -R artifacts
+
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          files: |
-            OpenCodeUI-${{ github.ref_name }}-android-arm64.apk
-            OpenCodeUI-${{ github.ref_name }}-android-armv7.apk
+          name: 'OpenCodeUI ${{ github.ref_name }}'
+          body: |
+            See the assets below to download and install.
+
+            **Desktop:** Windows (.exe), macOS (.dmg), Linux (.deb, .AppImage)
+            **Mobile:** Android (.apk) — arm64, armeabi-v7a
+          files: artifacts/*
+          draft: false
           prerelease: ${{ contains(github.ref_name, 'canary') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
