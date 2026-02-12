@@ -126,51 +126,63 @@ jobs:
           base64 -d <<< "${{ secrets.ANDROID_KEY_BASE64 }}" > $RUNNER_TEMP/keystore.jks
           echo "storeFile=$RUNNER_TEMP/keystore.jks" >> keystore.properties
 
-      - name: Build Android APKs
-        run: |
-          npx tauri android build --apk --target aarch64
-          npx tauri android build --apk --target armv7
-        env:
-          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/29.0.14206865
-
-      - name: Sign and rename APKs
+      - name: Build and sign arm64 APK
         run: |
           VERSION=${{ github.ref_name }}
           BT="$ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools/ | tail -1)"
 
-          sign_apk() {
-            local label=$1
-            local dest="OpenCodeUI-${VERSION}-android-${label}.apk"
+          npx tauri android build --apk --target aarch64
 
-            SIGNED_APK=$(find src-tauri/gen/android/app/build/outputs/apk -path '*/release/*-signed*' -name '*.apk' -type f 2>/dev/null | head -1)
-            RELEASE_APK=$(find src-tauri/gen/android/app/build/outputs/apk -path '*/release/*.apk' -name '*.apk' -type f 2>/dev/null | head -1)
-            APK_PATH="${SIGNED_APK:-$RELEASE_APK}"
+          SIGNED_APK=$(find src-tauri/gen/android/app/build/outputs/apk -path '*/release/*-signed*' -name '*.apk' -type f 2>/dev/null | head -1)
+          RELEASE_APK=$(find src-tauri/gen/android/app/build/outputs/apk -path '*/release/*.apk' -name '*.apk' -type f 2>/dev/null | head -1)
+          APK_PATH="${SIGNED_APK:-$RELEASE_APK}"
+          DEST="OpenCodeUI-${VERSION}-android-arm64.apk"
+          echo "[arm64] Found APK: $APK_PATH"
 
-            echo "[$label] Found APK: $APK_PATH"
+          if $BT/apksigner verify "$APK_PATH" 2>/dev/null; then
+            cp "$APK_PATH" "$DEST"
+          else
+            $BT/zipalign -v 4 "$APK_PATH" "${APK_PATH}.aligned"
+            $BT/apksigner sign \
+              --ks $RUNNER_TEMP/keystore.jks \
+              --ks-key-alias ${{ secrets.ANDROID_KEY_ALIAS }} \
+              --ks-pass pass:${{ secrets.ANDROID_KEY_PASSWORD }} \
+              --key-pass pass:${{ secrets.ANDROID_KEY_PASSWORD }} \
+              --out "$DEST" "${APK_PATH}.aligned"
+          fi
+          ls -lh "$DEST"
 
-            if $BT/apksigner verify "$APK_PATH" 2>/dev/null; then
-              echo "[$label] APK is already signed"
-              cp "$APK_PATH" "$dest"
-            else
-              echo "[$label] Signing manually..."
-              $BT/zipalign -v 4 "$APK_PATH" "${APK_PATH}.aligned"
-              $BT/apksigner sign \
-                --ks $RUNNER_TEMP/keystore.jks \
-                --ks-key-alias ${{ secrets.ANDROID_KEY_ALIAS }} \
-                --ks-pass pass:${{ secrets.ANDROID_KEY_PASSWORD }} \
-                --key-pass pass:${{ secrets.ANDROID_KEY_PASSWORD }} \
-                --out "$dest" \
-                "${APK_PATH}.aligned"
-            fi
+          rm -rf src-tauri/gen/android/app/build/outputs/apk
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/29.0.14206865
 
-            ls -lh "$dest"
+      - name: Build and sign armv7 APK
+        run: |
+          VERSION=${{ github.ref_name }}
+          BT="$ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools/ | tail -1)"
 
-            # 清理 build outputs 以免下一个架构找到旧文件
-            rm -rf src-tauri/gen/android/app/build/outputs/apk
-          }
+          npx tauri android build --apk --target armv7
 
-          sign_apk "arm64"
-          sign_apk "armv7"
+          SIGNED_APK=$(find src-tauri/gen/android/app/build/outputs/apk -path '*/release/*-signed*' -name '*.apk' -type f 2>/dev/null | head -1)
+          RELEASE_APK=$(find src-tauri/gen/android/app/build/outputs/apk -path '*/release/*.apk' -name '*.apk' -type f 2>/dev/null | head -1)
+          APK_PATH="${SIGNED_APK:-$RELEASE_APK}"
+          DEST="OpenCodeUI-${VERSION}-android-armv7.apk"
+          echo "[armv7] Found APK: $APK_PATH"
+
+          if $BT/apksigner verify "$APK_PATH" 2>/dev/null; then
+            cp "$APK_PATH" "$DEST"
+          else
+            $BT/zipalign -v 4 "$APK_PATH" "${APK_PATH}.aligned"
+            $BT/apksigner sign \
+              --ks $RUNNER_TEMP/keystore.jks \
+              --ks-key-alias ${{ secrets.ANDROID_KEY_ALIAS }} \
+              --ks-pass pass:${{ secrets.ANDROID_KEY_PASSWORD }} \
+              --key-pass pass:${{ secrets.ANDROID_KEY_PASSWORD }} \
+              --out "$DEST" "${APK_PATH}.aligned"
+          fi
+          ls -lh "$DEST"
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/29.0.14206865
 
       - name: Upload APKs to Release
         uses: softprops/action-gh-release@v2
