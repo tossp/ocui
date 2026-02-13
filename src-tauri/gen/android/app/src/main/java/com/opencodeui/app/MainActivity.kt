@@ -53,7 +53,7 @@ class MainActivity : TauriActivity() {
       val bottomDp = insets.bottom / density
       val leftDp = insets.left / density
       val rightDp = insets.right / density
-      val imeBottomDp = max(0f, (imeInsets.bottom - insets.bottom) / density)
+      val imeBottomDp = max(0f, imeInsets.bottom / density)
 
       cachedInsetsJs = """
         (function() {
@@ -62,9 +62,9 @@ class MainActivity : TauriActivity() {
           s.setProperty('--safe-area-inset-bottom', '${bottomDp}px');
           s.setProperty('--safe-area-inset-left', '${leftDp}px');
           s.setProperty('--safe-area-inset-right', '${rightDp}px');
-          s.setProperty('--keyboard-inset-bottom', '${imeBottomDp}px');
-        })();
-      """.trimIndent()
+        s.setProperty('--keyboard-inset-bottom', '${imeBottomDp}px');
+      })();
+    """.trimIndent()
 
       // 立即尝试注入
       tryInjectInsets(rootView)

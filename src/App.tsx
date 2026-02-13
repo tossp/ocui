@@ -82,8 +82,10 @@ function App() {
     const updateViewport = () => {
       const viewport = window.visualViewport
       if (!viewport) return
-      const inset = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop)
-      root.style.setProperty('--keyboard-inset-bottom', `${Math.round(inset)}px`)
+      if (!isTauriApp) {
+        const inset = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop)
+        root.style.setProperty('--keyboard-inset-bottom', `${Math.round(inset)}px`)
+      }
       if (isTauriApp) {
         root.style.setProperty('--app-height', `${Math.round(viewport.height)}px`)
       }
@@ -442,7 +444,11 @@ function App() {
             />
 
             {/* Floating Input Box */}
-            <div ref={inputBoxWrapperRef} className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none">
+            <div
+              ref={inputBoxWrapperRef}
+              className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none"
+              style={document.documentElement.classList.contains('tauri-app') ? { bottom: 'var(--keyboard-inset-bottom, 0px)' } : undefined}
+            >
               {/* Double-Esc cancel hint */}
               {showCancelHint && (
                 <div className="flex justify-center mb-2 pointer-events-none">
