@@ -166,10 +166,7 @@ export function SidePanel({
       setCurrentDirectory(projectId)
     }
     setProjectsExpanded(false)
-    if (isMobile && onCloseMobile) {
-      onCloseMobile()
-    }
-  }, [setCurrentDirectory, isMobile, onCloseMobile])
+  }, [setCurrentDirectory])
 
   const handleRemoveProject = useCallback((projectId: string) => {
     removeDirectory(projectId)

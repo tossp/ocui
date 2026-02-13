@@ -57,6 +57,18 @@ export function useChatSession({ chatAreaRef, currentModel, refetchModels }: Use
   const { currentDirectory, sidebarExpanded, setSidebarExpanded } = useDirectory()
   const { createSession, sessions } = useSessionContext()
   const { sendNotification } = useNotification()
+
+  const getSessionTitle = useCallback((sessionId?: string) => {
+    const session = sessions.find(s => s.id === sessionId)
+    if (session?.title) return session.title
+    if (sessionId) return `Session ${sessionId.slice(0, 6)}`
+    return 'OpenCode'
+  }, [sessions])
+
+  const buildNotificationTitle = useCallback((sessionId: string | undefined, label: string) => {
+    const base = getSessionTitle(sessionId)
+    return `${base} - ${label}`
+  }, [getSessionTitle])
   
   // Session family for permission polling
   const sessionFamily = useSessionFamily(routeSessionId)
@@ -122,7 +134,8 @@ export function useChatSession({ chatAreaRef, currentModel, refetchModels }: Use
       const permDesc = request.patterns?.length
         ? `${request.permission}: ${request.patterns[0]}`
         : request.permission
-      sendNotification('Permission Required', permDesc, {
+      const title = buildNotificationTitle(request.sessionID, 'Permission Required')
+      sendNotification(title, permDesc, {
         sessionId: request.sessionID,
         directory: effectiveDirectory,
       })
@@ -140,7 +153,8 @@ export function useChatSession({ chatAreaRef, currentModel, refetchModels }: Use
 
       // 页面不在前台时通知用户有问题等待回答
       const questionDesc = request.questions?.[0]?.header || 'AI is waiting for your input'
-      sendNotification('Question', questionDesc, {
+      const title = buildNotificationTitle(request.sessionID, 'Question')
+      sendNotification(title, questionDesc, {
         sessionId: request.sessionID,
         directory: effectiveDirectory,
       })
@@ -160,18 +174,16 @@ export function useChatSession({ chatAreaRef, currentModel, refetchModels }: Use
     },
     onSessionIdle: (sessionID) => {
       // 页面不在前台时发送浏览器通知
-      const session = sessions.find(s => s.id === sessionID)
-      const title = session?.title || 'Session completed'
-      sendNotification('OpenCode', title, {
+      const title = buildNotificationTitle(sessionID, 'Session completed')
+      sendNotification(title, 'Session completed', {
         sessionId: sessionID,
         directory: effectiveDirectory,
       })
     },
     onSessionError: (sessionID) => {
       // 页面不在前台时通知用户 session 出错
-      const session = sessions.find(s => s.id === sessionID)
-      const title = session?.title || 'Session error'
-      sendNotification('Error', title, {
+      const title = buildNotificationTitle(sessionID, 'Session error')
+      sendNotification(title, 'Session error', {
         sessionId: sessionID,
         directory: effectiveDirectory,
       })

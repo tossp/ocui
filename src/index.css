@@ -380,6 +380,26 @@ textarea.custom-scrollbar::-webkit-scrollbar-thumb {
   background-color: hsl(var(--border-300) / 0.7);
 }
 
+/* Mobile: hide scrollbar when idle */
+@media (max-width: 768px) {
+  .scrollbar-idle {
+    scrollbar-width: none !important;
+  }
+  .scrollbar-idle::-webkit-scrollbar {
+    width: 0 !important;
+    height: 0 !important;
+    display: none !important;
+  }
+  .scrollbar-active {
+    scrollbar-width: thin;
+  }
+  .scrollbar-active::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+    display: block;
+  }
+}
+
 /* ============================================
  * Panel Scrollbar - 面板统一滚动条样式
  * ============================================

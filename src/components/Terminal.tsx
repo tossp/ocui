@@ -129,6 +129,7 @@ export const Terminal = memo(function Terminal({
   isActive,
 }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const [isTouchScrolling, setIsTouchScrolling] = useState(false)
   const terminalRef = useRef<XTerm | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -165,6 +166,7 @@ export const Terminal = memo(function Terminal({
       lineHeight: isMobile ? 1.3 : 1.2,
       cursorBlink: true,
       cursorStyle: 'block',
+      smoothScrollDuration: isMobile ? 100 : 0,
       allowProposedApi: true,
       scrollback: 10000,
       convertEol: true,
@@ -271,6 +273,52 @@ export const Terminal = memo(function Terminal({
     }
   }, [ptyId, directory, hasBeenActive])
 
+  useEffect(() => {
+    const container = containerRef.current
+    const terminal = terminalRef.current
+    if (!container || !terminal) return
+    const isMobile = isMobileDevice()
+
+    let touchStartY = 0
+    let scrollStart = 0
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return
+      touchStartY = e.touches[0].clientY
+      const viewport = terminal.element?.querySelector('.xterm-viewport') as HTMLElement | null
+      scrollStart = viewport?.scrollTop ?? 0
+      setIsTouchScrolling(false)
+    }
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return
+      const viewport = terminal.element?.querySelector('.xterm-viewport') as HTMLElement | null
+      if (!viewport) return
+      const delta = touchStartY - e.touches[0].clientY
+      if (Math.abs(delta) > 6) {
+        setIsTouchScrolling(true)
+      }
+      viewport.scrollTop = scrollStart + delta
+      if (isMobile) {
+        e.preventDefault()
+      }
+    }
+
+    const handleTouchEnd = () => {
+      setIsTouchScrolling(false)
+    }
+
+    container.addEventListener('touchstart', handleTouchStart, { passive: true })
+    container.addEventListener('touchmove', handleTouchMove, { passive: false })
+    container.addEventListener('touchend', handleTouchEnd)
+
+    return () => {
+      container.removeEventListener('touchstart', handleTouchStart)
+      container.removeEventListener('touchmove', handleTouchMove)
+      container.removeEventListener('touchend', handleTouchEnd)
+    }
+  }, [isActive])
+
   // 处理大小变化
   useEffect(() => {
     if (!isActive || !fitAddonRef.current || !terminalRef.current) return
@@ -372,26 +420,43 @@ export const Terminal = memo(function Terminal({
   return (
     <>
       <style>{`
-        /* 强制隐藏 xterm 滚动条 */
-        .xterm-viewport::-webkit-scrollbar {
-          display: none;
-        }
-        /* 强制覆盖 xterm 内部元素的背景色为透明 */
         .xterm-viewport, 
         .xterm-screen, 
         .xterm-scrollable-element {
           background-color: transparent !important;
         }
-        /* 确保终端本身无 padding */
         .xterm {
           padding: 0 !important;
+        }
+        .scrollbar-idle .xterm-viewport {
+          scrollbar-width: none;
+        }
+        .scrollbar-active .xterm-viewport {
+          scrollbar-width: thin;
+        }
+        .scrollbar-idle .xterm-viewport::-webkit-scrollbar {
+          width: 0;
+          height: 0;
+          display: none;
+        }
+        .scrollbar-active .xterm-viewport::-webkit-scrollbar {
+          width: 6px;
+          height: 6px;
+        }
+        .xterm-viewport::-webkit-scrollbar-thumb {
+          background-color: hsl(var(--border-300) / 0.35);
+          border-radius: 999px;
+        }
+        .xterm-viewport::-webkit-scrollbar-track {
+          background: transparent;
         }
       `}</style>
       <div
         ref={containerRef}
-        className="h-full w-full bg-bg-100" // 统一使用主题背景色
+        className={`h-full w-full bg-bg-100 ${isTouchScrolling ? 'scrollbar-active' : 'scrollbar-idle'}`}
         style={{
           padding: isMobile ? '0' : '4px 0 0 4px', // 极简 padding
+          touchAction: isMobile ? 'pan-y' : 'auto',
           visibility: isActive ? 'visible' : 'hidden',
           position: isActive ? 'relative' : 'absolute',
           pointerEvents: isActive ? 'auto' : 'none',
