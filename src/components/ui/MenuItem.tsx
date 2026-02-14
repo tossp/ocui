@@ -40,7 +40,7 @@ export function MenuItem({
           {label}
         </div>
         {description && (
-          <div className="text-xs text-text-500 mt-0.5">
+          <div className="text-xs text-text-500 mt-0.5 line-clamp-2" title={description}>
             {description}
           </div>
         )}

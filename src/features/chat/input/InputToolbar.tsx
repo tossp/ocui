@@ -114,7 +114,14 @@ export function InputToolbar({
   const currentAgent = agents.find(a => a.name === selectedAgent)
 
   return (
-    <div className="flex items-center justify-between px-3 pb-3 relative">
+    <div
+      className="flex items-center justify-between px-3 pb-3 relative"
+      onMouseDown={(e) => {
+        // Prevent toolbar interactions from stealing focus from textarea
+        // This keeps the mobile keyboard open when tapping agent/variant selectors
+        e.preventDefault()
+      }}
+    >
       {/* Left side: Agent + Variant selectors */}
       <div className="flex items-center gap-2">
         {/* Agent Selector */}
@@ -124,11 +131,12 @@ export function InputToolbar({
               ref={agentTriggerRef}
               onClick={() => setAgentMenuOpen(!agentMenuOpen)}
               className="flex items-center gap-1.5 px-2 py-1.5 text-sm rounded-lg transition-all duration-150 hover:bg-bg-200 active:scale-95 cursor-pointer"
+              title={currentAgent ? `${currentAgent.name}${currentAgent.description ? ': ' + currentAgent.description : ''}` : selectedAgent || 'build'}
             >
               <span className="text-text-400" style={currentAgent?.color ? { color: currentAgent.color } : undefined}>
                 <AgentIcon />
               </span>
-              <span className="text-xs text-text-300 capitalize">{selectedAgent || 'build'}</span>
+              <span className="text-xs text-text-300 capitalize truncate max-w-[80px]">{selectedAgent || 'build'}</span>
               <span className="text-text-400"><ChevronDownIcon /></span>
             </button>
 
@@ -156,9 +164,10 @@ export function InputToolbar({
               ref={variantTriggerRef}
               onClick={() => setVariantMenuOpen(!variantMenuOpen)}
               className="flex items-center gap-1.5 px-2 py-1.5 text-sm rounded-lg transition-all duration-150 hover:bg-bg-200 active:scale-95 cursor-pointer"
+              title={selectedVariant ? selectedVariant.charAt(0).toUpperCase() + selectedVariant.slice(1) : 'Default'}
             >
               <span className="text-text-400"><ThinkingIcon /></span>
-              <span className="text-xs text-text-300">
+              <span className="text-xs text-text-300 truncate max-w-[80px]">
                 {selectedVariant ? selectedVariant.charAt(0).toUpperCase() + selectedVariant.slice(1) : 'Default'}
               </span>
               <span className="text-text-400"><ChevronDownIcon /></span>

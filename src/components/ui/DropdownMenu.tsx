@@ -74,6 +74,11 @@ export function DropdownMenu({
     <div
       className="fixed z-[100]"
       style={style}
+      onMouseDown={(e) => {
+        // Prevent dropdown interactions from stealing focus from textarea
+        // This keeps the mobile keyboard open when selecting menu items
+        e.preventDefault()
+      }}
     >
       <div
         className={`
@@ -85,7 +90,7 @@ export function DropdownMenu({
         style={{ 
           width: width || 'auto',
           minWidth: '200px',
-          maxWidth: '90vw',
+          maxWidth: 'min(320px, 90vw)',
           transformOrigin: position === 'top' ? 'bottom' : 'top'
         }}
       >
