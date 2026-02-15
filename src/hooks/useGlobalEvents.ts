@@ -101,6 +101,11 @@ export function useGlobalEvents(callbacks?: GlobalEventsCallbacks) {
         }
       },
 
+      onPartDelta: (data) => {
+        messageStore.handlePartDelta(data)
+        scheduleScroll()
+      },
+
       onPartRemoved: (data) => {
         messageStore.handlePartRemoved(data)
       },

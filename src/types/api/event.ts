@@ -39,6 +39,14 @@ export interface PartRemovedPayload {
   sessionID: string
 }
 
+export interface PartDeltaPayload {
+  sessionID: string
+  messageID: string
+  partID: string
+  field: string
+  delta: string
+}
+
 export interface PermissionRepliedPayload {
   sessionID: string
   requestID: string
@@ -114,6 +122,7 @@ export const EventTypes = {
   MESSAGE_UPDATED: 'message.updated',
   MESSAGE_REMOVED: 'message.removed',
   MESSAGE_PART_UPDATED: 'message.part.updated',
+  MESSAGE_PART_DELTA: 'message.part.delta',
   MESSAGE_PART_REMOVED: 'message.part.removed',
   
   // Permission events
@@ -168,7 +177,8 @@ export type EventType = typeof EventTypes[keyof typeof EventTypes]
  */
 export interface EventCallbacks {
   onMessageUpdated?: (message: Message) => void
-  onPartUpdated?: (part: Part) => void
+  onPartUpdated?: (part: Part, delta?: string) => void
+  onPartDelta?: (data: PartDeltaPayload) => void
   onPartRemoved?: (data: PartRemovedPayload) => void
   onSessionCreated?: (session: Session) => void
   onSessionUpdated?: (session: Session) => void

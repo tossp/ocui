@@ -13,6 +13,7 @@ import type {
   ApiQuestionRequest,
   GlobalEvent,
   EventCallbacks,
+  PartDeltaPayload,
   WorktreeReadyPayload,
   WorktreeFailedPayload,
   VcsBranchUpdatedPayload,
@@ -637,8 +638,13 @@ function handleEventForSubscriber(
       break
     }
     case 'message.part.updated': {
-      const data = properties as { part: ApiPart }
-      callbacks.onPartUpdated?.(data.part)
+      const data = properties as { part: ApiPart; delta?: string }
+      callbacks.onPartUpdated?.(data.part, data.delta)
+      break
+    }
+    case 'message.part.delta': {
+      const data = properties as PartDeltaPayload
+      callbacks.onPartDelta?.(data)
       break
     }
     case 'message.part.removed':

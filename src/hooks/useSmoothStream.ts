@@ -52,8 +52,8 @@ export function useSmoothStream(
   // Refs for animation control
   const frameRef = useRef<number | null>(null)
   const lastTimeRef = useRef<number>(0)
-  const waitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const frameCountRef = useRef(0)  // 帧计数器，用于批量更新
+  const idleFramesRef = useRef(0)  // 连续空闲帧计数，用于降频
   
   // 追踪 streaming 状态变化
   const wasStreamingRef = useRef(isStreaming)
@@ -116,10 +116,7 @@ export function useSmoothStream(
         cancelAnimationFrame(frameRef.current)
         frameRef.current = null
       }
-      if (waitTimeoutRef.current) {
-        clearTimeout(waitTimeoutRef.current)
-        waitTimeoutRef.current = null
-      }
+      idleFramesRef.current = 0
     }
     
     wasStreamingRef.current = isStreaming
@@ -174,30 +171,33 @@ export function useSmoothStream(
       
       // 已经显示完了，继续等待新内容
       if (currentIndex >= fullTextLength) {
-        // 使用 setTimeout 代替持续 RAF，减少 CPU 占用
-        // 持续轮询直到有新内容或 streaming 结束
-        if (waitTimeoutRef.current) {
-          clearTimeout(waitTimeoutRef.current)
+        idleFramesRef.current++
+        
+        // 检查是否有新内容到达
+        const latestLength = fullTextLengthRef.current
+        if (latestLength > currentIndex) {
+          // 有新内容，重置空闲计数，立即继续动画
+          idleFramesRef.current = 0
+          frameRef.current = requestAnimationFrame(animate)
+          return
         }
-        waitTimeoutRef.current = setTimeout(() => {
-          if (!isRunning) return
-          // 每次都读取最新的 ref 值
-          const latestLength = fullTextLengthRef.current
-          const latestIndex = actualIndexRef.current
-          if (latestLength > latestIndex) {
-            // 有新内容，重启动画
-            frameRef.current = requestAnimationFrame(animate)
-          } else {
-            // 没有新内容，继续等待（关键：持续轮询）
-            waitTimeoutRef.current = setTimeout(() => {
-              if (isRunning) {
-                frameRef.current = requestAnimationFrame(animate)
-              }
-            }, 50)
-          }
-        }, 50) // 50ms 检查一次是否有新内容
+        
+        // 没有新内容，继续等待但逐步降频以减少 CPU 占用
+        // 前 10 帧全速 RAF (~160ms)，之后每 32ms 检查一次
+        if (idleFramesRef.current < 10) {
+          frameRef.current = requestAnimationFrame(animate)
+        } else {
+          setTimeout(() => {
+            if (isRunning) {
+              frameRef.current = requestAnimationFrame(animate)
+            }
+          }, 32)
+        }
         return
       }
+      
+      // 有新内容要显示，重置空闲计数
+      idleFramesRef.current = 0
       
       // 计算落后了多少字符
       const lag = fullTextLength - currentIndex
@@ -252,10 +252,7 @@ export function useSmoothStream(
         cancelAnimationFrame(frameRef.current)
         frameRef.current = null
       }
-      if (waitTimeoutRef.current) {
-        clearTimeout(waitTimeoutRef.current)
-        waitTimeoutRef.current = null
-      }
+      idleFramesRef.current = 0
     }
   }, [isStreaming, disableAnimation]) // 只依赖 isStreaming，减少重启次数
 
@@ -265,10 +262,7 @@ export function useSmoothStream(
       cancelAnimationFrame(frameRef.current)
       frameRef.current = null
     }
-    if (waitTimeoutRef.current) {
-      clearTimeout(waitTimeoutRef.current)
-      waitTimeoutRef.current = null
-    }
+    idleFramesRef.current = 0
     actualIndexRef.current = fullText.length
     setDisplayIndex(fullText.length)
   }, [fullText.length])

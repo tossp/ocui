@@ -5,7 +5,9 @@
 :6658 {
 	# API（SSE + WebSocket 自动处理）
 	handle_path /api/* {
-		reverse_proxy opencode-backend:4096
+		reverse_proxy opencode-backend:4096 {
+			flush_interval -1
+		}
 	}
 
 	# Routes UI

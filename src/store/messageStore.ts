@@ -856,6 +856,40 @@ class MessageStore {
   }
 
   /**
+   * 处理 Part 增量更新事件 (message.part.delta)
+   * 将 delta 文本拼接到已有 part 上，实现实时流式显示
+   */
+  handlePartDelta(data: { sessionID: string; messageID: string; partID: string; field: string; delta: string }) {
+    const state = this.sessions.get(data.sessionID)
+    if (!state) return
+
+    const msgIndex = state.messages.findIndex(m => m.info.id === data.messageID)
+    if (msgIndex === -1) return
+
+    const oldMessage = state.messages[msgIndex]
+    const partIndex = oldMessage.parts.findIndex(p => p.id === data.partID)
+    if (partIndex === -1) return
+
+    const oldPart = oldMessage.parts[partIndex]
+    
+    // 只处理 text 类字段的增量更新
+    if (data.field === 'text' && 'text' in oldPart) {
+      const newPart = { ...oldPart, [data.field]: (oldPart as any)[data.field] + data.delta }
+      const newParts = [...oldMessage.parts]
+      newParts[partIndex] = newPart as Part
+      
+      const newMessage = { ...oldMessage, parts: newParts }
+      state.messages = [
+        ...state.messages.slice(0, msgIndex),
+        newMessage,
+        ...state.messages.slice(msgIndex + 1),
+      ]
+      
+      this.notify()
+    }
+  }
+
+  /**
    * 处理 Part 移除事件
    */
   handlePartRemoved(data: { id: string; messageID: string; sessionID: string }) {
