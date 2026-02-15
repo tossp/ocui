@@ -17,7 +17,7 @@
 	}
 
 	# Preview API（供 Routes 面板切换预览端口）
-	handle_path /preview/* {
+	handle /preview/* {
 		reverse_proxy 127.0.0.1:7070
 	}
 
