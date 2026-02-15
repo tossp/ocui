@@ -3,14 +3,15 @@
 // ============================================
 
 import { useState, useCallback, useEffect } from 'react'
-import { useMessageStore, messageStore, useSessionFamily, autoApproveStore } from '../store'
+import { useMessageStore, messageStore, useSessionFamily, autoApproveStore, childSessionStore } from '../store'
 import { useSessionManager, useGlobalEvents } from '../hooks'
 import { usePermissions, useRouter, usePermissionHandler, useMessageAnimation, useDirectory, useSessionContext } from '../hooks'
 import { useNotification } from './useNotification'
 import { 
   sendMessage, abortSession, 
   getSelectableAgents, 
-  getPendingPermissions, getPendingQuestions, 
+  getPendingPermissions, getPendingQuestions,
+  getSessionChildren,
   executeCommand,
   updateSession,
   type ApiSession,
@@ -251,21 +252,56 @@ export function useChatSession({ chatAreaRef, currentModel, refetchModels }: Use
     setSelectedAgent(primaryAgents[0].name)
   }, [agents]) // 故意不依赖 selectedAgent，只在 agents 列表变化时校验
 
-  // Load pending permissions on session change
+  // Load child sessions and pending permissions on session change
+  // 页面刷新时 childSessionStore 是空的，需要先从 API 恢复子 session 关系
+  // 然后再加载权限请求（包括子 session 的权限）
   useEffect(() => {
     if (!routeSessionId) {
       resetPendingRequests()
       return
     }
 
-    Promise.all([
-      getPendingPermissions(routeSessionId).catch(() => []),
-      getPendingQuestions(routeSessionId).catch(() => []),
-    ]).then(([perms, questions]) => {
-      setPendingPermissionRequests(perms)
-      setPendingQuestionRequests(questions)
-    })
-  }, [routeSessionId, resetPendingRequests, setPendingPermissionRequests, setPendingQuestionRequests])
+    let cancelled = false
+
+    async function loadChildSessionsAndPermissions() {
+      // Step 1: 恢复子 session 关系（如果 store 中还没有）
+      const existingChildren = childSessionStore.getChildSessionIds(routeSessionId!)
+      if (existingChildren.length === 0) {
+        try {
+          const children = await getSessionChildren(routeSessionId!, effectiveDirectory)
+          if (cancelled) return
+          // 注册所有子 session 到 store
+          for (const child of children) {
+            childSessionStore.registerChildSession(child)
+          }
+        } catch {
+          // 获取子 session 失败不影响主流程
+        }
+      }
+
+      if (cancelled) return
+
+      // Step 2: 获取完整的 session family（主 session + 所有子孙）
+      const family = new Set(childSessionStore.getSessionAndDescendants(routeSessionId!))
+
+      // Step 3: 获取所有待处理请求，然后用 family 过滤
+      // GET /permission 和 GET /question 返回全量数据，不传 sessionId 避免 N 次重复请求
+      const [allPerms, allQuestions] = await Promise.all([
+        getPendingPermissions(undefined, effectiveDirectory).catch(() => []),
+        getPendingQuestions(undefined, effectiveDirectory).catch(() => []),
+      ])
+
+      if (cancelled) return
+
+      // 只保留属于当前 session family 的请求
+      setPendingPermissionRequests(allPerms.filter(p => family.has(p.sessionID)))
+      setPendingQuestionRequests(allQuestions.filter(q => family.has(q.sessionID)))
+    }
+
+    loadChildSessionsAndPermissions()
+
+    return () => { cancelled = true }
+  }, [routeSessionId, effectiveDirectory, resetPendingRequests, setPendingPermissionRequests, setPendingQuestionRequests])
 
   // Send message handler
   const handleSend = useCallback(async (
