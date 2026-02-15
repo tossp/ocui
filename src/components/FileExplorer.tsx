@@ -19,6 +19,7 @@ import {
 } from './Icons'
 import { detectLanguage } from '../utils/languageUtils'
 import { useSyntaxHighlight } from '../hooks/useSyntaxHighlight'
+import { getPreviewCategory, isBinaryContent, isTextualMedia, buildDataUrl, buildTextDataUrl, decodeBase64Text, formatMimeType, type PreviewCategory } from '../utils/mimeUtils'
 import type { FileContent } from '../api/types'
 
 // 常量
@@ -426,9 +427,46 @@ function FilePreview({ path, content, isLoading, error, onClose, isResizing = fa
   const fileName = path?.split(/[/\\]/).pop() || 'Untitled'
   const language = path ? detectLanguage(path) : 'text'
 
-  // 处理 diff 内容
+  // 处理内容类型分发
   const displayContent = useMemo(() => {
     if (!content) return null
+
+    const category = getPreviewCategory(content.mimeType)
+
+    // 文本型可渲染媒体（如 SVG）— 同时提供渲染和源码
+    // 优先级最高：即使以 base64 传输，也支持解码为文本查看
+    if (isTextualMedia(content.mimeType)) {
+      const isBase64 = isBinaryContent(content.encoding)
+      const text = isBase64 ? decodeBase64Text(content.content) : content.content
+      const dataUrl = isBase64
+        ? buildDataUrl(content.mimeType!, content.content)
+        : buildTextDataUrl(content.mimeType!, content.content)
+      return {
+        type: 'textMedia' as const,
+        text,
+        dataUrl,
+        category: category!,
+        mimeType: content.mimeType!,
+      }
+    }
+
+    // 二进制 + 可预览的媒体类型
+    if (isBinaryContent(content.encoding) && category) {
+      return {
+        type: 'media' as const,
+        category,
+        dataUrl: buildDataUrl(content.mimeType!, content.content),
+        mimeType: content.mimeType!,
+      }
+    }
+
+    // 二进制 + 不可预览
+    if (isBinaryContent(content.encoding)) {
+      return {
+        type: 'binary' as const,
+        mimeType: content.mimeType || 'application/octet-stream',
+      }
+    }
     
     // 如果有 patch，优先显示 diff
     if (content.patch && content.patch.hunks.length > 0) {
@@ -477,6 +515,23 @@ function FilePreview({ path, content, isLoading, error, onClose, isResizing = fa
             <AlertCircleIcon size={16} />
             <span className="text-center">{error}</span>
           </div>
+        ) : displayContent?.type === 'media' ? (
+          <MediaPreview
+            category={displayContent.category}
+            dataUrl={displayContent.dataUrl}
+            mimeType={displayContent.mimeType}
+            fileName={fileName}
+          />
+        ) : displayContent?.type === 'binary' ? (
+          <BinaryPlaceholder mimeType={displayContent.mimeType} fileName={fileName} />
+        ) : displayContent?.type === 'textMedia' ? (
+          <TextMediaPreview
+            dataUrl={displayContent.dataUrl}
+            text={displayContent.text}
+            language={language || 'xml'}
+            fileName={fileName}
+            isResizing={isResizing}
+          />
         ) : displayContent?.type === 'diff' ? (
           <DiffPreview hunks={displayContent.hunks} isResizing={isResizing} />
         ) : displayContent?.type === 'text' ? (
@@ -487,6 +542,287 @@ function FilePreview({ path, content, isLoading, error, onClose, isResizing = fa
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+// ============================================
+// Media Preview - 路由到具体渲染器
+// ============================================
+
+interface MediaPreviewProps {
+  category: PreviewCategory
+  dataUrl: string
+  mimeType: string
+  fileName: string
+}
+
+function MediaPreview({ category, dataUrl, mimeType, fileName }: MediaPreviewProps) {
+  switch (category) {
+    case 'image':
+      return <ImagePreview dataUrl={dataUrl} fileName={fileName} />
+    case 'audio':
+      return (
+        <div className="flex flex-col items-center justify-center h-full gap-3 p-4">
+          <div className="text-text-400 text-xs">{formatMimeType(mimeType)}</div>
+          <audio controls src={dataUrl} className="w-full max-w-xs" />
+        </div>
+      )
+    case 'video':
+      return (
+        <div className="flex items-center justify-center h-full p-4">
+          <video controls src={dataUrl} className="max-w-full max-h-full rounded" />
+        </div>
+      )
+    case 'pdf':
+      return <iframe src={dataUrl} title={fileName} className="w-full h-full border-0" />
+  }
+}
+
+// ============================================
+// Image Preview - 缩放 + 拖拽平移
+// 直接滚轮缩放（以鼠标为锚点），左键拖拽平移
+// ============================================
+
+const MIN_ZOOM = 0.05
+const MAX_ZOOM = 20
+const ZOOM_FACTOR = 1.15 // 每次滚轮的缩放倍率
+
+interface ImagePreviewProps {
+  dataUrl: string
+  fileName: string
+}
+
+function ImagePreview({ dataUrl, fileName }: ImagePreviewProps) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [naturalSize, setNaturalSize] = useState({ w: 0, h: 0 })
+  const scaleRef = useRef(1) // 同步访问，避免 stale closure
+  const [scale, setScale] = useState(1)
+  const [translate, setTranslate] = useState({ x: 0, y: 0 })
+  const [initialized, setInitialized] = useState(false)
+  const dragRef = useRef({ active: false, startX: 0, startY: 0 })
+
+  // fit-to-container scale
+  const getFitScale = useCallback(() => {
+    const el = containerRef.current
+    if (!el || !naturalSize.w || !naturalSize.h) return 1
+    const rect = el.getBoundingClientRect()
+    return Math.min(rect.width / naturalSize.w, rect.height / naturalSize.h, 1)
+  }, [naturalSize])
+
+  // 图片加载后初始化
+  useEffect(() => {
+    if (naturalSize.w && !initialized) {
+      const fit = getFitScale()
+      scaleRef.current = fit
+      setScale(fit)
+      setTranslate({ x: 0, y: 0 })
+      setInitialized(true)
+    }
+  }, [naturalSize, initialized, getFitScale])
+
+  // 滚轮缩放 — 以鼠标位置为锚点
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const handler = (e: WheelEvent) => {
+      e.preventDefault()
+      const rect = el.getBoundingClientRect()
+      // 鼠标相对容器中心
+      const cx = e.clientX - rect.left - rect.width / 2
+      const cy = e.clientY - rect.top - rect.height / 2
+      const factor = e.deltaY > 0 ? 1 / ZOOM_FACTOR : ZOOM_FACTOR
+      const oldScale = scaleRef.current
+      const newScale = Math.min(Math.max(oldScale * factor, MIN_ZOOM), MAX_ZOOM)
+      const ratio = newScale / oldScale
+      scaleRef.current = newScale
+      setScale(newScale)
+      setTranslate(t => ({
+        x: cx - ratio * (cx - t.x),
+        y: cy - ratio * (cy - t.y),
+      }))
+    }
+    el.addEventListener('wheel', handler, { passive: false })
+    return () => el.removeEventListener('wheel', handler)
+  }, [])
+
+  // 拖拽平移
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!dragRef.current.active) return
+      const dx = e.clientX - dragRef.current.startX
+      const dy = e.clientY - dragRef.current.startY
+      dragRef.current.startX = e.clientX
+      dragRef.current.startY = e.clientY
+      setTranslate(t => ({ x: t.x + dx, y: t.y + dy }))
+    }
+    const onUp = () => {
+      if (dragRef.current.active) {
+        dragRef.current.active = false
+        document.body.style.cursor = ''
+        document.body.style.userSelect = ''
+      }
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+    return () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+  }, [])
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    dragRef.current = { active: true, startX: e.clientX, startY: e.clientY }
+    document.body.style.cursor = 'grabbing'
+    document.body.style.userSelect = 'none'
+  }, [])
+
+  const zoomIn = useCallback(() => {
+    const s = Math.min(scaleRef.current * 1.25, MAX_ZOOM)
+    scaleRef.current = s
+    setScale(s)
+  }, [])
+
+  const zoomOut = useCallback(() => {
+    const s = Math.max(scaleRef.current / 1.25, MIN_ZOOM)
+    scaleRef.current = s
+    setScale(s)
+  }, [])
+
+  const zoomFit = useCallback(() => {
+    const fit = getFitScale()
+    scaleRef.current = fit
+    setScale(fit)
+    setTranslate({ x: 0, y: 0 })
+  }, [getFitScale])
+
+  const zoomActual = useCallback(() => {
+    scaleRef.current = 1
+    setScale(1)
+    setTranslate({ x: 0, y: 0 })
+  }, [])
+
+  const fitScale = getFitScale()
+  const isFit = Math.abs(scale - fitScale) < 0.001 && translate.x === 0 && translate.y === 0
+  const isActual = Math.abs(scale - 1) < 0.001 && translate.x === 0 && translate.y === 0
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Zoom toolbar */}
+      <div className="shrink-0 flex items-center justify-center gap-1.5 px-2 py-1 border-b border-border-100/30 bg-bg-100/50 text-[10px]">
+        <button
+          onClick={zoomOut}
+          className="px-1.5 py-0.5 rounded hover:bg-bg-200 text-text-300 hover:text-text-100 transition-colors"
+        >
+          −
+        </button>
+        <span className="w-10 text-center text-text-400 tabular-nums">
+          {Math.round(scale * 100)}%
+        </span>
+        <button
+          onClick={zoomIn}
+          className="px-1.5 py-0.5 rounded hover:bg-bg-200 text-text-300 hover:text-text-100 transition-colors"
+        >
+          +
+        </button>
+        <span className="w-px h-3 bg-border-200 mx-1" />
+        <button
+          onClick={zoomFit}
+          className={`px-1.5 py-0.5 rounded transition-colors ${isFit ? 'bg-bg-200 text-text-100' : 'text-text-400 hover:bg-bg-200 hover:text-text-100'}`}
+        >
+          Fit
+        </button>
+        <button
+          onClick={zoomActual}
+          className={`px-1.5 py-0.5 rounded transition-colors ${isActual ? 'bg-bg-200 text-text-100' : 'text-text-400 hover:bg-bg-200 hover:text-text-100'}`}
+        >
+          1:1
+        </button>
+      </div>
+      {/* Image area */}
+      <div
+        ref={containerRef}
+        className="flex-1 overflow-hidden relative cursor-grab active:cursor-grabbing"
+        onMouseDown={handleMouseDown}
+      >
+        <img
+          src={dataUrl}
+          alt={fileName}
+          draggable={false}
+          className="absolute left-1/2 top-1/2 select-none"
+          style={{
+            transform: `translate(-50%, -50%) translate(${translate.x}px, ${translate.y}px) scale(${scale})`,
+            transformOrigin: 'center center',
+          }}
+          onLoad={(e) => {
+            setNaturalSize({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })
+          }}
+        />
+      </div>
+    </div>
+  )
+}
+
+// ============================================
+// Text Media Preview - 文本型可渲染媒体（如 SVG）
+// 支持 Preview / Code 两种视图切换
+// ============================================
+
+interface TextMediaPreviewProps {
+  dataUrl: string
+  text: string
+  language: string
+  fileName: string
+  isResizing?: boolean
+}
+
+function TextMediaPreview({ dataUrl, text, language, fileName, isResizing = false }: TextMediaPreviewProps) {
+  const [mode, setMode] = useState<'preview' | 'code'>('preview')
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Tab bar */}
+      <div className="shrink-0 flex items-center gap-0.5 px-2 py-1 border-b border-border-100/30 bg-bg-100/50 text-[10px]">
+        <button
+          onClick={() => setMode('preview')}
+          className={`px-2 py-0.5 rounded transition-colors ${mode === 'preview' ? 'bg-bg-200 text-text-100' : 'text-text-400 hover:bg-bg-200 hover:text-text-100'}`}
+        >
+          Preview
+        </button>
+        <button
+          onClick={() => setMode('code')}
+          className={`px-2 py-0.5 rounded transition-colors ${mode === 'code' ? 'bg-bg-200 text-text-100' : 'text-text-400 hover:bg-bg-200 hover:text-text-100'}`}
+        >
+          Code
+        </button>
+      </div>
+      {/* Content */}
+      {mode === 'preview' ? (
+        <ImagePreview dataUrl={dataUrl} fileName={fileName} />
+      ) : (
+        <CodePreview code={text} language={language} isResizing={isResizing} />
+      )}
+    </div>
+  )
+}
+
+// ============================================
+// Binary Placeholder - 不可预览的二进制文件
+// ============================================
+
+interface BinaryPlaceholderProps {
+  mimeType: string
+  fileName: string
+}
+
+function BinaryPlaceholder({ mimeType, fileName }: BinaryPlaceholderProps) {
+  return (
+    <div className="flex flex-col items-center justify-center h-full text-text-400 text-xs gap-2 p-4">
+      <FileIcon size={32} className="opacity-30" />
+      <span className="font-medium text-text-300">{fileName}</span>
+      <span>{formatMimeType(mimeType)}</span>
+      <span className="text-text-500 text-[10px]">Binary file — preview not available</span>
     </div>
   )
 }
