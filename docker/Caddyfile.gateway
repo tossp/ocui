@@ -16,6 +16,11 @@
 		reverse_proxy 127.0.0.1:7070
 	}
 
+	# Preview API（供 Routes 面板切换预览端口）
+	handle_path /preview/* {
+		reverse_proxy 127.0.0.1:7070
+	}
+
 	# 动态端口路由（由 router 自动生成）
 	import /etc/caddy/routes.conf
 
@@ -23,4 +28,9 @@
 	handle {
 		reverse_proxy opencode-frontend:3000
 	}
+}
+
+# 独立预览端口 — 用于前端开发服务，绑独立域名
+:6659 {
+	import /etc/caddy/preview.conf
 }

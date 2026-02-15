@@ -4,6 +4,7 @@
 #
 # 架构:
 #   gateway  (Caddy)  :6658 -> 统一入口（反代 + 端口路由）
+#                      :6659 -> 独立预览端口（前端开发服务专用）
 #   frontend (Caddy)  :3000 -> 静态文件 (GitHub Actions 预构建镜像)
 #   backend  (opencode):4096 -> opencode serve (GitHub Actions 预构建镜像)
 #
@@ -24,6 +25,7 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:${GATEWAY_PORT:-6658}:6658"
+      - "127.0.0.1:${PREVIEW_PORT:-6659}:6659"
     volumes:
       - opencode-router-data:/data
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -38,6 +40,7 @@ services:
       - ROUTER_PORT_RANGE=${ROUTER_PORT_RANGE:-3000-9999}
       - ROUTER_EXCLUDE_PORTS=${ROUTER_EXCLUDE_PORTS:-4096}
       - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-}
+      - PREVIEW_DOMAIN=${PREVIEW_DOMAIN:-}
       - ROUTER_USERNAME=${OPENCODE_SERVER_USERNAME:-opencode}
       - ROUTER_PASSWORD=${OPENCODE_SERVER_PASSWORD:-}
     networks:

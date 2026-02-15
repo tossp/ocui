@@ -13,8 +13,8 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 COPY docker/router /app/router
 COPY docker/Caddyfile.gateway /etc/caddy/Caddyfile
 
-RUN touch /etc/caddy/routes.conf
+RUN touch /etc/caddy/routes.conf && touch /etc/caddy/preview.conf
 
-EXPOSE 6658
+EXPOSE 6658 6659
 
 CMD ["/bin/sh", "-c", "/opt/venv/bin/python /app/router/router.py & caddy run --config /etc/caddy/Caddyfile"]
