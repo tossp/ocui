@@ -76,7 +76,7 @@ export const MentionMenu = forwardRef<MentionMenuHandle, MentionMenuProps>(funct
       const parentRect = parent.getBoundingClientRect()
       // 菜单从父容器顶部向上弹出，可用空间 = 父容器顶部 - header高度(56px) - 安全间距(16px) - marginBottom(8px)
       const available = parentRect.top - 56 - 16 - 8
-      if (available > 0 && available < 320) {
+      if (available > 0 && available < 360) {
         setDynamicMaxHeight(available)
       } else {
         setDynamicMaxHeight(undefined)
@@ -322,7 +322,7 @@ export const MentionMenu = forwardRef<MentionMenuHandle, MentionMenuProps>(funct
     <div
       ref={menuRef}
       data-dropdown-open
-      className="absolute z-50 w-full max-w-[360px] flex flex-col bg-bg-000 border border-border-300 rounded-lg shadow-lg overflow-hidden"
+      className="absolute z-50 w-full md:max-w-[360px] flex flex-col bg-bg-000 border border-border-300 rounded-lg shadow-lg overflow-hidden"
       style={{
         bottom: '100%',
         left: 0,

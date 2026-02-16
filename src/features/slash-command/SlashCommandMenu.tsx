@@ -55,7 +55,7 @@ export const SlashCommandMenu = forwardRef<SlashCommandMenuHandle, SlashCommandM
         if (!parent) return
         const parentRect = parent.getBoundingClientRect()
         const available = parentRect.top - 56 - 16 - 8
-        if (available > 0 && available < 280) {
+        if (available > 0 && available < 360) {
           setDynamicMaxHeight(available)
         } else {
           setDynamicMaxHeight(undefined)
@@ -148,12 +148,12 @@ export const SlashCommandMenu = forwardRef<SlashCommandMenuHandle, SlashCommandM
       <div
         ref={menuRef}
         data-dropdown-open
-        className="absolute z-50 w-full max-w-[320px] flex flex-col bg-bg-000 border border-border-300 rounded-lg shadow-lg overflow-hidden"
+        className="absolute z-50 w-full md:max-w-[360px] flex flex-col bg-bg-000 border border-border-300 rounded-lg shadow-lg overflow-hidden"
         style={{
           bottom: '100%',
           left: 0,
           marginBottom: '8px',
-          maxHeight: dynamicMaxHeight ? `${dynamicMaxHeight}px` : 'min(280px, calc(100dvh - 10rem))',
+          maxHeight: dynamicMaxHeight ? `${dynamicMaxHeight}px` : 'min(320px, calc(100dvh - 10rem))',
         }}
       >
         {/* Header */}
