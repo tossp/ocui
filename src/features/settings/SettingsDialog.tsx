@@ -8,7 +8,7 @@ import {
   SettingsIcon, KeyboardIcon, CloseIcon, BellIcon, BoltIcon, CompactIcon
 } from '../../components/Icons'
 import { usePathMode, useServerStore, useIsMobile, useNotification, useRouter } from '../../hooks'
-import { autoApproveStore, messageStore } from '../../store'
+import { autoApproveStore, messageStore, notificationStore } from '../../store'
 import { themeStore } from '../../store/themeStore'
 import { KeybindingsSection } from './KeybindingsSection'
 import type { ThemeMode } from '../../hooks'
@@ -373,6 +373,7 @@ function GeneralSettings() {
   const [autoApprove, setAutoApprove] = useState(autoApproveStore.enabled)
   const { enabled: notificationsEnabled, setEnabled: setNotificationsEnabled, supported: notificationsSupported, permission: notificationPermission, sendNotification } = useNotification()
   const [collapseUserMessages, setCollapseUserMessages] = useState(themeStore.collapseUserMessages)
+  const [toastEnabled, setToastEnabledState] = useState(notificationStore.toastEnabled)
 
   const handleAutoApprove = () => {
     const v = !autoApprove
@@ -389,6 +390,12 @@ function GeneralSettings() {
 
   const handleTestNotification = () => {
     sendNotification('OpenCode', 'This is a test notification')
+  }
+
+  const handleToastToggle = () => {
+    const v = !toastEnabled
+    setToastEnabledState(v)
+    notificationStore.setToastEnabled(v)
   }
 
   return (
@@ -436,6 +443,14 @@ function GeneralSettings() {
           />
         </SettingRow>
       )}
+      <SettingRow
+        label="Toast Notifications"
+        description="Show in-app toast popups for background session events"
+        icon={<BellIcon size={14} />}
+        onClick={handleToastToggle}
+      >
+        <Toggle enabled={toastEnabled} onChange={handleToastToggle} />
+      </SettingRow>
       {notificationsSupported && (
         <SettingRow
           label="Test Notification"

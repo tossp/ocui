@@ -582,7 +582,6 @@ export function SidePanel({
                         key={entry.id}
                         entry={entry}
                         resolvedSession={resolvedSession}
-                        isSelected={entry.sessionId === selectedSessionId}
                         onSelect={handleSelectActive}
                       />
                     )
@@ -745,11 +744,10 @@ const notifTypeConfig = {
 interface NotificationItemProps {
   entry: NotificationEntry
   resolvedSession?: ApiSession
-  isSelected: boolean
   onSelect: (session: ApiSession) => void
 }
 
-function NotificationItem({ entry, resolvedSession, isSelected, onSelect }: NotificationItemProps) {
+function NotificationItem({ entry, resolvedSession, onSelect }: NotificationItemProps) {
   const displayTitle = resolvedSession?.title || entry.title || entry.sessionId.slice(0, 12) + '...'
   const directory = resolvedSession?.directory || entry.directory
 
@@ -774,11 +772,7 @@ function NotificationItem({ entry, resolvedSession, isSelected, onSelect }: Noti
   return (
     <div
       onClick={handleClick}
-      className={`group relative flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-all duration-200 border border-transparent ${
-        isSelected
-          ? 'bg-bg-000 shadow-sm ring-1 ring-border-200/50'
-          : 'hover:bg-bg-200/50'
-      } ${entry.read ? 'opacity-50' : ''}`}
+      className={`group relative flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-all duration-200 border border-transparent hover:bg-bg-200/50 ${entry.read ? 'opacity-50' : ''}`}
     >
       {/* Status icon — matches toast style */}
       <div className={`shrink-0 flex items-center justify-center w-6 h-6 rounded-md ${config.bgAccent}`}>
@@ -787,9 +781,7 @@ function NotificationItem({ entry, resolvedSession, isSelected, onSelect }: Noti
 
       {/* Content */}
       <div className="flex-1 min-w-0">
-        <p className={`text-[13px] truncate font-medium ${
-          isSelected ? 'text-text-100' : 'text-text-200 group-hover:text-text-100'
-        }`} title={displayTitle}>
+        <p className="text-[13px] truncate font-medium text-text-200 group-hover:text-text-100" title={displayTitle}>
           {displayTitle}
         </p>
         <div className="flex items-center mt-0.5 text-[10px] text-text-400 gap-1">

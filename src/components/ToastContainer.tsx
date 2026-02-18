@@ -89,9 +89,9 @@ function Toast({ item, onDismiss, onClick }: {
         )}
       </div>
 
-      {/* Close */}
+      {/* Close — mobile: always visible; PC: visible on hover */}
       <button
-        className="absolute top-2 right-2 p-0.5 rounded-md text-text-400 opacity-0 group-hover:opacity-100 hover:text-text-200 hover:bg-bg-200 transition-all duration-150 active:scale-90"
+        className="absolute top-2 right-2 p-1 rounded-md text-text-400 md:opacity-0 md:group-hover:opacity-100 hover:text-text-200 hover:bg-bg-200 transition-all duration-150 active:scale-90"
         onClick={(e) => { e.stopPropagation(); onDismiss() }}
         aria-label="Dismiss"
       >
@@ -127,6 +127,15 @@ export function ToastContainer() {
           }}
         />
       ))}
+      {/* Clear all — shown when 2+ toasts are visible */}
+      {toasts.length >= 2 && (
+        <button
+          className="self-end text-[11px] text-text-400 hover:text-text-200 px-2 py-1 rounded-md hover:bg-bg-200/80 transition-colors duration-150 active:scale-95"
+          onClick={() => notificationStore.dismissAllToasts()}
+        >
+          Clear all
+        </button>
+      )}
     </div>
   )
 }

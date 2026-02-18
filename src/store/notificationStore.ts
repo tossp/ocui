@@ -47,6 +47,7 @@ const TOAST_DURATION = 8000
 const MAX_TOASTS = 3
 const EXIT_ANIMATION_MS = 200
 const STORAGE_KEY = 'opencode:notifications'
+const TOAST_ENABLED_KEY = 'opencode:toast-enabled'
 const MAX_NOTIFICATIONS = 50
 
 // ============================================
@@ -83,6 +84,11 @@ class NotificationStore {
   private subscribers = new Set<Subscriber>()
   private toastTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
+  /** toast 弹窗总开关 */
+  toastEnabled: boolean = (() => {
+    try { return localStorage.getItem(TOAST_ENABLED_KEY) !== 'false' } catch { return true }
+  })()
+
   subscribe = (callback: Subscriber): (() => void) => {
     this.subscribers.add(callback)
     return () => this.subscribers.delete(callback)
@@ -97,6 +103,13 @@ class NotificationStore {
   }
 
   getSnapshot = (): NotificationState => this.state
+
+  setToastEnabled(enabled: boolean) {
+    this.toastEnabled = enabled
+    try { localStorage.setItem(TOAST_ENABLED_KEY, String(enabled)) } catch {}
+    // 关闭时清掉当前所有 toast
+    if (!enabled) this.dismissAllToasts()
+  }
 
   // ============================================
   // 推送通知（加历史 + 弹 toast）
@@ -123,19 +136,23 @@ class NotificationStore {
     // 加到历史
     const notifications = [entry, ...this.state.notifications].slice(0, MAX_NOTIFICATIONS)
 
-    // 弹 toast
-    const toasts = [...this.state.toasts]
-    if (toasts.length >= MAX_TOASTS) {
-      const oldest = toasts.pop()
-      if (oldest) this.clearToastTimer(oldest.notification.id)
+    // 弹 toast（仅开关打开时）
+    if (this.toastEnabled) {
+      const toasts = [...this.state.toasts]
+      if (toasts.length >= MAX_TOASTS) {
+        const oldest = toasts.pop()
+        if (oldest) this.clearToastTimer(oldest.notification.id)
+      }
+      toasts.unshift({ notification: entry, exiting: false })
+      this.state = { ...this.state, toasts, notifications }
+      this.persist()
+      this.notify()
+      this.scheduleToastDismiss(entry.id)
+    } else {
+      this.state = { ...this.state, notifications }
+      this.persist()
+      this.notify()
     }
-    toasts.unshift({ notification: entry, exiting: false })
-
-    this.state = { ...this.state, toasts, notifications }
-    this.persist()
-    this.notify()
-
-    this.scheduleToastDismiss(entry.id)
   }
 
   // ============================================
