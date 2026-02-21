@@ -1,4 +1,5 @@
-import { memo, useState, useRef, useEffect } from 'react'
+import { memo, useState, useRef, useEffect, useLayoutEffect } from 'react'
+import type { RefObject } from 'react'
 import { CheckIcon, ClockIcon, CircleIcon, CloseIcon } from '../../../components/Icons'
 import { useTodos, useTodoStats, useCurrentTask, todoStore } from '../../../store'
 import { getSessionTodos } from '../../../api/session'
@@ -15,9 +16,10 @@ import type { TodoItem } from '../../../types/api/event'
 interface InputFooterProps {
   sessionId?: string | null
   onNewChat?: () => void
+  inputContainerRef?: RefObject<HTMLDivElement | null>
 }
 
-export const InputFooter = memo(function InputFooter({ sessionId, onNewChat }: InputFooterProps) {
+export const InputFooter = memo(function InputFooter({ sessionId, onNewChat, inputContainerRef }: InputFooterProps) {
   const todos = useTodos(sessionId ?? null)
   const stats = useTodoStats(sessionId ?? null)
   const currentTask = useCurrentTask(sessionId ?? null)
@@ -102,7 +104,7 @@ export const InputFooter = memo(function InputFooter({ sessionId, onNewChat }: I
 
       {/* Popover */}
       {popoverOpen && (
-        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-80 bg-bg-100 border border-border-200/50 rounded-2xl shadow-2xl shadow-black/20 overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-150 z-50">
+        <PopoverPanel inputContainerRef={inputContainerRef}>
           {/* 顶部区域：大进度环 + 统计 */}
           <div className="px-4 pt-4 pb-3 bg-gradient-to-b from-bg-200/50 to-transparent">
             <div className="flex items-center gap-4">
@@ -148,11 +150,54 @@ export const InputFooter = memo(function InputFooter({ sessionId, onNewChat }: I
               <TodoRow key={todo.id} todo={todo} />
             ))}
           </div>
-        </div>
+        </PopoverPanel>
       )}
     </div>
   )
 })
+
+// ============================================
+// PopoverPanel - 宽度对齐输入框的弹出面板
+// ============================================
+
+function PopoverPanel({ inputContainerRef, children }: { 
+  inputContainerRef?: RefObject<HTMLDivElement | null>
+  children: React.ReactNode 
+}) {
+  const [style, setStyle] = useState<React.CSSProperties>({})
+  const ref = useRef<HTMLDivElement>(null)
+
+  useLayoutEffect(() => {
+    const container = inputContainerRef?.current
+    const footer = ref.current?.parentElement // popoverRef div
+    if (!container || !footer) return
+
+    const update = () => {
+      const cRect = container.getBoundingClientRect()
+      const fRect = footer.getBoundingClientRect()
+      // popover 相对于 footer（relative 父元素）定位
+      setStyle({
+        width: cRect.width,
+        left: cRect.left - fRect.left,
+      })
+    }
+    update()
+
+    const observer = new ResizeObserver(update)
+    observer.observe(container)
+    return () => observer.disconnect()
+  }, [inputContainerRef])
+
+  return (
+    <div 
+      ref={ref}
+      style={style}
+      className="absolute bottom-full mb-2 bg-bg-100 border border-border-200/50 rounded-2xl shadow-2xl shadow-black/20 overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-150 z-50"
+    >
+      {children}
+    </div>
+  )
+}
 
 // ============================================
 // MiniProgress - 极小进度圆环 (12px)

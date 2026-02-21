@@ -700,7 +700,7 @@ function InputBoxComponent({
           </div>
 
           {/* Footer: disclaimer + todo progress — 键盘弹起时被键盘遮挡，无需隐藏 */}
-          <InputFooter sessionId={sessionId} onNewChat={onNewChat} />
+          <InputFooter sessionId={sessionId} onNewChat={onNewChat} inputContainerRef={inputContainerRef} />
         </div>
       </div>
     </div>
