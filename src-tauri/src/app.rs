@@ -7,10 +7,176 @@ use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
-use tauri::{ipc::Channel, State};
+use tauri::{ipc::Channel, Manager, State};
 
-#[cfg(debug_assertions)]
-use tauri::Manager;
+#[cfg(not(mobile))]
+use std::sync::Mutex;
+
+#[cfg(not(mobile))]
+use std::process::{Child, Command, Stdio};
+
+#[cfg(not(mobile))]
+use std::path::PathBuf;
+
+#[derive(Default)]
+struct OpencodeServerState {
+    #[cfg(not(mobile))]
+    child: Mutex<Option<Child>>,
+}
+
+#[cfg(not(mobile))]
+const DEFAULT_SERVER_URL: &str = "http://127.0.0.1:4096";
+
+#[cfg(not(mobile))]
+async fn check_health(base_url: &str) -> bool {
+    let url = format!("{}/global/health", base_url.trim_end_matches('/'));
+
+    let client = match reqwest::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(7))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+
+    client
+        .get(url)
+        .send()
+        .await
+        .map(|r| r.status().is_success())
+        .unwrap_or(false)
+}
+
+#[cfg(not(mobile))]
+async fn wait_for_health(base_url: &str, timeout: Duration) -> bool {
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        if check_health(base_url).await {
+            return true;
+        }
+
+        if tokio::time::Instant::now() >= deadline {
+            return false;
+        }
+
+        tokio::time::sleep(Duration::from_millis(150)).await;
+    }
+}
+
+#[cfg(not(mobile))]
+fn spawn_opencode_server() -> Result<Child, String> {
+    let mut cmd = Command::new(resolve_opencode_bin().unwrap_or_else(|| "opencode".into()));
+    cmd.arg("serve")
+        .arg("--hostname")
+        .arg("127.0.0.1")
+        .arg("--port")
+        .arg("4096")
+        .env("OPENCODE_SERVER_PASSWORD", "")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    cmd.spawn().map_err(|e| format!("Failed to spawn 'opencode serve': {e}"))
+}
+
+#[cfg(not(mobile))]
+fn resolve_opencode_bin() -> Option<PathBuf> {
+    let mut candidates: Vec<PathBuf> = Vec::new();
+
+    if let Some(dir) = std::env::var_os("OPENCODE_INSTALL_DIR") {
+        candidates.push(PathBuf::from(dir).join("opencode"));
+    }
+
+    if let Some(dir) = std::env::var_os("XDG_BIN_DIR") {
+        candidates.push(PathBuf::from(dir).join("opencode"));
+    }
+
+    if let Some(home) = std::env::var_os("HOME") {
+        let home = PathBuf::from(home);
+        candidates.push(home.join(".opencode/bin/opencode"));
+        candidates.push(home.join("bin/opencode"));
+        candidates.push(home.join(".local/bin/opencode"));
+    }
+
+    candidates.push(PathBuf::from("/opt/homebrew/bin/opencode"));
+    candidates.push(PathBuf::from("/usr/local/bin/opencode"));
+
+    for path in candidates {
+        if path.is_file() {
+            return Some(path);
+        }
+    }
+
+    None
+}
+
+#[cfg(not(mobile))]
+async fn ensure_opencode_running(app: tauri::AppHandle) {
+    if check_health(DEFAULT_SERVER_URL).await {
+        log::info!("OpenCode server already running at {DEFAULT_SERVER_URL}");
+        return;
+    }
+
+    let state = app.state::<OpencodeServerState>();
+    let started = {
+        let Ok(mut guard) = state.child.lock() else {
+            return;
+        };
+
+        if guard.is_some() {
+            return;
+        }
+
+        log::info!("Starting OpenCode server: opencode serve --hostname 127.0.0.1 --port 4096");
+        match spawn_opencode_server() {
+            Ok(child) => {
+                *guard = Some(child);
+                true
+            }
+            Err(err) => {
+                log::error!("{err}");
+                false
+            }
+        }
+    };
+
+    if !started {
+        return;
+    }
+
+    if wait_for_health(DEFAULT_SERVER_URL, Duration::from_secs(20)).await {
+        log::info!("OpenCode server ready at {DEFAULT_SERVER_URL}");
+    } else {
+        log::warn!("OpenCode server did not become healthy at {DEFAULT_SERVER_URL} within timeout");
+        stop_opencode_server(&app);
+    }
+}
+
+#[cfg(not(mobile))]
+fn stop_opencode_server(app: &tauri::AppHandle) {
+    let state = app.state::<OpencodeServerState>();
+    let Ok(mut guard) = state.child.lock() else {
+        return;
+    };
+
+    let Some(mut child) = guard.take() else {
+        return;
+    };
+
+    log::info!("Stopping OpenCode server (opencode)");
+    let _ = child.kill();
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+}
 
 // ============================================
 // SSE Connection State
@@ -211,6 +377,7 @@ async fn sse_disconnect(state: State<'_, SseState>) -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .manage(SseState::default())
+        .manage(OpencodeServerState::default())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
@@ -230,9 +397,23 @@ pub fn run() {
                 window.open_devtools();
             }
 
+            #[cfg(not(mobile))]
+            {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    ensure_opencode_running(handle).await;
+                });
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![sse_connect, sse_disconnect])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|app, event| {
+            #[cfg(not(mobile))]
+            if matches!(event, tauri::RunEvent::Exit) {
+                stop_opencode_server(app);
+            }
+        });
 }
