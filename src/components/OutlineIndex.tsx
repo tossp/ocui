@@ -10,7 +10,7 @@
 
 import { memo, useMemo, useRef, useEffect, useCallback, useState } from 'react'
 import type { Message } from '../types/message'
-import { isUserMessage } from '../types/message'
+import { getMessageText, isUserMessage } from '../types/message'
 
 // ============================================
 // Types
@@ -41,6 +41,7 @@ const TICK_W_MAX = 22
 const TICK_H = 2.5
 const MARGIN_MIN = 4
 const MARGIN_MAX = 14
+const OUTLINE_TITLE_MAX = 80
 
 // ============================================
 // Data extraction (同 ChatArea 的过滤逻辑)
@@ -72,17 +73,41 @@ function messageHasContent(msg: Message): boolean {
   })
 }
 
+function normalizeTitle(value?: string): string | null {
+  const title = value?.trim()
+  return title ? title : null
+}
+
+function extractFallbackTitleFromUserInput(msg: Message): string | null {
+  if (!isUserMessage(msg.info)) return null
+
+  const userText = getMessageText(msg).trim()
+  if (!userText) return null
+
+  const firstNonEmptyLine = userText
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .find(Boolean)
+
+  return firstNonEmptyLine || userText
+}
+
 function extractOutlineEntries(messages: Message[]): OutlineEntry[] {
   const entries: OutlineEntry[] = []
   const visible = messages.filter(messageHasContent)
   for (let i = 0; i < visible.length; i++) {
     const msg = visible[i]
-    if (isUserMessage(msg.info) && msg.info.summary?.title) {
-      entries.push({
-        title: msg.info.summary.title,
-        messageId: msg.info.id,
-      })
-    }
+    if (!isUserMessage(msg.info)) continue
+
+    const summaryTitle = normalizeTitle(msg.info.summary?.title)
+    const fallbackTitle = extractFallbackTitleFromUserInput(msg)
+    const title = summaryTitle ?? fallbackTitle
+    if (!title) continue
+
+    entries.push({
+      title: truncate(title, OUTLINE_TITLE_MAX),
+      messageId: msg.info.id,
+    })
   }
   return entries
 }
