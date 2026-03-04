@@ -132,7 +132,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
       </tbody>
     ),
     tr: ({ children }: any) => (
-      <tr className="hover:bg-bg-50/50 transition-colors even:bg-bg-50/30">{children}</tr>
+      <tr className="hover:bg-bg-200/30 transition-colors even:bg-bg-200/15">{children}</tr>
     ),
     td: ({ children }: any) => (
       <td className="px-4 py-2.5 text-text-300 leading-relaxed">{children}</td>

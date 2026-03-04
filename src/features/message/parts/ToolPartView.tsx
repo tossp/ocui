@@ -62,14 +62,14 @@ export const ToolPartView = memo(function ToolPartView({ part, isFirst = false, 
     return (
       <div className="group relative grid grid-cols-[14px_minmax(0,1fr)] gap-x-1.5 items-start py-1">
         {/* Icon column — fixed, outside of interactive area */}
-        <span className="inline-flex h-[34px] w-[14px] items-center justify-center shrink-0">
+        <span className="inline-flex h-9 w-[14px] items-center justify-center shrink-0">
           {toolIcon}
         </span>
 
         {/* Content column */}
         <div className="min-w-0">
           <button
-            className="flex items-center gap-2 w-full h-[34px] text-left px-2 -ml-2 hover:bg-bg-200/40 rounded-lg transition-colors group/header"
+            className="flex items-center gap-2 w-full h-9 text-left px-2 hover:bg-bg-200/40 rounded-lg transition-colors group/header"
             onClick={() => setExpanded(!expanded)}
           >
             <div className="flex items-baseline gap-2 overflow-hidden flex-1 min-w-0">
@@ -113,11 +113,11 @@ export const ToolPartView = memo(function ToolPartView({ part, isFirst = false, 
             expanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
           }`}>
             <div className="overflow-hidden">
-              {shouldRenderBody && (
-                <div className="pr-2.5 pb-2 pt-1">
-                  <ToolBody part={part} />
-                </div>
-              )}
+            {shouldRenderBody && (
+              <div className="pl-2 pr-2.5 pb-2 pt-1">
+                <ToolBody part={part} />
+              </div>
+            )}
             </div>
           </div>
         </div>
@@ -197,7 +197,7 @@ export const ToolPartView = memo(function ToolPartView({ part, isFirst = false, 
         }`}>
           <div className="overflow-hidden">
             {shouldRenderBody && (
-              <div className="pl-2.5 pr-2.5 pb-2 pt-1">
+                <div className="pl-2 pr-2.5 pb-2 pt-1">
                 <ToolBody part={part} />
               </div>
             )}

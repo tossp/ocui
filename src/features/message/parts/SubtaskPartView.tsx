@@ -41,7 +41,7 @@ export const SubtaskPartView = memo(function SubtaskPartView({ part }: SubtaskPa
   }
 
   return (
-    <div className="my-2 rounded-xl border border-border-200/60 bg-bg-100/50 overflow-hidden">
+    <div className="rounded-xl border border-border-200/60 bg-bg-100/50 overflow-hidden">
       {/* Header */}
       <div 
         className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-bg-200/30 transition-colors"

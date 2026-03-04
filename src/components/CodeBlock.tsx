@@ -69,7 +69,7 @@ export const CodeBlock = memo(function CodeBlock({
   return (
     <div 
       ref={ref}
-      className={`rounded-lg overflow-hidden border border-border-200/50 bg-bg-300 w-full max-w-full flex flex-col my-2 ${className}`} 
+      className={`rounded-lg overflow-hidden border border-border-200/50 bg-bg-300 w-full max-w-full flex flex-col ${className}`} 
       style={style}
     >
       {/* Header with Language and Copy */}

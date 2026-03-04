@@ -287,8 +287,6 @@ const AssistantMessageView = memo(function AssistantMessageView({ message, turnD
   
   return (
     <div className="flex flex-col gap-2 w-full group">
-
-
       {renderItems.map((item: RenderItem, idx: number) => {
         // 耗时只在最后一个含 stepFinish 的 item 上显示
         const isLastStepFinish = idx === renderItems.findLastIndex(
@@ -421,12 +419,12 @@ const ToolGroup = memo(function ToolGroup({ parts, stepFinish, duration, turnDur
     <div className="flex flex-col">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex items-start gap-1.5 py-1.5 text-text-400 text-sm hover:text-text-200 rounded-md transition-colors w-fit"
+        className="flex items-center gap-1.5 py-1.5 text-text-400 text-sm hover:text-text-200 hover:bg-bg-200/30 rounded-md transition-colors"
       >
-        <span className="inline-flex h-5 w-[14px] items-start justify-center pt-[2px] shrink-0">
+        <span className="inline-flex w-[14px] items-center justify-center shrink-0">
           {expanded ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}
         </span>
-        <span className="inline-flex h-5 items-baseline gap-2 whitespace-nowrap">
+        <span className="inline-flex items-baseline gap-2 whitespace-nowrap">
           <span className="text-[13px] font-medium leading-tight">
             {isAllDone ? `${totalCount} steps` : `${doneCount}/${totalCount} steps`}
           </span>

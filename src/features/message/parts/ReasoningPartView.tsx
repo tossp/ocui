@@ -119,7 +119,7 @@ export const ReasoningPartView = memo(function ReasoningPartView({ part, isStrea
                   type="button"
                   onClick={() => setExpanded(!expanded)}
                   aria-expanded={expanded}
-                  className="group w-full m-0 p-0 border-0 bg-transparent grid grid-cols-[minmax(0,1fr)_12px] items-start gap-x-2 text-left cursor-pointer text-text-400 hover:text-text-200"
+                  className="group w-full m-0 p-0 px-2 border-0 bg-transparent grid grid-cols-[minmax(0,1fr)_12px] items-start gap-x-2 text-left cursor-pointer text-text-400 hover:text-text-200"
                 >
                   <div ref={summaryContainerRef} className="min-w-0 flex-1 relative overflow-hidden">
                     <span className={`block min-w-0 italic ${
@@ -147,7 +147,7 @@ export const ReasoningPartView = memo(function ReasoningPartView({ part, isStrea
                 }`}>
                   <div className="overflow-hidden">
                     {shouldRenderBody && (
-                      <div className="pt-0.5 text-[12px] leading-6 italic text-text-300 whitespace-pre-wrap break-words overflow-x-hidden">
+                      <div className="pl-2 pt-0.5 text-[12px] leading-6 italic text-text-300 whitespace-pre-wrap break-words overflow-x-hidden">
                         {displayText}
                       </div>
                     )}
@@ -155,7 +155,7 @@ export const ReasoningPartView = memo(function ReasoningPartView({ part, isStrea
                 </div>
               </>
             ) : (
-              <div className="grid grid-cols-[minmax(0,1fr)_12px] items-start gap-x-2 text-text-400">
+              <div className="grid grid-cols-[minmax(0,1fr)_12px] items-start gap-x-2 px-2 text-text-400">
                 <div ref={summaryContainerRef} className="min-w-0 flex-1 relative overflow-hidden">
                   <span className="block min-w-0 text-[12px] leading-5 italic text-text-300 whitespace-pre-wrap break-words">
                     {displayText}
@@ -183,7 +183,7 @@ export const ReasoningPartView = memo(function ReasoningPartView({ part, isStrea
 
   return (
     <div className={`border border-border-300/20 rounded-xl overflow-hidden transition-all duration-300 ease-out -ml-3 ${
-      expanded ? 'w-[calc(100%+1.5rem)]' : 'w-[260px]'
+      expanded ? 'w-[calc(100%+0.75rem)]' : 'w-[260px]'
     }`}>
       <button
         onClick={() => setExpanded(!expanded)}
@@ -202,13 +202,7 @@ export const ReasoningPartView = memo(function ReasoningPartView({ part, isStrea
         <span className="text-xs font-medium leading-5 whitespace-nowrap">
           {isPartStreaming ? 'Thinking...' : 'Thinking'}
         </span>
-        {isPartStreaming && (
-          <span className="flex items-center gap-0.5 ml-1 mt-[6px]">
-            <span className="w-1 h-1 bg-text-400 rounded-full animate-bounce [animation-delay:-0.3s]" />
-            <span className="w-1 h-1 bg-text-400 rounded-full animate-bounce [animation-delay:-0.15s]" />
-            <span className="w-1 h-1 bg-text-400 rounded-full animate-bounce" />
-          </span>
-        )}
+
         <span className={`ml-auto inline-flex h-5 items-center transition-transform duration-300 ${expanded ? 'rotate-180' : ''}`}>
           <ChevronDownIcon size={12} />
         </span>

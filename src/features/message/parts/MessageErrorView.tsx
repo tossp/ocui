@@ -43,7 +43,7 @@ export const MessageErrorView = memo(function MessageErrorView({ error }: Messag
   }, [details])
 
   return (
-    <div className={`my-2 px-3 py-2 rounded-lg border ${borderClass} bg-bg-100/50`}>
+    <div className={`px-3 py-2 rounded-lg border ${borderClass} bg-bg-100/50`}>
       <div
         className={`flex items-center gap-2 ${hasDetails ? 'cursor-pointer' : ''}`}
         onClick={() => hasDetails && setExpanded(!expanded)}
