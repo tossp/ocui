@@ -85,7 +85,7 @@ export const InputFooter = memo(function InputFooter({ sessionId, onNewChat, inp
               popoverOpen ? 'text-text-300' : ''
             }`}
           >
-            <MiniProgress size={12} progress={progress} done={isAllDone} />
+            <MiniProgress size={11} progress={progress} done={isAllDone} />
             <span className="tabular-nums shrink-0">{stats.completed}/{stats.total}</span>
             <span className="text-text-500/50 shrink-0">·</span>
             <span className="truncate max-w-[120px] sm:max-w-[200px]">{taskLabel}</span>
