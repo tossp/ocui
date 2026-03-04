@@ -44,8 +44,21 @@ export interface ModelInfo {
   outputLimit: number
   supportsReasoning: boolean
   supportsImages: boolean
+  supportsPdf: boolean
+  supportsAudio: boolean
+  supportsVideo: boolean
   supportsToolcall: boolean
   variants: string[]
+}
+
+/**
+ * 模型文件输入能力 — 决定可以附加哪些文件类型
+ */
+export interface FileCapabilities {
+  image: boolean
+  pdf: boolean
+  audio: boolean
+  video: boolean
 }
 
 // ============================================

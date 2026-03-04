@@ -1,11 +1,11 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
-import { ChevronDownIcon, SendIcon, StopIcon, ImageIcon, AgentIcon, ThinkingIcon } from '../../../components/Icons'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { ChevronDownIcon, SendIcon, StopIcon, PaperclipIcon, AgentIcon, ThinkingIcon } from '../../../components/Icons'
 import { DropdownMenu, MenuItem, IconButton, AnimatedPresence } from '../../../components/ui'
 import { InputToolbarModelSelector } from '../ModelSelector'
 import { useIsMobile } from '../../../hooks'
 import { isTauri } from '../../../utils/tauri'
 import type { ApiAgent } from '../../../api/client'
-import type { ModelInfo } from '../../../api'
+import type { ModelInfo, FileCapabilities } from '../../../api'
 
 interface InputToolbarProps {
   agents: ApiAgent[]
@@ -16,8 +16,8 @@ interface InputToolbarProps {
   selectedVariant?: string
   onVariantChange?: (variant: string | undefined) => void
   
-  supportsImages?: boolean
-  onImageUpload: (files: FileList | null) => void
+  fileCapabilities?: FileCapabilities
+  onFileUpload: (files: FileList | null) => void
   
   isStreaming?: boolean
   onAbort?: () => void
@@ -41,8 +41,8 @@ export function InputToolbar({
   variants = [],
   selectedVariant,
   onVariantChange,
-  supportsImages = false,
-  onImageUpload,
+  fileCapabilities,
+  onFileUpload,
   isStreaming,
   onAbort,
   canSend,
@@ -54,6 +54,45 @@ export function InputToolbar({
   inputContainerRef,
 }: InputToolbarProps) {
   const isMobile = useIsMobile()
+  
+  // 根据模型能力计算支持的文件类型
+  const caps = fileCapabilities ?? { image: false, pdf: false, audio: false, video: false }
+  const supportsAnyFile = caps.image || caps.pdf || caps.audio || caps.video
+
+  // 动态构建 HTML accept 和 Tauri filter
+  const { acceptString, tauriFilters } = useMemo(() => {
+    const accept: string[] = []
+    const extensions: string[] = []
+    const filterNames: string[] = []
+
+    if (caps.image) {
+      accept.push('image/*')
+      extensions.push('png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg')
+      filterNames.push('Images')
+    }
+    if (caps.pdf) {
+      accept.push('application/pdf')
+      extensions.push('pdf')
+      filterNames.push('PDF')
+    }
+    if (caps.audio) {
+      accept.push('audio/*')
+      extensions.push('mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a')
+      filterNames.push('Audio')
+    }
+    if (caps.video) {
+      accept.push('video/*')
+      extensions.push('mp4', 'webm', 'mov', 'avi', 'mkv')
+      filterNames.push('Video')
+    }
+
+    return {
+      acceptString: accept.join(','),
+      tauriFilters: extensions.length > 0
+        ? [{ name: filterNames.join(' / '), extensions }]
+        : [],
+    }
+  }, [caps.image, caps.pdf, caps.audio, caps.video])
   // State for menus
   const [agentMenuOpen, setAgentMenuOpen] = useState(false)
   const [variantMenuOpen, setVariantMenuOpen] = useState(false)
@@ -65,16 +104,14 @@ export function InputToolbar({
   const variantMenuRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Tauri 原生文件选择器
-  const handleImageClick = useCallback(async () => {
+  // 文件选择器（Tauri 原生 / 浏览器 fallback）
+  const handleFileClick = useCallback(async () => {
     if (!isTauri()) {
-      // 浏览器模式：走 <input type="file">
       fileInputRef.current?.click()
       return
     }
 
     try {
-      // 动态导入 Tauri 插件
       const [{ open }, { readFile }] = await Promise.all([
         import('@tauri-apps/plugin-dialog'),
         import('@tauri-apps/plugin-fs'),
@@ -82,20 +119,16 @@ export function InputToolbar({
 
       const selected = await open({
         multiple: true,
-        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'] }],
+        filters: tauriFilters,
       })
 
       if (!selected || selected.length === 0) return
 
       const files: File[] = []
       for (const path of selected) {
-        const fileName = path.split(/[\\/]/).pop() || 'image'
-        const ext = fileName.split('.').pop()?.toLowerCase() || 'png'
-        const mimeMap: Record<string, string> = {
-          png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
-          gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp', svg: 'image/svg+xml',
-        }
-        const mime = mimeMap[ext] || 'image/png'
+        const fileName = path.split(/[\\/]/).pop() || 'file'
+        const ext = fileName.split('.').pop()?.toLowerCase() || ''
+        const mime = extToMime(ext)
 
         const data = await readFile(path)
         const file = new File([data], fileName, { type: mime })
@@ -103,15 +136,14 @@ export function InputToolbar({
       }
 
       if (files.length > 0) {
-        // 构造 FileList 传给 onImageUpload（保持接口一致）
         const dt = new DataTransfer()
         files.forEach(f => dt.items.add(f))
-        onImageUpload(dt.files)
+        onFileUpload(dt.files)
       }
     } catch (err) {
-      console.warn('[InputToolbar] Tauri file picker error:', err)
+      console.warn('[InputToolbar] File picker error:', err)
     }
-  }, [onImageUpload])
+  }, [onFileUpload, tauriFilters])
 
   // Click outside logic
   useEffect(() => {
@@ -221,21 +253,21 @@ export function InputToolbar({
 
       {/* Action Buttons */}
       <div className="flex items-center gap-1">
-        <AnimatedPresence show={supportsImages}>
+        <AnimatedPresence show={supportsAnyFile}>
           <>
             {/* 浏览器模式下的隐藏文件输入 */}
             {!isTauri() && (
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*"
+                accept={acceptString}
                 multiple
                 className="hidden"
-                onChange={(e) => onImageUpload(e.target.files)}
+                onChange={(e) => onFileUpload(e.target.files)}
               />
             )}
-            <IconButton aria-label="Upload image" onClick={handleImageClick}>
-              <ImageIcon />
+            <IconButton aria-label="Attach file" onClick={handleFileClick}>
+              <PaperclipIcon />
             </IconButton>
           </>
         </AnimatedPresence>
@@ -251,4 +283,22 @@ export function InputToolbar({
       </div>
     </div>
   )
+}
+
+/** 扩展名 → MIME 映射（Tauri 读取的文件需要手动指定） */
+function extToMime(ext: string): string {
+  const map: Record<string, string> = {
+    // image
+    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+    gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp', svg: 'image/svg+xml',
+    // pdf
+    pdf: 'application/pdf',
+    // audio
+    mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg',
+    flac: 'audio/flac', aac: 'audio/aac', m4a: 'audio/mp4',
+    // video
+    mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime',
+    avi: 'video/x-msvideo', mkv: 'video/x-matroska',
+  }
+  return map[ext] || 'application/octet-stream'
 }

@@ -109,6 +109,7 @@ export type {
 
 export type {
   ModelInfo,
+  FileCapabilities,
   Attachment,
   AttachmentType,
 } from '../types/ui'

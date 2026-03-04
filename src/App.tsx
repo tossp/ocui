@@ -600,7 +600,12 @@ function App() {
                 variants={currentModel?.variants ?? []}
                 selectedVariant={selectedVariant}
                 onVariantChange={handleVariantChange}
-                supportsImages={currentModel?.supportsImages ?? false}
+                fileCapabilities={currentModel ? {
+                  image: currentModel.supportsImages,
+                  pdf: currentModel.supportsPdf,
+                  audio: currentModel.supportsAudio,
+                  video: currentModel.supportsVideo,
+                } : undefined}
                 models={models}
                 selectedModelKey={selectedModelKey}
                 onModelChange={handleModelChange}

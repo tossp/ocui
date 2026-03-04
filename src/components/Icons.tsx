@@ -79,6 +79,7 @@ import {
   ListTodo,
   Layers,
   Minus,
+  Paperclip,
 } from 'lucide-react'
 
 export interface IconProps extends SVGProps<SVGSVGElement> {
@@ -197,3 +198,4 @@ export const GitDiffIcon = wrap(GitCompare)
 export const PermissionListIcon = wrap(ListTodo)
 export const LayersIcon = wrap(Layers)
 export const MinusIcon = wrap(Minus)
+export const PaperclipIcon = wrap(Paperclip)

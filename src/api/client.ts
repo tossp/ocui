@@ -65,6 +65,9 @@ export async function getActiveModels(directory?: string): Promise<ModelInfo[]> 
           outputLimit: model.limit.output,
           supportsReasoning: model.capabilities.reasoning,
           supportsImages: model.capabilities.input.image,
+          supportsPdf: model.capabilities.input.pdf,
+          supportsAudio: model.capabilities.input.audio,
+          supportsVideo: model.capabilities.input.video,
           supportsToolcall: model.capabilities.toolcall,
           variants,
         })
