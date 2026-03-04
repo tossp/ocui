@@ -1,6 +1,7 @@
 import { memo, useState, useRef, useEffect, useLayoutEffect } from 'react'
 import type { RefObject } from 'react'
 import { CheckIcon, ClockIcon, CircleIcon, CloseIcon } from '../../../components/Icons'
+import { CircularProgress } from '../../../components/CircularProgress'
 import { useTodos, useTodoStats, useCurrentTask, todoStore } from '../../../store'
 import { getSessionTodos } from '../../../api/session'
 import type { TodoItem } from '../../../types/api/event'
@@ -109,13 +110,13 @@ export const InputFooter = memo(function InputFooter({ sessionId, onNewChat, inp
             <div className="flex items-center gap-4">
               {/* 大进度环 */}
               <div className="relative">
-                <svg width={48} height={48} className="-rotate-90">
-                  <circle cx={24} cy={24} r={20} fill="none" stroke="currentColor" strokeWidth="3" className="text-border-200/40" />
-                  <circle cx={24} cy={24} r={20} fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"
-                    strokeDasharray={2 * Math.PI * 20} strokeDashoffset={2 * Math.PI * 20 * (1 - progress)}
-                    className={`transition-all duration-700 ease-out ${isAllDone ? 'text-accent-secondary-100' : 'text-accent-main-100'}`}
-                  />
-                </svg>
+                <CircularProgress
+                  progress={progress}
+                  size={48}
+                  strokeWidth={3}
+                  trackClassName="text-border-200/40"
+                  progressClassName={`transition-all duration-700 ease-out ${isAllDone ? 'text-accent-secondary-100' : 'text-accent-main-100'}`}
+                />
                 <span className={`absolute inset-0 flex items-center justify-center text-sm font-semibold ${
                   isAllDone ? 'text-accent-secondary-100' : 'text-text-200'
                 }`}>
@@ -203,18 +204,15 @@ function PopoverPanel({ inputContainerRef, children }: {
 // ============================================
 
 function MiniProgress({ size, progress, done }: { size: number; progress: number; done: boolean }) {
-  const r = (size - 2) / 2
-  const c = 2 * Math.PI * r
-  const offset = c * (1 - progress)
-
   return (
-    <svg width={size} height={size} className="-rotate-90 shrink-0 block">
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-500/30" />
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"
-        strokeDasharray={c} strokeDashoffset={offset}
-        className={`transition-all duration-500 ${done ? 'text-accent-secondary-100' : 'text-accent-main-100'}`}
-      />
-    </svg>
+    <CircularProgress
+      progress={progress}
+      size={size}
+      strokeWidth={1.5}
+      trackClassName="text-text-500/30"
+      progressClassName={done ? 'text-accent-secondary-100' : 'text-accent-main-100'}
+      className="shrink-0 block"
+    />
   )
 }
 

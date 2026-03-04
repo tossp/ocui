@@ -3,6 +3,7 @@ import type { SubtaskPart } from '../../../types/message'
 import { useChildSessions, type ChildSessionInfo } from '../../../store'
 import { useRouter } from '../../../hooks/useRouter'
 import { useDelayedRender } from '../../../hooks'
+import { UsersIcon, ChevronDownIcon, LayersIcon, TerminalIcon, ReturnIcon } from '../../../components/Icons'
 
 interface SubtaskPartViewProps {
   part: SubtaskPart
@@ -55,7 +56,7 @@ export const SubtaskPartView = memo(function SubtaskPartView({ part }: SubtaskPa
         
         {/* Agent icon & name */}
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          <SubagentIcon className="w-4 h-4 text-text-400 flex-shrink-0" />
+          <UsersIcon size={16} className="text-text-400 flex-shrink-0" />
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium text-text-200 truncate">
@@ -96,8 +97,8 @@ export const SubtaskPartView = memo(function SubtaskPartView({ part }: SubtaskPa
               Enter
             </button>
           )}
-          <ChevronIcon 
-            className={`w-4 h-4 text-text-400 transition-transform duration-200 ${
+          <ChevronDownIcon 
+            className={`text-text-400 transition-transform duration-200 ${
               expanded ? 'rotate-180' : ''
             }`} 
           />
@@ -122,7 +123,7 @@ export const SubtaskPartView = memo(function SubtaskPartView({ part }: SubtaskPa
               {/* Model info */}
               {part.model && (
                 <div className="flex items-center gap-2 text-[10px] text-text-500">
-                  <ModelIcon className="w-3 h-3" />
+                  <LayersIcon size={12} />
                   <span>{part.model.providerID}/{part.model.modelID}</span>
                 </div>
               )}
@@ -130,7 +131,7 @@ export const SubtaskPartView = memo(function SubtaskPartView({ part }: SubtaskPa
               {/* Command (if slash command) */}
               {part.command && (
                 <div className="flex items-center gap-2 text-[10px] text-text-500">
-                  <CommandIcon className="w-3 h-3" />
+                  <TerminalIcon size={12} />
                   <span className="font-mono">{part.command}</span>
                 </div>
               )}
@@ -142,7 +143,7 @@ export const SubtaskPartView = memo(function SubtaskPartView({ part }: SubtaskPa
                     onClick={handleEnter}
                     className="w-full flex items-center justify-center gap-2 py-2 text-xs font-medium text-accent-main-100 hover:bg-accent-main-100/10 rounded-lg transition-colors"
                   >
-                    <EnterIcon className="w-3.5 h-3.5" />
+                    <ReturnIcon size={14} />
                     View full session
                   </button>
                 </div>
@@ -176,53 +177,4 @@ function findMatchingChildSession(
   return childSessions.sort((a, b) => b.createdAt - a.createdAt)[0]
 }
 
-// ============================================
-// Icons
-// ============================================
 
-function SubagentIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-      <circle cx="9" cy="7" r="4" />
-      <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
-      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-    </svg>
-  )
-}
-
-function ChevronIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="m6 9 6 6 6-6" />
-    </svg>
-  )
-}
-
-function ModelIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 2L2 7l10 5 10-5-10-5z" />
-      <path d="M2 17l10 5 10-5" />
-      <path d="M2 12l10 5 10-5" />
-    </svg>
-  )
-}
-
-function CommandIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4 17l6-6-6-6" />
-      <path d="M12 19h8" />
-    </svg>
-  )
-}
-
-function EnterIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M9 10l-5 5 5 5" />
-      <path d="M20 4v7a4 4 0 0 1-4 4H4" />
-    </svg>
-  )
-}

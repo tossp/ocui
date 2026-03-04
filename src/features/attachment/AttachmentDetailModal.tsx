@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect, memo } from 'react'
 import { createPortal } from 'react-dom'
-import { CloseIcon, CopyIcon, CheckIcon, DownloadIcon, PlusIcon } from '../../components/Icons'
+import { CloseIcon, CopyIcon, CheckIcon, DownloadIcon, PlusIcon, MinusIcon } from '../../components/Icons'
 import { getAttachmentIcon } from './utils'
 import { clipboardErrorHandler } from '../../utils'
 import { saveData } from '../../utils/downloadUtils'
@@ -546,15 +546,6 @@ function ToolButton({
     >
       {children}
     </button>
-  )
-}
-
-// MinusIcon（项目里没有，内联）
-function MinusIcon({ size = 16 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
-      <line x1="5" y1="12" x2="19" y2="12" />
-    </svg>
   )
 }
 

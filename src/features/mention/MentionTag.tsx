@@ -172,6 +172,7 @@ export function createMentionElement(item: MentionItem): { element: HTMLSpanElem
     
     navigator.clipboard.writeText(item.value).then(() => {
       // 显示复制成功（添加 ✓ 图标）
+      // NOTE: 此处使用字符串拼接的内联 SVG，因为是原始 DOM 操作（innerHTML），无法使用 React 组件
       const originalContent = span.innerHTML
       const checkIcon = '<svg class="w-3 h-3 inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>'
       span.innerHTML = `${checkIcon}<span>${label}</span>`

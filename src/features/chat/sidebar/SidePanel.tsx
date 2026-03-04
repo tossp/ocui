@@ -19,6 +19,7 @@ import {
   MinimizeIcon,
   ShareIcon,
 } from '../../../components/Icons'
+import { CircularProgress } from '../../../components/CircularProgress'
 import { useDirectory, useSessionStats, formatTokens, formatCost, useKeybindingLabel } from '../../../hooks'
 import type { ThemeMode } from '../../../hooks'
 import { useSessionContext } from '../../../contexts/SessionContext'
@@ -854,11 +855,7 @@ function StatusIndicator({
   connectionState: string
   size?: number 
 }) {
-  const strokeWidth = 3 // 加粗
-  const radius = (size - strokeWidth) / 2
-  const circumference = 2 * Math.PI * radius
   const clampedPercent = Math.min(Math.max(percent, 0), 100)
-  const offset = circumference - (clampedPercent / 100) * circumference
   
   // 进度颜色
   const progressColor = clampedPercent === 0 ? 'text-text-500' :
@@ -874,36 +871,13 @@ function StatusIndicator({
 
   return (
     <div className="relative shrink-0" style={{ width: size, height: size }}>
-      <svg 
-        className="-rotate-90" 
-        width={size} 
-        height={size} 
-        viewBox={`0 0 ${size} ${size}`}
-      >
-        {/* 背景轨道 - 确保和进度条一样粗 */}
-        <circle
-          className="text-bg-300"
-          strokeWidth={strokeWidth}
-          stroke="currentColor"
-          fill="transparent"
-          r={radius}
-          cx={size / 2}
-          cy={size / 2}
-        />
-        {/* 进度弧 */}
-        <circle
-          className={`${progressColor} transition-all duration-500 ease-out`}
-          strokeWidth={strokeWidth}
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          strokeLinecap="round"
-          stroke="currentColor"
-          fill="transparent"
-          r={radius}
-          cx={size / 2}
-          cy={size / 2}
-        />
-      </svg>
+      <CircularProgress
+        progress={clampedPercent / 100}
+        size={size}
+        strokeWidth={3}
+        trackClassName="text-bg-300"
+        progressClassName={progressColor}
+      />
       
       {/* 右下角状态点 - 带背景边框以突出显示 */}
       <div 
