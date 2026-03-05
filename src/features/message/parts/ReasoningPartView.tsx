@@ -182,42 +182,41 @@ export const ReasoningPartView = memo(function ReasoningPartView({ part, isStrea
   }
 
   return (
-    <div className={`border border-border-300/20 rounded-xl overflow-hidden transition-all duration-300 ease-out -ml-3 ${
-      expanded ? 'w-[calc(100%+0.75rem)]' : 'w-[260px]'
+    <div className={`ring-1 ring-inset ring-border-300/20 rounded-xl overflow-hidden transition-all duration-300 ease-out ${
+      expanded ? 'w-full' : 'w-[260px]'
     }`}>
       <button
         onClick={() => setExpanded(!expanded)}
-        disabled={!hasContent && !isPartStreaming} // 没内容且没流式时禁用点击（其实这种情况下组件都不渲染了）
-        className={`w-full flex items-start gap-1.5 pl-3 pr-3 py-2 text-text-400 hover:bg-bg-200/50 transition-colors ${
+        disabled={!hasContent && !isPartStreaming}
+        className={`w-full grid grid-cols-[auto_minmax(0,1fr)_12px] items-center gap-x-1.5 px-2 py-2 text-text-400 hover:bg-bg-200/50 transition-colors ${
           !hasContent ? 'cursor-default' : ''
         }`}
       >
-        <span className="inline-flex h-5 w-[14px] -ml-px items-start justify-center pt-[2px] shrink-0">
+        <span className="inline-flex w-[14px] items-center justify-center shrink-0">
           {isPartStreaming ? (
             <SpinnerIcon className="animate-spin shrink-0" size={14} />
           ) : (
             <LightbulbIcon className="shrink-0" size={14} />
           )}
         </span>
-        <span className="text-xs font-medium leading-5 whitespace-nowrap">
+        <span className="text-xs font-medium leading-5 whitespace-nowrap text-left">
           {isPartStreaming ? 'Thinking...' : 'Thinking'}
         </span>
-
-        <span className={`ml-auto inline-flex h-5 items-center transition-transform duration-300 ${expanded ? 'rotate-180' : ''}`}>
+        <span className={`inline-flex h-5 w-3 items-center justify-center shrink-0 transition-transform duration-300 ${expanded ? 'rotate-180' : ''}`}>
           <ChevronDownIcon size={12} />
         </span>
       </button>
-      
-        <div className={`grid transition-[grid-template-rows] duration-300 ease-out ${
-          expanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
-        }`}>
-          <div className="overflow-hidden">
-            {shouldRenderBody && (
-              <ScrollArea ref={scrollAreaRef} maxHeight={192} className="border-t border-border-300/20 bg-bg-200/30">
-                <div className="pl-4 pr-3 py-2 text-text-300 text-xs font-mono whitespace-pre-wrap break-words overflow-x-hidden">
-                  {displayText}
-                </div>
-              </ScrollArea>
+
+      <div className={`grid transition-[grid-template-rows] duration-300 ease-out ${
+        expanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
+      }`}>
+        <div className="overflow-hidden">
+          {shouldRenderBody && (
+            <ScrollArea ref={scrollAreaRef} maxHeight={192} className="border-t border-border-300/20 bg-bg-200/30">
+              <div className="px-2 py-2 text-text-300 text-xs font-mono whitespace-pre-wrap break-words overflow-x-hidden">
+                {displayText}
+              </div>
+            </ScrollArea>
           )}
         </div>
       </div>
