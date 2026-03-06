@@ -64,9 +64,7 @@ services:
     volumes:
       - ${WORKSPACE:-./workspace}:/workspace
       - opencode-home:/root
-      - ./docker/backend-entrypoint.sh:/usr/local/bin/backend-entrypoint.sh:ro
     working_dir: /workspace
-    entrypoint: ["/bin/sh", "/usr/local/bin/backend-entrypoint.sh"]
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
@@ -77,10 +75,6 @@ services:
       - XAI_API_KEY=${XAI_API_KEY:-}
       - OPENCODE_SERVER_PASSWORD=${OPENCODE_SERVER_PASSWORD:-}
       - OPENCODE_SERVER_USERNAME=${OPENCODE_SERVER_USERNAME:-opencode}
-      - MISE_DATA_DIR=/root/.local/share/mise
-      - MISE_CONFIG_DIR=/root/.config/mise
-      - MISE_STATE_DIR=/root/.local/state/mise
-      - PATH=/root/.local/bin:/root/.cargo/bin:/root/.local/share/mise/shims:/root/.local/share/mise/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     networks:
       - opencode-net
 

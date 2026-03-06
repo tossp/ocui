@@ -37,8 +37,9 @@ FROM caddy:2-alpine
 # 前端静态文件
 COPY --from=builder /app/dist /srv
 
-# Caddy 配置
+# Caddy 配置（默认 + standalone）
 COPY docker/Caddyfile /etc/caddy/Caddyfile
+COPY docker/Caddyfile.standalone /etc/caddy/Caddyfile.standalone
 
 EXPOSE 3000
 

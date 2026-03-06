@@ -57,4 +57,8 @@ ensure_opencode() {
 ensure_mise
 ensure_opencode
 
-exec opencode serve --port 4096 --hostname 0.0.0.0
+if [ "$#" -eq 0 ]; then
+  set -- opencode serve --port 4096 --hostname 0.0.0.0
+fi
+
+exec "$@"

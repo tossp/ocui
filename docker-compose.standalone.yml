@@ -17,10 +17,9 @@ services:
     restart: unless-stopped
     ports:
       - "${PORT:-3000}:3000"
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile.standalone"]
     environment:
       - BACKEND_URL=${BACKEND_URL:-host.docker.internal:4096}
-    volumes:
-      - ./docker/Caddyfile.standalone:/etc/caddy/Caddyfile:ro
     # Linux 需要 host.docker.internal 支持
     extra_hosts:
       - "host.docker.internal:host-gateway"

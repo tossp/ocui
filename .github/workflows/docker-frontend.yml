@@ -13,6 +13,7 @@ on:
       - 'tsconfig*.json'
       - 'docker/Dockerfile.frontend'
       - 'docker/Caddyfile'
+      - 'docker/Caddyfile.standalone'
   workflow_dispatch:
 
 env:
