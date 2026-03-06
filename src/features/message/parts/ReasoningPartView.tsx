@@ -6,6 +6,9 @@ import { useTheme } from '../../../hooks/useTheme'
 import { useSmoothStream } from '../../../hooks/useSmoothStream'
 import type { ReasoningPart } from '../../../types/message'
 
+// italic 默认不显示前导图标；如果后续要恢复，只改这里。
+const ITALIC_SHOW_LEADING_GLYPH = false
+
 interface ReasoningPartViewProps {
   part: ReasoningPart
   isStreaming?: boolean
@@ -100,79 +103,87 @@ export const ReasoningPartView = memo(function ReasoningPartView({ part, isStrea
       : thoughtDurationLabel
         ? `Thought for ${thoughtDurationLabel}`
         : 'Thought process'
-
-    return (
-      <div className="py-1">
-        <div className="grid grid-cols-[14px_minmax(0,1fr)] gap-x-1.5 items-start">
-          <span className="inline-flex h-5 w-[14px] items-start justify-center pt-[2px] text-text-500">
-            {isPartStreaming ? (
-              <SpinnerIcon className="animate-spin" size={14} />
-            ) : (
-              <LightbulbIcon size={14} />
-            )}
+    const summaryClassName = expanded
+      ? isPartStreaming
+        ? 'text-[12px] leading-5 text-text-200'
+        : 'text-[12px] leading-5 text-text-500/80'
+      : isPartStreaming
+        ? 'text-[12px] leading-5 text-text-200 whitespace-nowrap overflow-hidden text-ellipsis'
+        : 'text-[12px] leading-5 text-text-300 whitespace-nowrap overflow-hidden text-ellipsis'
+    const bodyClassName = 'text-text-300'
+    const content = shouldUseToggle ? (
+      <>
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          aria-expanded={expanded}
+          className="group/reasoning flex w-full min-w-0 items-start gap-2 m-0 border-0 bg-transparent p-0 pr-2 text-left cursor-pointer text-text-400 hover:text-text-200"
+        >
+          <div ref={summaryContainerRef} className="relative min-w-0 flex-1 overflow-hidden">
+            <span className="relative inline-block min-w-0 max-w-full align-top">
+              <span className={`block min-w-0 italic ${summaryClassName}`}>
+                {expanded ? expandedMetaText : summaryText}
+              </span>
+              {isPartStreaming && <span aria-hidden="true" className="reasoning-breath-bar" />}
+            </span>
+            <span
+              ref={summaryMeasureRef}
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 invisible whitespace-nowrap text-[12px] leading-5 italic"
+            >
+              {summaryText}
+            </span>
+          </div>
+          <span className={`inline-flex h-5 w-3 items-center justify-center shrink-0 text-text-500 group-hover/reasoning:text-text-300 transition-[transform,color] duration-200 ${expanded ? 'rotate-180' : ''}`}>
+            <ChevronDownIcon size={12} />
           </span>
+        </button>
 
-          <div className="min-w-0">
-            {shouldUseToggle ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setExpanded(!expanded)}
-                  aria-expanded={expanded}
-                  className="group w-full m-0 p-0 px-2 border-0 bg-transparent grid grid-cols-[minmax(0,1fr)_12px] items-start gap-x-2 text-left cursor-pointer text-text-400 hover:text-text-200"
-                >
-                  <div ref={summaryContainerRef} className="min-w-0 flex-1 relative overflow-hidden">
-                    <span className={`block min-w-0 italic ${
-                      expanded
-                        ? 'text-[12px] leading-5 text-text-500/80'
-                        : 'text-[12px] leading-5 text-text-300 whitespace-nowrap overflow-hidden text-ellipsis'
-                    }`}>
-                      {expanded ? expandedMetaText : summaryText}
-                    </span>
-                    <span
-                      ref={summaryMeasureRef}
-                      aria-hidden="true"
-                      className="pointer-events-none absolute inset-0 invisible whitespace-nowrap text-[12px] leading-5 italic"
-                    >
-                      {summaryText}
-                    </span>
-                  </div>
-                  <span className={`inline-flex h-5 w-3 items-center justify-center shrink-0 text-text-500/60 group-hover:text-text-300 transition-[transform,color] duration-200 ${expanded ? 'rotate-180' : ''}`}>
-                    <ChevronDownIcon size={12} />
-                  </span>
-                </button>
-
-                <div className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${
-                  expanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-75'
-                }`}>
-                  <div className="overflow-hidden">
-                    {shouldRenderBody && (
-                      <div className="pl-2 pt-0.5 text-[12px] leading-6 italic text-text-300 whitespace-pre-wrap break-words overflow-x-hidden">
-                        {displayText}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </>
-            ) : (
-              <div className="grid grid-cols-[minmax(0,1fr)_12px] items-start gap-x-2 px-2 text-text-400">
-                <div ref={summaryContainerRef} className="min-w-0 flex-1 relative overflow-hidden">
-                  <span className="block min-w-0 text-[12px] leading-5 italic text-text-300 whitespace-pre-wrap break-words">
-                    {displayText}
-                  </span>
-                  <span
-                    ref={summaryMeasureRef}
-                    aria-hidden="true"
-                    className="pointer-events-none absolute inset-0 invisible whitespace-nowrap text-[12px] leading-5 italic"
-                  >
-                    {summaryText}
-                  </span>
-                </div>
-                <span className="inline-flex h-5 w-3 items-center justify-center shrink-0" aria-hidden="true" />
+        <div className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${
+          expanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-75'
+        }`}>
+          <div className="overflow-hidden">
+            {shouldRenderBody && (
+              <div
+                className={`pt-0.5 pr-7 text-[12px] leading-6 italic whitespace-pre-wrap break-words overflow-x-hidden ${bodyClassName}`}
+              >
+                {displayText}
               </div>
             )}
           </div>
         </div>
+      </>
+    ) : (
+      <div ref={summaryContainerRef} className="relative min-w-0 overflow-hidden">
+        <span
+          className={`block min-w-0 text-[12px] leading-5 italic whitespace-pre-wrap break-words ${bodyClassName}`}
+        >
+          {displayText}
+        </span>
+        <span
+          ref={summaryMeasureRef}
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 invisible whitespace-nowrap text-[12px] leading-5 italic"
+        >
+          {summaryText}
+        </span>
+      </div>
+    )
+
+    return (
+      <div className="py-1">
+        {ITALIC_SHOW_LEADING_GLYPH ? (
+          <div className="grid grid-cols-[14px_minmax(0,1fr)] gap-x-1.5 items-start">
+            <span className="inline-flex h-5 w-[14px] items-start justify-center pt-[2px] text-text-500">
+              {isPartStreaming ? (
+                <SpinnerIcon className="animate-spin" size={14} />
+              ) : (
+                <LightbulbIcon size={14} />
+              )}
+            </span>
+            <div className="min-w-0">{content}</div>
+          </div>
+        ) : content}
 
         <span className="sr-only" role="status" aria-live="polite">
           {summaryText}

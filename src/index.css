@@ -736,6 +736,55 @@ textarea.custom-scrollbar::-webkit-scrollbar-thumb {
   animation: breathe 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
+@keyframes reasoning-breath-bar {
+  0%, 100% {
+    opacity: 0.28;
+    transform: scaleX(0.94);
+    background-position: 0% 50%;
+  }
+  50% {
+    opacity: 0.82;
+    transform: scaleX(1);
+    background-position: 100% 50%;
+  }
+}
+
+.reasoning-breath-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 1px;
+  width: auto;
+  height: 1px;
+  border-radius: 9999px;
+  pointer-events: none;
+  transform-origin: center;
+  background: linear-gradient(
+    90deg,
+    hsl(var(--text-200) / 0),
+    hsl(var(--text-200) / 0.28) 18%,
+    hsl(var(--text-200) / 0.78) 35%,
+    hsl(var(--text-100) / 0.96) 50%,
+    hsl(var(--text-200) / 0.78) 65%,
+    hsl(var(--text-200) / 0.28) 82%,
+    hsl(var(--text-200) / 0)
+  );
+  background-size: 160% 100%;
+  box-shadow:
+    0 0 6px hsl(var(--text-200) / 0.1),
+    0 0 14px hsl(var(--text-200) / 0.04);
+  animation: reasoning-breath-bar 2.6s cubic-bezier(0.42, 0, 0.28, 1) infinite;
+  will-change: transform, opacity, background-position;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reasoning-breath-bar {
+    animation: none !important;
+    opacity: 0.6;
+    transform: none;
+  }
+}
+
 /* ============================================
  * Mention tag styles
  * ============================================ */
