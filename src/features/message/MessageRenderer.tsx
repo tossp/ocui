@@ -1,4 +1,4 @@
-import { memo, useState, useRef, useEffect, useMemo } from 'react'
+import { memo, useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react'
 import { ChevronDownIcon, ChevronRightIcon, UndoIcon } from '../../components/Icons'
 import { CopyButton } from '../../components/ui'
 import { useDelayedRender } from '../../hooks'
@@ -55,77 +55,91 @@ export const MessageRenderer = memo(function MessageRenderer({ message, turnDura
 // Collapsible User Text
 // ============================================
 
-/** 折叠阈值：超过此高度(px)时才折叠，大约 8 行 */
-const COLLAPSE_HEIGHT_THRESHOLD = 184
+/** 默认预览 8 行 */
+const COLLAPSE_PREVIEW_LINES = 8
+
 /**
- * 文本长度快速预判阈值：超过此字符数的文本"可能"超高，
- * 初始渲染时先用 CSS 裁剪（避免 virtuoso remount 时全文闪现）。
- * 值取保守偏小——宁可多裁一次再放开，也不要闪。
- * 大约 8 行 × 80 字符 ≈ 640，取 500 留余量。
+ * react-virtuoso 滚动时会卸载/重挂载 item，组件内 state 不足以保留折叠状态。
+ * 这里缓存两件事：这条消息是否真的溢出，以及用户是否手动展开过。
  */
-const TEXT_LENGTH_LIKELY_TALL = 500
+const overflowStateCache = new Map<string, boolean>()
+const expandedMessages = new Set<string>()
 
-const CollapsibleUserText = memo(function CollapsibleUserText({ text, collapseEnabled }: { text: string; collapseEnabled: boolean }) {
+const CollapsibleUserText = memo(function CollapsibleUserText({
+  text,
+  collapseEnabled,
+  messageId,
+}: {
+  text: string
+  collapseEnabled: boolean
+  messageId: string
+}) {
   const contentRef = useRef<HTMLParagraphElement>(null)
-  const [expanded, setExpanded] = useState(false)
-  // null = 还没测量过；true/false = 测量结论
-  // 用 lazy initializer：文本够长就假定需要折叠，首帧即裁剪
-  const [needsCollapse, setNeedsCollapse] = useState<boolean | null>(
-    () => collapseEnabled && text.length > TEXT_LENGTH_LIKELY_TALL ? true : null
-  )
+  const [expanded, setExpanded] = useState(() => expandedMessages.has(messageId))
+  const [isOverflow, setIsOverflow] = useState(() => overflowStateCache.get(messageId) ?? false)
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = contentRef.current
-    if (!el || !collapseEnabled) {
-      setNeedsCollapse(false)
-      return
-    }
+    if (!el) return
+
+    let disposed = false
     const measure = () => {
-      setNeedsCollapse(el.scrollHeight > COLLAPSE_HEIGHT_THRESHOLD)
+      if (disposed) return
+      const lineHeight = Number.parseFloat(window.getComputedStyle(el).lineHeight)
+      if (!Number.isFinite(lineHeight) || lineHeight <= 0) return
+      const collapsedHeight = lineHeight * COLLAPSE_PREVIEW_LINES
+      const next = el.scrollHeight > collapsedHeight + 1
+      overflowStateCache.set(messageId, next)
+      setIsOverflow(prev => (prev === next ? prev : next))
     }
+
     measure()
-    // 字体加载后可能改变高度
+    const resizeObserver = new ResizeObserver(measure)
+    resizeObserver.observe(el)
     document.fonts?.ready?.then(measure)
-  }, [text, collapseEnabled])
 
-  // 不需要折叠（短文本，或功能关闭）
-  if (needsCollapse === false || !collapseEnabled) {
-    return (
-      <div className="px-4 py-2.5 bg-bg-300 rounded-2xl max-w-full">
-        <p ref={contentRef} className="whitespace-pre-wrap break-words text-sm text-text-100 leading-relaxed">
-          {text}
-        </p>
-      </div>
-    )
-  }
+    return () => {
+      disposed = true
+      resizeObserver.disconnect()
+    }
+  }, [text, messageId])
 
-  // needsCollapse === true 或 null（还没测量，但文本短所以不预裁剪）
-  // null 只在文本 <= TEXT_LENGTH_LIKELY_TALL 时出现，这种短文本即使全文显示也不会闪
-  const isCollapsed = !expanded
+  const showCollapse = collapseEnabled && isOverflow
+  const isCollapsed = collapseEnabled && !expanded
 
   return (
     <div className="px-4 py-2.5 bg-bg-300 rounded-2xl max-w-full">
       <div className="relative">
         <p
           ref={contentRef}
-          className="whitespace-pre-wrap break-words text-sm text-text-100 leading-relaxed overflow-hidden"
-          style={{ maxHeight: isCollapsed ? `${COLLAPSE_HEIGHT_THRESHOLD}px` : undefined }}
+          className={`m-0 whitespace-pre-wrap break-words text-sm text-text-100 leading-relaxed${
+            isCollapsed ? ' overflow-hidden' : ''
+          }`}
+          style={isCollapsed ? { maxHeight: `${COLLAPSE_PREVIEW_LINES}lh` } : undefined}
         >
           {text}
         </p>
         {/* 底部渐变遮罩 */}
-        <div
-          className={`absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-bg-300 to-transparent pointer-events-none transition-opacity duration-200 ${
-            isCollapsed ? 'opacity-100' : 'opacity-0 pointer-events-none'
-          }`}
-        />
+        {showCollapse && isCollapsed && (
+          <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-bg-300 to-transparent pointer-events-none" />
+        )}
       </div>
-      <button
-        onClick={() => setExpanded(prev => !prev)}
-        className="mt-1 text-xs text-text-400 hover:text-text-200 transition-colors"
-      >
-        {expanded ? 'Show less' : 'Show more'}
-      </button>
+      {showCollapse && (
+        <button
+          onClick={() => {
+            setExpanded(prev => {
+              const next = !prev
+              if (next) expandedMessages.add(messageId)
+              else expandedMessages.delete(messageId)
+              return next
+            })
+          }}
+          className="mt-1 text-xs text-text-400 hover:text-text-200 transition-colors"
+          aria-expanded={expanded}
+        >
+          {expanded ? 'Show less' : 'Show more'}
+        </button>
+      )}
     </div>
   )
 })
@@ -160,7 +174,7 @@ const UserMessageView = memo(function UserMessageView({ message, onUndo, canUndo
       <div className="flex flex-col gap-1 items-end w-full">
         {/* 消息文本 */}
         {messageText && (
-          <CollapsibleUserText text={messageText} collapseEnabled={collapseUserMessages} />
+          <CollapsibleUserText text={messageText} collapseEnabled={collapseUserMessages} messageId={info.id} />
         )}
         
         {/* 用户附件 */}
