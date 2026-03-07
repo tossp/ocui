@@ -1,5 +1,19 @@
 # Changelog
 
+## [v0.1.1] - 2026-03-07
+
+Patch release focused on chat input polish, session list consistency, and smoother permission handling.
+
+### Fixes
+- Restored collapsed input dock bottom spacing
+- Kept the session list in sync across directory filters and live updates
+- Returned gracefully to a new chat after deleting the currently open session
+- Aligned the todo popover with the input dock for desktop and mobile
+- Removed extra polling from permission/question flows and synced reply state immediately
+
+### Improvements
+- Preloaded `@` root listing and `/` command data when entering a session to reduce first-open lag
+
 ## [v0.1.0] - 2026-03-05
 
 First stable release of OpenCodeUI.
