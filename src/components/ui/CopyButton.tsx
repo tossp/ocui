@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { CopyIcon, CheckIcon } from '../Icons'
 import { clsx } from 'clsx'
-import { clipboardErrorHandler } from '../../utils'
+import { clipboardErrorHandler, copyTextToClipboard } from '../../utils'
 
 interface CopyButtonProps {
   text: string
@@ -28,7 +28,7 @@ export function CopyButton({ text, className, position = 'absolute', groupName }
     async (e: React.MouseEvent) => {
       e.stopPropagation() // Prevent triggering parent clicks
       try {
-        await navigator.clipboard.writeText(text)
+        await copyTextToClipboard(text)
         setCopied(true)
         // 清理之前的 timeout
         if (timeoutRef.current) {

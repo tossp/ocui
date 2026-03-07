@@ -39,7 +39,7 @@ import {
   type ModelInfo,
 } from '../api'
 import { getMessageText } from '../types/message'
-import { createErrorHandler } from '../utils'
+import { clipboardErrorHandler, copyTextToClipboard, createErrorHandler } from '../utils'
 import { serverStorage } from '../utils/perServerStorage'
 import { UNDO_SCROLL_DELAY_MS, AUTO_SCROLL_SUPPRESS_DURATION_MS, STORAGE_KEY_SELECTED_AGENT } from '../constants'
 import type { ChatAreaHandle } from '../features/chat'
@@ -571,15 +571,9 @@ export function useChatSession({ chatAreaRef, currentModel, refetchModels }: Use
     const text = getMessageText(lastAssistant)
     if (text) {
       try {
-        await navigator.clipboard.writeText(text)
-      } catch {
-        // Fallback for older browsers
-        const textArea = document.createElement('textarea')
-        textArea.value = text
-        document.body.appendChild(textArea)
-        textArea.select()
-        document.execCommand('copy')
-        document.body.removeChild(textArea)
+        await copyTextToClipboard(text)
+      } catch (err) {
+        clipboardErrorHandler('copy last response', err)
       }
     }
   }, [messages])

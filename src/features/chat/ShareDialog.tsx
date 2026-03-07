@@ -3,7 +3,7 @@ import { Dialog, Button, IconButton } from '../../components/ui'
 import { LinkIcon, CopyIcon, GlobeIcon, SpinnerIcon, CheckIcon } from '../../components/Icons'
 import { shareSession, unshareSession } from '../../api'
 import { useMessageStore, messageStore } from '../../store'
-import { apiErrorHandler } from '../../utils'
+import { apiErrorHandler, clipboardErrorHandler, copyTextToClipboard } from '../../utils'
 
 interface ShareDialogProps {
   isOpen: boolean
@@ -53,11 +53,15 @@ export function ShareDialog({ isOpen, onClose }: ShareDialogProps) {
     }
   }
 
-  const handleCopy = () => {
+  const handleCopy = async () => {
     if (shareUrl) {
-      navigator.clipboard.writeText(shareUrl)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+      try {
+        await copyTextToClipboard(shareUrl)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      } catch (err) {
+        clipboardErrorHandler('copy share link', err)
+      }
     }
   }
 

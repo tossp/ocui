@@ -4,7 +4,7 @@ import { getAttachmentIcon, hasExpandableContent } from './utils'
 import { getMaterialIconUrl } from '../../utils/materialIcons'
 import { useDelayedRender } from '../../hooks/useDelayedRender'
 import { AttachmentDetailModal } from './AttachmentDetailModal'
-import { clipboardErrorHandler } from '../../utils'
+import { clipboardErrorHandler, copyTextToClipboard } from '../../utils'
 import { saveData } from '../../utils/downloadUtils'
 import type { Attachment } from './types'
 
@@ -289,7 +289,7 @@ function ActionBar({ attachment, hasContent, hasDownloadable, onOpenDetail, show
       e.stopPropagation()
       if (!attachment.content) return
       try {
-        await navigator.clipboard.writeText(attachment.content)
+        await copyTextToClipboard(attachment.content)
         setCopied(true)
         if (timeoutRef.current) clearTimeout(timeoutRef.current)
         timeoutRef.current = setTimeout(() => setCopied(false), 2000)

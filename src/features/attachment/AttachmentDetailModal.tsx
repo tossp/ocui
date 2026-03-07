@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect, memo } from 'react'
 import { createPortal } from 'react-dom'
 import { CloseIcon, CopyIcon, CheckIcon, DownloadIcon, PlusIcon, MinusIcon } from '../../components/Icons'
 import { getAttachmentIcon } from './utils'
-import { clipboardErrorHandler } from '../../utils'
+import { clipboardErrorHandler, copyTextToClipboard } from '../../utils'
 import { saveData } from '../../utils/downloadUtils'
 import type { Attachment } from './types'
 import { useDelayedRender } from '../../hooks/useDelayedRender'
@@ -608,7 +608,7 @@ function InlineCopyButton({ text }: { text: string }) {
     async (e: React.MouseEvent) => {
       e.stopPropagation()
       try {
-        await navigator.clipboard.writeText(text)
+        await copyTextToClipboard(text)
         setCopied(true)
         if (timeoutRef.current) clearTimeout(timeoutRef.current)
         timeoutRef.current = setTimeout(() => setCopied(false), 2000)

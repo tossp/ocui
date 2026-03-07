@@ -7,6 +7,7 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import type { MentionType } from './types'
 import { formatMentionLabel, getFileName, MENTION_COLORS } from './utils'
 import { CheckIcon } from '../../components/Icons'
+import { clipboardErrorHandler, copyTextToClipboard } from '../../utils'
 
 interface MentionTagProps {
   /** Mention 类型 */
@@ -47,7 +48,7 @@ export function MentionTag({ type, value, displayName, onClick, className = '', 
   const colors = MENTION_COLORS[type]
 
   const handleClick = useCallback(
-    (e: React.MouseEvent) => {
+    async (e: React.MouseEvent) => {
       e.preventDefault()
       e.stopPropagation()
 
@@ -56,15 +57,16 @@ export function MentionTag({ type, value, displayName, onClick, className = '', 
         return
       }
 
-      // 复制完整值
-      navigator.clipboard.writeText(value).then(() => {
+      try {
+        await copyTextToClipboard(value)
         setCopied(true)
-        // 清理之前的 timeout
         if (timeoutRef.current) {
           clearTimeout(timeoutRef.current)
         }
         timeoutRef.current = setTimeout(() => setCopied(false), 1500)
-      })
+      } catch (err) {
+        clipboardErrorHandler('copy mention', err)
+      }
     },
     [onClick, value],
   )
