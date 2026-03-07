@@ -14,6 +14,14 @@ interface RouteState {
   directory: string | undefined
 }
 
+function decodeDirectoryParam(value: string): string {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
 function parseHash(): RouteState {
   const hash = window.location.hash
   
@@ -27,7 +35,7 @@ function parseHash(): RouteState {
     const dirMatch = queryString.match(/(?:^|&)dir=([^&]*)/)
     if (dirMatch && dirMatch[1]) {
       // 入口标准化：统一转为正斜杠
-      directory = normalizeToForwardSlash(dirMatch[1]) || undefined
+      directory = normalizeToForwardSlash(decodeDirectoryParam(dirMatch[1])) || undefined
     }
   }
   
@@ -49,8 +57,7 @@ function parseHash(): RouteState {
 function buildHash(sessionId: string | null, directory: string | undefined): string {
   const path = sessionId ? `#/session/${sessionId}` : '#/'
   if (directory) {
-    // 不需要 URL 编码，直接使用原始路径
-    return `${path}?dir=${directory}`
+    return `${path}?dir=${encodeURIComponent(directory)}`
   }
   return path
 }

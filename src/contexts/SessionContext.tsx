@@ -42,6 +42,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const requestIdRef = useRef(0)
   const searchTimerRef = useRef<number | null>(null)
   const currentDirectoryRef = useRef(currentDirectory)
+  const searchRef = useRef(search)
   const isLoadingMoreRef = useRef(false)  // 防止并发 loadMore
   const fetchSessionsRef = useRef<() => Promise<void>>(() => Promise.resolve())
   const currentLimitRef = useRef(30)  // 当前 limit，loadMore 时递增
@@ -50,6 +51,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     currentDirectoryRef.current = currentDirectory
   }, [currentDirectory])
+
+  useEffect(() => {
+    searchRef.current = search
+  }, [search])
   
   // 核心获取逻辑
   // 注意：directory 传给 getSessions 时使用正斜杠格式
@@ -107,6 +112,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // 保持 fetchSessions ref 同步（用于 SSE onReconnected 回调）
   fetchSessionsRef.current = fetchSessions
 
+  const matchesCurrentDirectory = useCallback((session: ApiSession) => {
+    return !currentDirectoryRef.current || isSameDirectory(currentDirectoryRef.current, session.directory)
+  }, [])
+
   // 监听 directory 和 search 变化
   useEffect(() => {
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
@@ -129,24 +138,45 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       onSessionCreated: (session) => {
         // 忽略子 session（有 parentID 的是子 agent 创建的）
         if (session.parentID) return
-        
-        // 使用 isSameDirectory 比较，处理斜杠和大小写差异
-        if (isSameDirectory(currentDirectoryRef.current, session.directory)) {
-          setSessions(prev => {
-            // 避免重复
-            if (prev.some(s => s.id === session.id)) return prev
-            return [session, ...prev]
-          })
+
+        if (!matchesCurrentDirectory(session)) return
+
+        // 搜索态下交给服务端重新给出结果，避免本地过滤和服务端逻辑不一致
+        if (searchRef.current) {
+          fetchSessionsRef.current()
+          return
         }
+
+        setSessions(prev => {
+          if (prev.some(s => s.id === session.id)) return prev
+          return [session, ...prev]
+        })
       },
       onSessionUpdated: (session) => {
+        if (session.parentID) return
+
+        if (searchRef.current) {
+          if (matchesCurrentDirectory(session)) {
+            fetchSessionsRef.current()
+          } else {
+            setSessions(prev => prev.filter(s => s.id !== session.id))
+          }
+          return
+        }
+
         setSessions(prev => {
           const index = prev.findIndex(s => s.id === session.id)
-          if (index === -1) return prev
-          
-          const updated = [...prev]
-          updated[index] = session
-          return updated
+
+          if (!matchesCurrentDirectory(session)) {
+            return index === -1 ? prev : prev.filter(s => s.id !== session.id)
+          }
+
+          if (index === -1) {
+            return [session, ...prev]
+          }
+
+          const updated = prev.filter(s => s.id !== session.id)
+          return [session, ...updated]
         })
       },
       onTodoUpdated: (data) => {

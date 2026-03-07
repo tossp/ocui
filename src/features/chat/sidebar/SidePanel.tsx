@@ -28,6 +28,7 @@ import { useBusySessions, useBusyCount } from '../../../store/activeSessionStore
 import { notificationStore, useNotifications, useUnreadNotificationCount } from '../../../store/notificationStore'
 import type { NotificationEntry } from '../../../store/notificationStore'
 import { updateSession, getSession, subscribeToConnectionState, type ApiSession, type ConnectionInfo } from '../../../api'
+import { isSameDirectory } from '../../../utils'
 import { uiErrorHandler } from '../../../utils'
 import type { SessionStats } from '../../../hooks'
 
@@ -207,7 +208,7 @@ export function SidePanel({
 
   const currentProject = useMemo<ProjectItem>(() => {
     if (!currentDirectory) return projects[0]
-    const found = projects.find(p => p.id === currentDirectory)
+    const found = projects.find(p => isSameDirectory(p.id, currentDirectory))
     if (found) return found
     
     // 未保存的目录，从路径提取名称并解码
