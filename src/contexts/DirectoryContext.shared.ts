@@ -13,6 +13,7 @@ export interface DirectoryContextValue {
   savedDirectories: SavedDirectory[]
   addDirectory: (path: string) => void
   removeDirectory: (path: string) => void
+  reorderDirectories: (draggedPath: string, targetPath: string) => void
   pathInfo: ApiPath | null
   sidebarExpanded: boolean
   setSidebarExpanded: (expanded: boolean) => void

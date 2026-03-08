@@ -80,6 +80,7 @@ interface ProjectItem {
   id: string
   worktree: string
   name: string
+  canReorder?: boolean
 }
 
 export function SidePanel({
@@ -98,8 +99,15 @@ export function SidePanel({
   isWideMode,
   onToggleWideMode,
 }: SidePanelProps) {
-  const { currentDirectory, savedDirectories, setCurrentDirectory, removeDirectory, addDirectory, recentProjects } =
-    useDirectory()
+  const {
+    currentDirectory,
+    savedDirectories,
+    setCurrentDirectory,
+    removeDirectory,
+    addDirectory,
+    reorderDirectories,
+    recentProjects,
+  } = useDirectory()
   const { sidebarFolderRecents } = useLayoutStore()
   const [connectionState, setConnectionState] = useState<ConnectionInfo | null>(null)
   const [projectDeleteConfirm, setProjectDeleteConfirm] = useState<{ isOpen: boolean; projectId: string | null }>({
@@ -233,10 +241,11 @@ export function SidePanel({
       id: directory.path,
       worktree: directory.path,
       name: directory.name,
+      canReorder: true,
     }))
 
     if (currentDirectory && !list.some(project => isSameDirectory(project.worktree, currentDirectory))) {
-      list.push(currentProject)
+      list.push({ ...currentProject, canReorder: false })
     }
 
     return list
@@ -589,6 +598,7 @@ export function SidePanel({
                   onSelectSession={handleSelectActive}
                   onRenameSession={handleRenameFolderSession}
                   onDeleteSession={handleDeleteFolderSession}
+                  onReorderProject={reorderDirectories}
                 />
               ) : (
                 <SessionList

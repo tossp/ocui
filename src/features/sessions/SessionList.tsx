@@ -165,7 +165,7 @@ export function SessionList({
                 </h3>
                 <div className="space-y-0.5">
                   {groupSessions.map(session => (
-                    <SessionItem
+                    <SessionListItem
                       key={session.id}
                       session={session}
                       isSelected={session.id === selectedId}
@@ -185,7 +185,7 @@ export function SessionList({
           // Flat View (Search)
           <div className="space-y-0.5 mt-1">
             {sessions.map(session => (
-              <SessionItem
+              <SessionListItem
                 key={session.id}
                 session={session}
                 isSelected={session.id === selectedId}
@@ -229,7 +229,7 @@ export function SessionList({
 // Session Item
 // ============================================
 
-interface SessionItemProps {
+export interface SessionListItemProps {
   session: ApiSession
   isSelected: boolean
   onSelect: () => void
@@ -240,16 +240,16 @@ interface SessionItemProps {
   showDirectory?: boolean
 }
 
-function SessionItem({
+export function SessionListItem({
   session,
   isSelected,
   onSelect,
   onDelete,
   onRename,
   density = 'default',
-  showStats: _showStats = true,
+  showStats = true,
   showDirectory = false,
-}: SessionItemProps) {
+}: SessionListItemProps) {
   const [isEditing, setIsEditing] = useState(false)
   const [editTitle, setEditTitle] = useState(session.title || '')
   const [showActions, setShowActions] = useState(false)
@@ -410,7 +410,7 @@ function SessionItem({
             <span className="shrink-0 opacity-60">{formatRelativeTime(session.time.updated)}</span>
           )}
           {/* Stats */}
-          {session.summary && (
+          {showStats && session.summary && (
             <>
               <span className="opacity-30">·</span>
               <span className="flex items-center gap-1.5 font-mono shrink-0">

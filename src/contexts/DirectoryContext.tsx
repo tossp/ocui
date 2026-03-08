@@ -139,6 +139,29 @@ export function DirectoryProvider({ children }: { children: ReactNode }) {
     [urlDirectory, setCurrentDirectory],
   )
 
+  const reorderDirectories = useCallback((draggedPath: string, targetPath: string) => {
+    const normalizedDragged = normalizeToForwardSlash(draggedPath)
+    const normalizedTarget = normalizeToForwardSlash(targetPath)
+
+    if (!normalizedDragged || !normalizedTarget || isSameDirectory(normalizedDragged, normalizedTarget)) {
+      return
+    }
+
+    setSavedDirectories(prev => {
+      const next = [...prev]
+      const draggedIndex = next.findIndex(directory => isSameDirectory(directory.path, normalizedDragged))
+      const targetIndex = next.findIndex(directory => isSameDirectory(directory.path, normalizedTarget))
+
+      if (draggedIndex === -1 || targetIndex === -1 || draggedIndex === targetIndex) {
+        return prev
+      }
+
+      const [draggedDirectory] = next.splice(draggedIndex, 1)
+      next.splice(targetIndex, 0, draggedDirectory)
+      return next
+    })
+  }, [])
+
   // Tauri: 启动时获取 CLI 传入的目录 + 监听后续 open-directory 事件
   // 用 ref 持有最新的 addDirectory 避免 stale closure
   const addDirectoryRef = useRef(addDirectory)
@@ -185,6 +208,7 @@ export function DirectoryProvider({ children }: { children: ReactNode }) {
       savedDirectories,
       addDirectory,
       removeDirectory,
+      reorderDirectories,
       pathInfo,
       sidebarExpanded,
       setSidebarExpanded,
@@ -196,6 +220,7 @@ export function DirectoryProvider({ children }: { children: ReactNode }) {
       savedDirectories,
       addDirectory,
       removeDirectory,
+      reorderDirectories,
       pathInfo,
       sidebarExpanded,
       setSidebarExpanded,
