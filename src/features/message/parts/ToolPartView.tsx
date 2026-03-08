@@ -90,7 +90,9 @@ export const ToolPartView = memo(function ToolPartView({
               >
                 {formatToolName(toolName)}
               </span>
-              {title && <span className="text-xs text-text-400 truncate font-mono opacity-70">{title}</span>}
+              {title && (
+                <span className="text-xs text-text-400 truncate min-w-0 flex-1 font-mono opacity-70">{title}</span>
+              )}
             </div>
             <div className="flex items-center gap-2 ml-auto shrink-0">
               {duration !== undefined && state.status === 'completed' && (
@@ -170,7 +172,9 @@ export const ToolPartView = memo(function ToolPartView({
               {formatToolName(toolName)}
             </span>
 
-            {title && <span className="text-xs text-text-400 truncate font-mono opacity-70">{title}</span>}
+            {title && (
+              <span className="text-xs text-text-400 truncate min-w-0 flex-1 font-mono opacity-70">{title}</span>
+            )}
           </div>
 
           <div className="flex items-center gap-2 ml-auto shrink-0">
