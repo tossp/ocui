@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.1.9] - 2026-03-08
+
+- fix: harden composer attachment rail scrolling (b2bac29)
+
 ## [v0.1.8] - 2026-03-08
 
 - fix: restore message attachment expand animation (2975fe3)
