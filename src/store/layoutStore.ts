@@ -45,6 +45,7 @@ interface LayoutState {
 
   // 侧边栏
   sidebarExpanded: boolean
+  sidebarFolderRecents: boolean
 
   // 右侧栏
   rightPanelOpen: boolean
@@ -61,6 +62,7 @@ interface LayoutState {
 type Subscriber = () => void
 
 const STORAGE_KEY_SIDEBAR = 'opencode-sidebar-expanded'
+const STORAGE_KEY_SIDEBAR_FOLDER_RECENTS = 'opencode-sidebar-folder-recents'
 
 class LayoutStore {
   private state: LayoutState = {
@@ -74,6 +76,7 @@ class LayoutStore {
       right: 'files',
     },
     sidebarExpanded: true,
+    sidebarFolderRecents: false,
     rightPanelOpen: false,
     rightPanelWidth: 450,
     previewFile: null,
@@ -89,6 +92,11 @@ class LayoutStore {
       const savedSidebar = localStorage.getItem(STORAGE_KEY_SIDEBAR)
       if (savedSidebar !== null) {
         this.state.sidebarExpanded = savedSidebar !== 'false'
+      }
+
+      const savedFolderRecents = localStorage.getItem(STORAGE_KEY_SIDEBAR_FOLDER_RECENTS)
+      if (savedFolderRecents !== null) {
+        this.state.sidebarFolderRecents = savedFolderRecents === 'true'
       }
 
       // 右侧面板宽度
@@ -139,6 +147,17 @@ class LayoutStore {
     this.state.sidebarExpanded = expanded
     try {
       localStorage.setItem(STORAGE_KEY_SIDEBAR, String(expanded))
+    } catch {
+      // ignore
+    }
+    this.notify()
+  }
+
+  setSidebarFolderRecents(enabled: boolean) {
+    if (this.state.sidebarFolderRecents === enabled) return
+    this.state.sidebarFolderRecents = enabled
+    try {
+      localStorage.setItem(STORAGE_KEY_SIDEBAR_FOLDER_RECENTS, String(enabled))
     } catch {
       // ignore
     }

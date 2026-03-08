@@ -28,9 +28,10 @@ import {
   StopIcon,
   EyeIcon,
   ThinkingIcon,
+  FolderIcon,
 } from '../../components/Icons'
 import { usePathMode, useServerStore, useIsMobile, useNotification, useRouter } from '../../hooks'
-import { autoApproveStore, messageStore, notificationStore } from '../../store'
+import { autoApproveStore, layoutStore, messageStore, notificationStore, useLayoutStore } from '../../store'
 import { serviceStore, useServiceStore } from '../../store/serviceStore'
 import { themeStore, type ReasoningDisplayMode } from '../../store/themeStore'
 import { isTauri } from '../../utils/tauri'
@@ -572,6 +573,7 @@ function AppearanceSettings({
 
 function GeneralSettings({ mode }: { mode: 'chat' | 'notifications' | 'service' }) {
   const { pathMode, setPathMode, effectiveStyle, detectedStyle, isAutoMode } = usePathMode()
+  const { sidebarFolderRecents } = useLayoutStore()
   const [autoApprove, setAutoApprove] = useState(autoApproveStore.enabled)
   const {
     enabled: notificationsEnabled,
@@ -625,6 +627,10 @@ function GeneralSettings({ mode }: { mode: 'chat' | 'notifications' | 'service' 
     const v = !collapseUserMessages
     setCollapseUserMessages(v)
     themeStore.setCollapseUserMessages(v)
+  }
+
+  const handleSidebarFolderRecentsToggle = () => {
+    layoutStore.setSidebarFolderRecents(!sidebarFolderRecents)
   }
 
   const handleTestNotification = () => {
@@ -741,6 +747,17 @@ function GeneralSettings({ mode }: { mode: 'chat' | 'notifications' | 'service' 
                 onClick={handleAutoApprove}
               >
                 <Toggle enabled={autoApprove} onChange={handleAutoApprove} />
+              </SettingRow>
+            </SettingsCard>
+
+            <SettingsCard title="Sidebar Recents" description="Optional folder view for recent chats">
+              <SettingRow
+                label="Folder-Style Recents"
+                description="Group recent chats by project folder while keeping the default list available"
+                icon={<FolderIcon size={14} />}
+                onClick={handleSidebarFolderRecentsToggle}
+              >
+                <Toggle enabled={sidebarFolderRecents} onChange={handleSidebarFolderRecentsToggle} />
               </SettingRow>
             </SettingsCard>
           </div>

@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState, useEffect, useRef } from 'react'
 import { SessionList } from '../../sessions'
+import { FolderRecentList } from './FolderRecentList'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
 import { ShareDialog } from '../ShareDialog'
 import { ContextDetailsDialog } from './ContextDetailsDialog'
@@ -23,12 +24,13 @@ import { CircularProgress } from '../../../components/CircularProgress'
 import { useDirectory, useSessionStats, formatTokens, formatCost, useKeybindingLabel } from '../../../hooks'
 import type { ThemeMode } from '../../../hooks'
 import { useSessionContext } from '../../../contexts/useSessionContext'
-import { useMessageStore } from '../../../store'
+import { useLayoutStore, useMessageStore } from '../../../store'
 import { useBusySessions, useBusyCount } from '../../../store/activeSessionStore'
 import { notificationStore, useNotifications, useUnreadNotificationCount } from '../../../store/notificationStore'
 import type { NotificationEntry } from '../../../store/notificationStore'
 import {
   updateSession,
+  deleteSession as apiDeleteSession,
   getSession,
   subscribeToConnectionState,
   type ApiSession,
@@ -98,6 +100,7 @@ export function SidePanel({
 }: SidePanelProps) {
   const { currentDirectory, savedDirectories, setCurrentDirectory, removeDirectory, addDirectory, recentProjects } =
     useDirectory()
+  const { sidebarFolderRecents } = useLayoutStore()
   const [connectionState, setConnectionState] = useState<ConnectionInfo | null>(null)
   const [projectDeleteConfirm, setProjectDeleteConfirm] = useState<{ isOpen: boolean; projectId: string | null }>({
     isOpen: false,
@@ -225,6 +228,20 @@ export function SidePanel({
     }
   }, [currentDirectory, projects])
 
+  const folderProjects = useMemo<ProjectItem[]>(() => {
+    const list = savedDirectories.map<ProjectItem>(directory => ({
+      id: directory.path,
+      worktree: directory.path,
+      name: directory.name,
+    }))
+
+    if (currentDirectory && !list.some(project => isSameDirectory(project.worktree, currentDirectory))) {
+      list.push(currentProject)
+    }
+
+    return list
+  }, [savedDirectories, currentDirectory, currentProject])
+
   const handleSelectProject = useCallback(
     (projectId: string) => {
       if (projectId === 'global') {
@@ -293,6 +310,35 @@ export function SidePanel({
       }
     },
     [deleteSession, onNewSession, selectedSessionId],
+  )
+
+  const handleRenameFolderSession = useCallback(
+    async (session: ApiSession, newTitle: string) => {
+      try {
+        await updateSession(session.id, { title: newTitle }, session.directory)
+        if (!currentDirectory || isSameDirectory(currentDirectory, session.directory)) {
+          await refresh()
+        }
+      } catch (e) {
+        uiErrorHandler('rename session', e)
+      }
+    },
+    [currentDirectory, refresh],
+  )
+
+  const handleDeleteFolderSession = useCallback(
+    async (session: ApiSession) => {
+      await apiDeleteSession(session.id, session.directory)
+
+      if (!currentDirectory || isSameDirectory(currentDirectory, session.directory)) {
+        await refresh()
+      }
+
+      if (selectedSessionId === session.id) {
+        onNewSession()
+      }
+    },
+    [currentDirectory, onNewSession, refresh, selectedSessionId],
   )
 
   useEffect(() => {
@@ -535,25 +581,36 @@ export function SidePanel({
           {/* Recents Tab */}
           {sidebarTab === 'recents' && (
             <div className="flex-1 overflow-hidden">
-              <SessionList
-                sessions={sessions}
-                selectedId={selectedSessionId}
-                isLoading={isLoading}
-                isLoadingMore={isLoadingMore}
-                hasMore={hasMore}
-                search={search}
-                onSearchChange={setSearch}
-                onSelect={handleSelect}
-                onDelete={handleDeleteSession}
-                onRename={handleRename}
-                onLoadMore={loadMore}
-                onNewChat={onNewSession}
-                showHeader={false}
-                grouped={false}
-                density="compact"
-                showStats
-                showDirectory={!currentDirectory}
-              />
+              {sidebarFolderRecents && !search ? (
+                <FolderRecentList
+                  projects={folderProjects}
+                  currentDirectory={currentDirectory}
+                  selectedSessionId={selectedSessionId}
+                  onSelectSession={handleSelectActive}
+                  onRenameSession={handleRenameFolderSession}
+                  onDeleteSession={handleDeleteFolderSession}
+                />
+              ) : (
+                <SessionList
+                  sessions={sessions}
+                  selectedId={selectedSessionId}
+                  isLoading={isLoading}
+                  isLoadingMore={isLoadingMore}
+                  hasMore={hasMore}
+                  search={search}
+                  onSearchChange={setSearch}
+                  onSelect={handleSelect}
+                  onDelete={handleDeleteSession}
+                  onRename={handleRename}
+                  onLoadMore={loadMore}
+                  onNewChat={onNewSession}
+                  showHeader={false}
+                  grouped={false}
+                  density="compact"
+                  showStats
+                  showDirectory={!currentDirectory}
+                />
+              )}
             </div>
           )}
 
