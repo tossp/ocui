@@ -47,6 +47,9 @@ if (!semverRe.test(version)) {
 const tagName = `v${version}`
 const today = new Date().toISOString().slice(0, 10)
 const isPrerelease = version.includes('-')
+const existingChangelogPath = resolve(root, 'CHANGELOG.md')
+const lineEnding =
+  existsSync(existingChangelogPath) && /\r\n/.test(readFileSync(existingChangelogPath, 'utf-8')) ? '\r\n' : '\n'
 
 function formatWithPrettier(relativePath) {
   execSync(`npx prettier --write "${relativePath}"`, {
@@ -145,22 +148,23 @@ if (!commits) {
 }
 
 const releaseType = isPrerelease ? ' (Pre-release)' : ''
-const changelogEntry = `## [${tagName}] - ${today}${releaseType}\n\n${commits}\n`
+const changelogEntry = `## [${tagName}] - ${today}${releaseType}${lineEnding}${lineEnding}${commits.replace(/\n/g, lineEnding)}${lineEnding}`
 
 const changelogPath = resolve(root, 'CHANGELOG.md')
 if (existsSync(changelogPath)) {
   const existing = readFileSync(changelogPath, 'utf-8')
-  // Insert after the header line "# Changelog\n\n"
-  const headerEnd = existing.indexOf('\n\n')
-  if (headerEnd !== -1) {
-    const header = existing.slice(0, headerEnd + 2)
-    const body = existing.slice(headerEnd + 2)
-    writeFileSync(changelogPath, header + changelogEntry + '\n' + body)
+  const headerSeparator = existing.match(/\r?\n\r?\n/)
+  if (headerSeparator) {
+    const headerEnd = existing.indexOf(headerSeparator[0])
+    const separatorLength = headerSeparator[0].length
+    const header = existing.slice(0, headerEnd + separatorLength)
+    const body = existing.slice(headerEnd + separatorLength)
+    writeFileSync(changelogPath, header + changelogEntry + lineEnding + body)
   } else {
-    writeFileSync(changelogPath, existing + '\n' + changelogEntry)
+    writeFileSync(changelogPath, existing + lineEnding + changelogEntry)
   }
 } else {
-  writeFileSync(changelogPath, `# Changelog\n\n${changelogEntry}`)
+  writeFileSync(changelogPath, `# Changelog${lineEnding}${lineEnding}${changelogEntry}`)
 }
 console.log(`  CHANGELOG.md          added entry for ${tagName}`)
 
