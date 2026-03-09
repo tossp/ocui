@@ -1,3 +1,4 @@
+import { forwardRef, useImperativeHandle, type ForwardedRef } from 'react'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { InputBox } from './InputBox'
@@ -17,16 +18,35 @@ vi.mock('../mention', () => ({
 }))
 
 vi.mock('../slash-command', () => ({
-  SlashCommandMenu: ({ isOpen, onSelect }: { isOpen: boolean; onSelect: (command: Command) => void }) =>
-    isOpen ? (
-      <div>
-        {slashCommands.map(command => (
-          <button key={command.name} type="button" onClick={() => onSelect(command)}>
-            {command.name}
-          </button>
-        ))}
-      </div>
-    ) : null,
+  SlashCommandMenu: forwardRef(
+    (
+      { isOpen, onSelect }: { isOpen: boolean; onSelect: (command: Command) => void },
+      ref: ForwardedRef<{ moveUp: () => void; moveDown: () => void; selectCurrent: () => void }>,
+    ) => {
+      useImperativeHandle(
+        ref,
+        () => ({
+          moveUp: () => {},
+          moveDown: () => {},
+          selectCurrent: () => {
+            const command = slashCommands[0]
+            if (command) onSelect(command)
+          },
+        }),
+        [onSelect],
+      )
+
+      return isOpen ? (
+        <div>
+          {slashCommands.map(command => (
+            <button key={command.name} type="button" onClick={() => onSelect(command)}>
+              {command.name}
+            </button>
+          ))}
+        </div>
+      ) : null
+    },
+  ),
 }))
 
 vi.mock('./input/InputToolbar', () => ({
@@ -136,6 +156,93 @@ describe('InputBox slash command selection', () => {
 
     await waitFor(() => {
       expect(textarea.value).toBe('')
+    })
+  })
+
+  it('clears api slash command drafts immediately after keyboard submission', async () => {
+    slashCommands = [{ name: 'review', description: 'Run review', source: 'api' }]
+    let resolveCommand: ((value: boolean) => void) | null = null
+    const onCommand = vi.fn(
+      () =>
+        new Promise<boolean>(resolve => {
+          resolveCommand = resolve
+        }),
+    )
+
+    render(<InputBox onSend={vi.fn()} onCommand={onCommand} />)
+
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: '/', selectionStart: 1 } })
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+
+    await waitFor(() => {
+      expect(textarea.value).toBe('/review ')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'send' }))
+
+    expect(onCommand).toHaveBeenCalledWith('/review')
+    expect(textarea.value).toBe('')
+    expect(textarea).not.toBeDisabled()
+
+    fireEvent.change(textarea, { target: { value: 'next prompt' } })
+    expect(textarea.value).toBe('next prompt')
+
+    await act(async () => {
+      resolveCommand?.(true)
+    })
+  })
+
+  it('restores api slash command drafts when command submission fails', async () => {
+    slashCommands = [{ name: 'review', description: 'Run review', source: 'api' }]
+    let resolveCommand: ((value: boolean) => void) | null = null
+    const onCommand = vi.fn(
+      () =>
+        new Promise<boolean>(resolve => {
+          resolveCommand = resolve
+        }),
+    )
+
+    render(<InputBox onSend={vi.fn()} onCommand={onCommand} />)
+
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: '/', selectionStart: 1 } })
+    fireEvent.click(screen.getByRole('button', { name: 'review' }))
+
+    await waitFor(() => {
+      expect(textarea.value).toBe('/review ')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'send' }))
+    expect(textarea.value).toBe('')
+
+    await act(async () => {
+      resolveCommand?.(false)
+    })
+
+    await waitFor(() => {
+      expect(textarea.value).toBe('/review ')
+    })
+  })
+
+  it('restores api slash command drafts when command submission fails synchronously', async () => {
+    slashCommands = [{ name: 'review', description: 'Run review', source: 'api' }]
+    const onCommand = vi.fn().mockReturnValue(false)
+
+    render(<InputBox onSend={vi.fn()} onCommand={onCommand} />)
+
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: '/', selectionStart: 1 } })
+    fireEvent.click(screen.getByRole('button', { name: 'review' }))
+
+    await waitFor(() => {
+      expect(textarea.value).toBe('/review ')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'send' }))
+
+    await waitFor(() => {
+      expect(textarea.value).toBe('/review ')
     })
   })
 })

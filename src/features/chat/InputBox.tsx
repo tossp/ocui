@@ -165,6 +165,7 @@ function InputBoxComponent({
   const mentionMenuRef = useRef<MentionMenuHandle>(null)
   const slashMenuRef = useRef<SlashCommandMenuHandle>(null)
   const prevRevertedTextRef = useRef<string | undefined>(undefined)
+  const latestDraftRef = useRef<HistoryEntry>({ text: '', attachments: [] })
   const contentWrapRef = useRef<HTMLDivElement>(null)
   const [expandedHeight, setExpandedHeight] = useState(0)
   const [attachmentsOverflowing, setAttachmentsOverflowing] = useState(false)
@@ -299,6 +300,10 @@ function InputBoxComponent({
   }, [registerInputBox, isCollapsed])
 
   // 处理 revert 恢复
+  useEffect(() => {
+    latestDraftRef.current = { text, attachments }
+  }, [text, attachments])
+
   useEffect(() => {
     let frameId: number | null = null
 
@@ -443,19 +448,73 @@ function InputBoxComponent({
   // ============================================
 
   const resetDraft = useCallback(() => {
+    latestDraftRef.current = { text: '', attachments: [] }
     setText('')
     setAttachments([])
     historyIndexRef.current = -1
   }, [])
 
+  const restoreDraft = useCallback((draft: HistoryEntry) => {
+    latestDraftRef.current = draft
+    setText(draft.text)
+    setAttachments(draft.attachments)
+    historyIndexRef.current = -1
+
+    requestAnimationFrame(() => {
+      if (!textareaRef.current) return
+      const cursorPos = draft.text.length
+      textareaRef.current.focus()
+      textareaRef.current.setSelectionRange(cursorPos, cursorPos)
+    })
+  }, [])
+
+  const submitCommandOptimistically = useCallback(
+    (commandStr: string) => {
+      if (!onCommand) return
+
+      const draftSnapshot: HistoryEntry = {
+        text,
+        attachments: [...attachments],
+      }
+
+      resetDraft()
+      requestAnimationFrame(() => {
+        if (!textareaRef.current) return
+        textareaRef.current.focus()
+        textareaRef.current.setSelectionRange(0, 0)
+      })
+
+      void (async () => {
+        let result: boolean | void
+        try {
+          result = await onCommand(commandStr)
+        } catch {
+          result = false
+        }
+
+        if (result !== false) {
+          onClearRevert?.()
+          return
+        }
+
+        const currentDraft = latestDraftRef.current
+        if (currentDraft.text.length === 0 && currentDraft.attachments.length === 0) {
+          restoreDraft(draftSnapshot)
+        }
+      })()
+    },
+    [attachments, onClearRevert, onCommand, resetDraft, restoreDraft, text],
+  )
+
   const runSubmit = useCallback(
-    async (submit: () => Promise<boolean | void> | boolean | void, onSuccess?: () => void) => {
+    async (submit: () => Promise<boolean | void> | boolean | void, onSuccess?: () => void, onFailure?: () => void) => {
       if (isSubmitting) return false
 
       setIsSubmitting(true)
       try {
         const result = await submit()
         if (result === false) {
+          onFailure?.()
           return false
         }
 
@@ -480,14 +539,7 @@ function InputBoxComponent({
       const textRange = commandAttachment.textRange
       const afterCommand = textRange ? text.slice(textRange.end).trim() : ''
       const commandStr = `/${commandAttachment.commandName}${afterCommand ? ' ' + afterCommand : ''}`
-
-      void runSubmit(
-        () => onCommand(commandStr),
-        () => {
-          resetDraft()
-          onClearRevert?.()
-        },
-      )
+      submitCommandOptimistically(commandStr)
       return
     }
 
@@ -514,6 +566,7 @@ function InputBoxComponent({
     runSubmit,
     selectedAgent,
     selectedVariant,
+    submitCommandOptimistically,
     text,
   ])
 
@@ -805,15 +858,9 @@ function InputBoxComponent({
       if (command.source === 'frontend') {
         if (!onCommand) return
 
-        void runSubmit(
-          () => onCommand(`/${command.name}`),
-          () => {
-            resetDraft()
-            setSlashOpen(false)
-            onClearRevert?.()
-            requestAnimationFrame(() => textareaRef.current?.focus())
-          },
-        )
+        setSlashOpen(false)
+        submitCommandOptimistically(`/${command.name}`)
+        requestAnimationFrame(() => textareaRef.current?.focus())
         return
       }
 
@@ -852,7 +899,7 @@ function InputBoxComponent({
         textareaRef.current.focus()
       })
     },
-    [text, slashStartIndex, slashQuery, onCommand, onClearRevert, resetDraft, runSubmit],
+    [text, slashStartIndex, slashQuery, onCommand, submitCommandOptimistically],
   )
 
   const handleSlashClose = useCallback(() => {
