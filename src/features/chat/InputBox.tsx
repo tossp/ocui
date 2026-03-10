@@ -559,7 +559,6 @@ function InputBoxComponent({
     attachments,
     canSend,
     isSubmitting,
-    onClearRevert,
     onCommand,
     onSend,
     resetDraft,

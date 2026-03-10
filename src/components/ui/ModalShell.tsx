@@ -9,44 +9,9 @@
  * - requestAnimationFrame for visibility animation
  */
 
-import { memo, useState, useEffect, useCallback, type ReactNode } from 'react'
+import { memo, useCallback, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { useDelayedRender } from '../../hooks/useDelayedRender'
-
-// ============================================
-// useModalAnimation - shared animation logic
-// ============================================
-
-export function useModalAnimation(isOpen: boolean, onClose: () => void, delayMs = 200) {
-  const [isVisible, setIsVisible] = useState(false)
-  const shouldRender = useDelayedRender(isOpen, delayMs)
-
-  // Animate visibility via rAF
-  useEffect(() => {
-    let frameId: number | null = null
-
-    if (shouldRender && isOpen) {
-      frameId = requestAnimationFrame(() => setIsVisible(true))
-    } else {
-      frameId = requestAnimationFrame(() => setIsVisible(false))
-    }
-
-    return () => {
-      if (frameId !== null) cancelAnimationFrame(frameId)
-    }
-  }, [shouldRender, isOpen])
-
-  // ESC to close
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) onClose()
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, onClose])
-
-  return { isVisible, shouldRender }
-}
+import { useModalAnimation } from '../../hooks/useModalAnimation'
 
 // ============================================
 // ModalShell - the shared overlay shell

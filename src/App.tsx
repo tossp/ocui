@@ -206,7 +206,9 @@ function App() {
   const { showCancelHint, handleCancelMessage } = useCancelHint(isStreaming, handleAbort)
 
   // 赋值 ref（需在 useChatSession 之后，因为 handleVisibleMessageIdsChange 来自该 hook）
-  handleVisibleMessageIdsChangeRef.current = handleVisibleMessageIdsChange
+  useEffect(() => {
+    handleVisibleMessageIdsChangeRef.current = handleVisibleMessageIdsChange
+  }, [handleVisibleMessageIdsChange])
   const handleVisibleIdsChange = useCallback(
     (ids: string[]) => {
       handleVisibleMessageIdsChangeRef.current?.(ids)
@@ -553,9 +555,11 @@ function App() {
   const permissionRequestId = pendingPermissionRequests[0]?.id
   const questionRequestId = pendingQuestionRequests[0]?.id
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 响应新请求自动展开 UI
     if (permissionRequestId) setPermissionCollapsed(false)
   }, [permissionRequestId])
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 响应新请求自动展开 UI
     if (questionRequestId) setQuestionCollapsed(false)
   }, [questionRequestId])
 

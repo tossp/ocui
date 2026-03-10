@@ -55,18 +55,22 @@ export function FolderRecentList({
   )
   const [pendingDelete, setPendingDelete] = useState<PendingDeleteSession | null>(null)
 
+  // 当 projects 列表变化时，过滤掉已不存在的展开项
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 响应 prop 变化同步 derived state
     setExpandedProjectIds(prev => {
       const next = prev.filter(id => projects.some(project => project.id === id))
       return next.length > 0 ? next : getInitialExpandedProjectIds(projects, currentDirectory)
     })
   }, [projects, currentDirectory])
 
+  // 确保当前目录对应的 project 展开
   useEffect(() => {
     if (!currentDirectory) return
     const currentProject = projects.find(project => isSameDirectory(project.worktree, currentDirectory))
     if (!currentProject) return
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 响应 prop 变化同步 derived state
     setExpandedProjectIds(prev => (prev.includes(currentProject.id) ? prev : [currentProject.id, ...prev]))
   }, [projects, currentDirectory])
 
@@ -166,6 +170,7 @@ function FolderRecentSection({
 
   useEffect(() => {
     if (isExpanded && inView) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- 延迟加载闸门，只从 false→true
       setHasActivated(true)
     }
   }, [isExpanded, inView])

@@ -4,7 +4,7 @@ import { formatNotificationTime } from './sidebarUtils'
 import type { NotificationEntry } from '../../../store/notificationStore'
 import type { ApiSession } from '../../../api'
 
-export const notifTypeConfig = {
+const notifTypeConfig = {
   completed: { icon: CheckIcon, color: 'text-success-100', bgAccent: 'bg-success-bg', label: 'Completed' },
   error: { icon: AlertCircleIcon, color: 'text-danger-100', bgAccent: 'bg-danger-bg', label: 'Error' },
   permission: { icon: HandIcon, color: 'text-warning-100', bgAccent: 'bg-warning-bg', label: 'Permission' },

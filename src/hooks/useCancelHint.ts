@@ -9,9 +9,10 @@ export function useCancelHint(isStreaming: boolean, handleAbort: () => void) {
   const lastEscTimeRef = useRef(0)
   const escHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // streaming 结束时清理
+  // streaming 结束时清理 — 这是合理的"根据 prop 变化重置 state"模式
   useEffect(() => {
     if (!isStreaming) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- 重置 UI 状态响应 prop 变化
       setShowCancelHint(false)
       lastEscTimeRef.current = 0
       if (escHintTimerRef.current) {

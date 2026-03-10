@@ -88,6 +88,23 @@ let connectionGeneration = 0
 let isInBackground = false
 /** 是否因为切换服务器而触发的重连 */
 let isServerSwitch = false
+/** 上一次 sse_disconnect 的 Promise，用于串行化 Tauri 侧的 disconnect → connect */
+let pendingDisconnect: Promise<void> = Promise.resolve()
+
+/**
+ * 请求 Tauri 侧断开 SSE 连接
+ * 返回 Promise，调用方可以 await 确保断开完成后再发起新连接
+ * 多次并发调用会自动串行化
+ */
+function disconnectTauri(): Promise<void> {
+  if (!isTauri()) return Promise.resolve()
+
+  const p = pendingDisconnect.then(() =>
+    import('@tauri-apps/api/core').then(({ invoke }) => invoke('sse_disconnect') as Promise<void>).catch(() => {}),
+  )
+  pendingDisconnect = p
+  return p
+}
 
 function resetHeartbeat() {
   if (heartbeatTimer) clearTimeout(heartbeatTimer)
@@ -129,7 +146,9 @@ function connectSingleton() {
   // 如果状态声称 connected，验证连接是否真的活着
   if (connectionInfo.state === 'connected') {
     const timeSinceLastEvent = Date.now() - connectionInfo.lastEventTime
-    if (timeSinceLastEvent > HEARTBEAT_TIMEOUT) {
+    // 后台时使用更宽松的超时判断
+    const staleTimeout = isInBackground ? BACKGROUND_HEARTBEAT_TIMEOUT : HEARTBEAT_TIMEOUT
+    if (timeSinceLastEvent > staleTimeout) {
       // 太久没收到事件，连接可能已死，强制断开再重连
       if (import.meta.env.DEV) {
         console.log(
@@ -137,13 +156,7 @@ function connectSingleton() {
         )
       }
       connectionGeneration++
-      if (isTauri()) {
-        import('@tauri-apps/api/core')
-          .then(({ invoke }) => {
-            invoke('sse_disconnect').catch(() => {})
-          })
-          .catch(() => {})
-      }
+      disconnectTauri()
       if (singletonController) {
         singletonController.abort()
         singletonController = null
@@ -187,6 +200,9 @@ interface TauriSseEvent {
 
 async function connectViaTauri() {
   try {
+    // 等待上一次 disconnect 完成，避免 Rust 侧 connect/disconnect 竞争
+    await pendingDisconnect
+
     const { invoke, Channel } = await import('@tauri-apps/api/core')
 
     const url = `${getApiBaseUrl()}/global/event`
@@ -300,10 +316,10 @@ function connectViaBrowser() {
   // 捕获当前连接代次
   const myGeneration = connectionGeneration
 
-  // 如果配置了密码，添加 Authorization header
   fetch(`${getApiBaseUrl()}/global/event`, {
     signal: singletonController.signal,
     headers: {
+      Accept: 'text/event-stream',
       ...getAuthHeader(),
     },
   })
@@ -362,24 +378,33 @@ function connectViaBrowser() {
         const lines = buffer.split('\n')
         buffer = lines.pop() || ''
 
-        let eventData = ''
+        // SSE spec: 多行 data 用 \n 拼接，空行触发 dispatch
+        const dataLines: string[] = []
 
-        for (const line of lines) {
+        for (const rawLine of lines) {
+          // 兼容 CRLF：剥掉尾部 \r
+          const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine
+
           if (line.startsWith('data:')) {
-            eventData = line.slice(5).trim()
-          } else if (line === '' && eventData) {
-            try {
-              const globalEvent = JSON.parse(eventData) as GlobalEvent
-              // 广播给所有订阅者
-              broadcastEvent(globalEvent)
-            } catch (e) {
-              // SSE parse error - logged only in development
-              if (import.meta.env.DEV) {
-                console.warn('[SSE] Failed to parse event:', e, eventData)
+            // SSE spec: "data:" 后面可以有可选空格
+            const payload = line[5] === ' ' ? line.slice(6) : line.slice(5)
+            dataLines.push(payload)
+          } else if (line === '') {
+            // 空行 = 事件结束，dispatch 已积累的 data
+            if (dataLines.length > 0) {
+              const eventData = dataLines.join('\n')
+              dataLines.length = 0
+              try {
+                const globalEvent = JSON.parse(eventData) as GlobalEvent
+                broadcastEvent(globalEvent)
+              } catch (e) {
+                if (import.meta.env.DEV) {
+                  console.warn('[SSE] Failed to parse event:', e, eventData)
+                }
               }
             }
-            eventData = ''
           }
+          // SSE spec: 忽略 "event:", "id:", "retry:" 等其他字段（当前不需要）
         }
       }
     })
@@ -431,13 +456,7 @@ function startBackgroundKeepalive() {
       console.warn('[SSE] Background keepalive: connection appears dead, forcing reconnect')
 
       // 断开旧连接
-      if (isTauri()) {
-        import('@tauri-apps/api/core')
-          .then(({ invoke }) => {
-            invoke('sse_disconnect').catch(() => {})
-          })
-          .catch(() => {})
-      }
+      disconnectTauri()
       if (singletonController) {
         singletonController.abort()
         singletonController = null
@@ -471,13 +490,7 @@ function disconnectSingleton() {
   stopBackgroundKeepalive()
 
   // Tauri: 调用 Rust 侧断开命令
-  if (isTauri()) {
-    import('@tauri-apps/api/core')
-      .then(({ invoke }) => {
-        invoke('sse_disconnect').catch(() => {})
-      })
-      .catch(() => {})
-  }
+  disconnectTauri()
 
   // Browser: abort fetch
   if (singletonController) {
@@ -557,13 +570,7 @@ function forceReconnectNow() {
 
   // 断开旧连接
   connectionGeneration++
-  if (isTauri()) {
-    import('@tauri-apps/api/core')
-      .then(({ invoke }) => {
-        invoke('sse_disconnect').catch(() => {})
-      })
-      .catch(() => {})
-  }
+  disconnectTauri()
   if (singletonController) {
     singletonController.abort()
     singletonController = null
@@ -589,13 +596,7 @@ function handleOffline() {
   // 标记为断连，但不尝试重连（没网重连也没用）
   if (connectionInfo.state === 'connected' || connectionInfo.state === 'connecting') {
     connectionGeneration++
-    if (isTauri()) {
-      import('@tauri-apps/api/core')
-        .then(({ invoke }) => {
-          invoke('sse_disconnect').catch(() => {})
-        })
-        .catch(() => {})
-    }
+    disconnectTauri()
     if (singletonController) {
       singletonController.abort()
       singletonController = null
@@ -735,13 +736,7 @@ export function reconnectSSE() {
   // 递增连接代次，使旧连接的事件回调自动失效
   connectionGeneration++
 
-  if (isTauri()) {
-    import('@tauri-apps/api/core')
-      .then(({ invoke }) => {
-        invoke('sse_disconnect').catch(() => {})
-      })
-      .catch(() => {})
-  }
+  disconnectTauri()
   if (singletonController) {
     singletonController.abort()
     singletonController = null
