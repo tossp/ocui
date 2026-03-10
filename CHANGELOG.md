@@ -1,5 +1,19 @@
 # Changelog
 
+## [v0.1.14] - 2026-03-10
+
+- fix: session switch scroll + eliminate all content flicker during load (d823799)
+- fix: infinite history loading loop + stabilize observer + cleaner scroll-to-bottom (fe28777)
+- fix: smooth shimmer gradient + disable browser scroll restoration + multi-frame scroll-to-bottom (2144260)
+- fix: shimmer highlight sweep + remove unused visibleMessageIds state (ae767ca)
+- fix: outline click retract, prepend scroll preservation, cross-message merge continuation (e3ca11a)
+- fix: desktop label click navigation + mobile passive touch events in OutlineIndex (f35f758)
+- refactor: rewrite OutlineIndex with clean fisheye engine (1057c1c)
+- refactor: replace react-virtuoso with native scroll + content-visibility (2dc550a)
+- fix: correct shimmer animation direction (left-to-right) and use linear timing (16bc419)
+- fix: endsWithTool skips empty reasoning/text so cross-message tool merging works correctly (fdedbcd)
+- style: replace thinking breath-bar with shimmer text animation in italic mode (1bed06b)
+
 ## [v0.1.13] - 2026-03-10
 
 - fix: SSE reconnect race conditions and stale timeout constant (7614d53)
