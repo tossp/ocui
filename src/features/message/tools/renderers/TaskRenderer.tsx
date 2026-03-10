@@ -5,6 +5,7 @@ import { useDelayedRender } from '../../../../hooks'
 import { useSessionState, messageStore, childSessionStore } from '../../../../store'
 import { abortSession, getSessionMessages } from '../../../../api'
 import { sessionErrorHandler } from '../../../../utils'
+import { formatToolName } from '../../../../utils/formatUtils'
 import type { ToolRendererProps } from '../types'
 import type { Message, TextPart, ToolPart } from '../../../../types/message'
 
@@ -425,7 +426,3 @@ function MessageSkeleton() {
 // ============================================
 // Icons & Helpers
 // ============================================
-
-function formatToolName(name: string): string {
-  return name.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-}

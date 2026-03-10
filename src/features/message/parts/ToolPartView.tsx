@@ -2,6 +2,7 @@ import { memo, useState } from 'react'
 import { ChevronDownIcon, ChevronRightIcon } from '../../../components/Icons'
 import type { ToolPart } from '../../../types/message'
 import { useDelayedRender } from '../../../hooks'
+import { formatToolName, formatDuration } from '../../../utils/formatUtils'
 import {
   getToolIcon,
   extractToolData,
@@ -251,12 +252,3 @@ function ToolBody({ part }: { part: ToolPart }) {
 // ============================================
 // Helpers
 // ============================================
-
-function formatToolName(name: string): string {
-  return name.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-}
-
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`
-  return `${(ms / 1000).toFixed(1)}s`
-}

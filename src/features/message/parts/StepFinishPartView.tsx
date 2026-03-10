@@ -1,6 +1,7 @@
 import { memo } from 'react'
 import { useTheme } from '../../../hooks/useTheme'
 import type { StepFinishPart } from '../../../types/message'
+import { formatNumber, formatCost, formatDuration } from '../../../utils/formatUtils'
 
 interface StepFinishPartViewProps {
   part: StepFinishPart
@@ -8,26 +9,6 @@ interface StepFinishPartViewProps {
   duration?: number
   /** 整个回合总耗时（毫秒），从用户发送到最后一条 assistant 完成 */
   turnDuration?: number
-}
-
-function formatNumber(num: number): string {
-  if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
-  if (num >= 1000) return (num / 1000).toFixed(1) + 'k'
-  return num.toString()
-}
-
-function formatCost(cost: number): string {
-  if (cost < 0.01) return '<$0.01'
-  return '$' + cost.toFixed(3)
-}
-
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`
-  const s = ms / 1000
-  if (s < 60) return `${s.toFixed(1)}s`
-  const m = Math.floor(s / 60)
-  const rem = Math.round(s % 60)
-  return rem > 0 ? `${m}m${rem}s` : `${m}m`
 }
 
 export const StepFinishPartView = memo(function StepFinishPartView({
