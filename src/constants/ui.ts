@@ -3,32 +3,17 @@
 // ============================================
 
 // ============================================
-// Virtuoso / Scroll Constants
+// Scroll Constants
 // ============================================
-
-/** Virtuoso 起始索引（用于向上无限滚动） */
-export const VIRTUOSO_START_INDEX = 1000000
 
 /** 自动滚动阈值（像素） */
 export const AUTO_SCROLL_THRESHOLD_PX = 150
 
-/** 滚动检查间隔 */
+/** 流式自动滚动检查间隔 */
 export const SCROLL_CHECK_INTERVAL_MS = 100
-
-/** 滚动恢复延迟 */
-export const SCROLL_RESUME_DELAY_MS = 500
 
 /** 底部判断阈值 */
 export const AT_BOTTOM_THRESHOLD_PX = 60
-
-/** Virtuoso 预加载区域 */
-export const VIRTUOSO_OVERSCAN_PX = 280
-
-/** Virtuoso 预估消息高度（减少 CLS） */
-export const VIRTUOSO_ESTIMATED_ITEM_HEIGHT = 120
-
-/** 加载更多触发阈值 */
-export const LOAD_MORE_THRESHOLD_PX = 100
 
 // ============================================
 // Content Display Constants

@@ -961,3 +961,16 @@ textarea.custom-scrollbar::-webkit-scrollbar-thumb {
 .contain-content {
   contain: content;
 }
+
+/* ============================================
+ * Chat Message Item - content-visibility 优化
+ * ============================================
+ * 替代 react-virtuoso 虚拟列表：
+ * - content-visibility: auto 让浏览器跳过视口外元素的 layout/paint
+ * - contain-intrinsic-size: auto 120px 记住已渲染元素的实际高度，
+ *   未渲染过的元素使用 120px 估算
+ */
+.chat-message-item {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 120px;
+}

@@ -64,10 +64,7 @@ export const MessageRenderer = memo(function MessageRenderer({
 /** 默认预览 8 行 */
 const COLLAPSE_PREVIEW_LINES = 8
 
-/**
- * react-virtuoso 滚动时会卸载/重挂载 item，组件内 state 不足以保留折叠状态。
- * 这里缓存两件事：这条消息是否真的溢出，以及用户是否手动展开过。
- */
+// 折叠状态缓存：消息是否溢出、用户是否手动展开过
 const overflowStateCache = new Map<string, boolean>()
 const expandedMessages = new Set<string>()
 

@@ -138,10 +138,8 @@ export function useRevertState({
         setMessages(filteredApiMessages.map(convertApiToMessage))
 
         // 9. 滚动到末尾，让用户看到"断点"
-        // 需要等 React 渲染完成和 Virtuoso 更新
-        setTimeout(() => {
-          requestAnimationFrame(() => scrollToEnd())
-        }, 50)
+        // 等 React 渲染完成后再滚动
+        requestAnimationFrame(() => scrollToEnd())
       } catch (error) {
         revertErrorHandler('undo', error)
       }

@@ -21,7 +21,7 @@ export default defineConfig({
           if (id.includes('@xterm/')) return 'vendor-terminal'
           if (id.includes('shiki')) return 'vendor-shiki'
           if (id.includes('react-markdown') || id.includes('remark-gfm')) return 'vendor-markdown'
-          if (id.includes('react-virtuoso')) return 'vendor-virtuoso'
+
           if (id.includes('@tauri-apps/')) return 'vendor-tauri'
         },
       },

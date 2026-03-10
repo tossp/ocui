@@ -1,9 +1,14 @@
 // ============================================
 // ChatArea - 聊天消息显示区域
 // ============================================
+//
+// 使用原生滚动 + CSS content-visibility 替代 react-virtuoso：
+// - content-visibility: auto  跳过视口外元素的 layout/paint
+// - overflow-anchor: auto     prepend 历史消息时浏览器自动保持滚动位置
+// - IntersectionObserver       追踪可见消息 / 触顶加载
+// ============================================
 
 import { useRef, useImperativeHandle, forwardRef, useState, memo, useCallback, useEffect, useMemo } from 'react'
-import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import { MessageRenderer } from '../message'
 import { messageStore } from '../../store'
 import { useTheme } from '../../hooks/useTheme'
@@ -11,29 +16,21 @@ import { SpinnerIcon } from '../../components/Icons'
 import type { Message } from '../../types/message'
 import { RetryStatusInline, type RetryStatusInlineData } from './RetryStatusInline'
 import { buildVisibleMessageEntries } from './chatAreaVisibility'
-import {
-  VIRTUOSO_START_INDEX,
-  SCROLL_CHECK_INTERVAL_MS,
-  SCROLL_RESUME_DELAY_MS,
-  AT_BOTTOM_THRESHOLD_PX,
-  VIRTUOSO_OVERSCAN_PX,
-  VIRTUOSO_ESTIMATED_ITEM_HEIGHT,
-  MESSAGE_PREFETCH_BUFFER,
-} from '../../constants'
+import { SCROLL_CHECK_INTERVAL_MS, AT_BOTTOM_THRESHOLD_PX, MESSAGE_PREFETCH_BUFFER } from '../../constants'
 import { useIsMobile } from '../../hooks'
 import { logger } from '../../utils/logger'
 
 interface ChatAreaProps {
   messages: Message[]
-  /** 当前 session ID，用于检测 session 切换并触发过渡动画 */
+  /** 当前 session ID */
   sessionId?: string | null
-  /** 是否正在 streaming，用于定时自动滚动 */
+  /** 是否正在 streaming */
   isStreaming?: boolean
-  /** 累计向前加载的消息数量，用于计算 Virtuoso 的 firstItemIndex */
+  /** @deprecated 原生 overflow-anchor 自动处理 prepend，不再需要 */
   prependedCount?: number
   /** Session 加载状态 */
   loadState?: 'idle' | 'loading' | 'loaded' | 'error'
-  /** 是否还有更多历史消息可加载 */
+  /** 是否还有更多历史消息 */
   hasMoreHistory?: boolean
   onLoadMore?: () => void | Promise<void>
   onUndo?: (userMessageId: string) => void
@@ -54,17 +51,11 @@ export type ChatAreaHandle = {
   scrollToLastMessage: () => void
   /** 临时禁用自动滚动（用于 undo/redo） */
   suppressAutoScroll: (duration?: number) => void
-  /** 滚动到指定索引的消息（用于目录导航） */
+  /** 滚动到指定索引的消息 */
   scrollToMessageIndex: (index: number) => void
-  /** 按消息 ID 滚动（避免渲染合并导致的索引漂移） */
+  /** 按消息 ID 滚动 */
   scrollToMessageId: (messageId: string) => void
 }
-
-// 大数字作为起始索引，允许向前 prepend
-const START_INDEX = VIRTUOSO_START_INDEX
-
-// Virtuoso Header 是静态的，提到组件外部避免每次 render 重建
-const VirtuosoHeader = () => <div className="h-20" />
 
 export const ChatArea = memo(
   forwardRef<ChatAreaHandle, ChatAreaProps>(
@@ -73,7 +64,6 @@ export const ChatArea = memo(
         messages,
         sessionId,
         isStreaming = false,
-        prependedCount = 0,
         loadState = 'idle',
         hasMoreHistory = false,
         onLoadMore,
@@ -87,156 +77,58 @@ export const ChatArea = memo(
       },
       ref,
     ) => {
-      const virtuosoRef = useRef<VirtuosoHandle>(null)
+      // ---- DOM refs ----
+      const scrollContainerRef = useRef<HTMLDivElement>(null)
+      const topSentinelRef = useRef<HTMLDivElement>(null)
+
       const { isWideMode } = useTheme()
       const isMobile = useIsMobile()
-      // 移动端输入框收起/展开会导致 ~80px 高度差，加大阈值防止 isAtBottom 抖动
+      // 移动端输入框收起/展开导致高度差，加大阈值防抖动
       const atBottomThreshold = isMobile ? 150 : AT_BOTTOM_THRESHOLD_PX
-      // 外部滚动容器
-      const [scrollParent, setScrollParent] = useState<HTMLElement | null>(null)
-      // 追踪用户是否在底部附近 - 用于决定是否自动滚动
-      const isUserAtBottomRef = useRef(true)
-      // 临时禁用自动滚动的标志
-      const suppressScrollRef = useRef(false)
-      // 用户正在滚动的标志 - 滚动期间不触发自动滚动
-      const isUserScrollingRef = useRef(false)
-      const scrollingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-      // 用户在流式期间主动向上滚动 - 完全停止自动滚动，直到用户滚回底部
-      const userScrolledAwayRef = useRef(false)
-      // 程序触发的滚动标志 - 用于区分用户手动滚动和 scrollToIndex 触发的滚动
-      const programmaticScrollRef = useRef(false)
-      const programmaticScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-      const initialScrollSessionRef = useRef<string | null>(null)
 
-      // Session 切换：追踪上一个 sessionId，用于检测切换并触发滚动+动画
-      const prevSessionIdRef = useRef(sessionId)
+      // ---- 滚动状态（3 个 ref 替代原来的 7 个） ----
+      const isAtBottomRef = useRef(true)
+      const userScrolledAwayRef = useRef(false) // 流式期间用户主动上滑
+      const suppressScrollRef = useRef(false) // 临时禁用（undo/redo）
 
-      // 向上滚动加载更多历史消息的 loading 状态
+      // ---- 加载更多 ----
       const [isLoadingMore, setIsLoadingMore] = useState(false)
       const isLoadingMoreRef = useRef(false)
       const [showNoMoreHint, setShowNoMoreHint] = useState(false)
       const noMoreHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-      // 用户是否在列表顶部附近（用于决定是否显示加载 spinner）
       const [isNearTop, setIsNearTop] = useState(false)
-      const [virtualPrependedCount, setVirtualPrependedCount] = useState(0)
-      const virtualPrependedCountRef = useRef(0)
-      const prevVisibleFirstIdRef = useRef<string | null>(null)
-      const prevPrependedSessionRef = useRef<string | null>(null)
 
-      const triggerNoMoreHint = useCallback(() => {
-        setShowNoMoreHint(true)
-        if (noMoreHintTimerRef.current) {
-          clearTimeout(noMoreHintTimerRef.current)
-        }
-        noMoreHintTimerRef.current = setTimeout(() => {
-          setShowNoMoreHint(false)
-          noMoreHintTimerRef.current = null
-        }, 1200)
-      }, [])
+      // ---- Session 切换 ----
+      const prevSessionIdRef = useRef(sessionId)
+      const initialScrollDoneRef = useRef<string | null>(null)
 
-      const markProgrammaticScroll = useCallback((duration = 220) => {
-        programmaticScrollRef.current = true
-        if (programmaticScrollTimerRef.current) {
-          clearTimeout(programmaticScrollTimerRef.current)
-        }
-        programmaticScrollTimerRef.current = setTimeout(() => {
-          programmaticScrollRef.current = false
-          programmaticScrollTimerRef.current = null
-        }, duration)
-      }, [])
+      // ---- 可见消息追踪 ----
+      const visibilityObserverRef = useRef<IntersectionObserver | null>(null)
+      const observedElementsRef = useRef(new WeakSet<Element>())
+      const visibleMsgIdsRef = useRef(new Set<string>())
 
-      const scrollToIndexProgrammatically = useCallback(
-        (options: { index: number; align: 'start' | 'center' | 'end'; behavior: 'auto' | 'smooth' }) => {
-          if (options.index < 0) return
-          markProgrammaticScroll(options.behavior === 'smooth' ? 700 : 220)
-          virtuosoRef.current?.scrollToIndex(options)
-        },
-        [markProgrammaticScroll],
-      )
-
-      // 监听 scrollParent 滚动，追踪是否在顶部附近
-      useEffect(() => {
-        if (!scrollParent) return
-        const THRESHOLD = 150
-        const handleScroll = () => {
-          setIsNearTop(scrollParent.scrollTop < THRESHOLD)
-        }
-        handleScroll() // 初始检查
-        scrollParent.addEventListener('scroll', handleScroll, { passive: true })
-        return () => scrollParent.removeEventListener('scroll', handleScroll)
-      }, [scrollParent])
-
-      // 监听用户直接交互事件（wheel/touch），确保第一时间标记用户主动滚动
-      // 这比 Virtuoso 的 isScrolling 回调更及时
-      useEffect(() => {
-        if (!scrollParent || !isStreaming) return
-
-        const markUserScrolling = () => {
-          // 用户主动触发了滚动操作
-          isUserScrollingRef.current = true
-          // 如果不在底部，标记为滚离
-          if (!isUserAtBottomRef.current) {
-            userScrolledAwayRef.current = true
-          }
-        }
-
-        scrollParent.addEventListener('wheel', markUserScrolling, { passive: true })
-        scrollParent.addEventListener('touchstart', markUserScrolling, { passive: true })
-        return () => {
-          scrollParent.removeEventListener('wheel', markUserScrolling)
-          scrollParent.removeEventListener('touchstart', markUserScrolling)
-        }
-      }, [scrollParent, isStreaming])
-
-      // 包装 onLoadMore，追踪加载状态（带最小展示时间防止闪烁）
-      const handleLoadMore = useCallback(async () => {
-        if (!onLoadMore || isLoadingMoreRef.current) return
-
-        const hadMoreBeforeLoad = sessionId
-          ? (messageStore.getSessionState(sessionId)?.hasMoreHistory ?? false)
-          : hasMoreHistory
-
-        if (!hadMoreBeforeLoad) {
-          return
-        }
-
-        logger.log(
-          `[ChatArea] startReached:trigger session=${sessionId ?? 'none'} visibleCount=${visibleMessagesCountRef.current} prependedCount=${virtualPrependedCountRef.current} storePrepended=${prependedCount}`,
-        )
-
-        isLoadingMoreRef.current = true
-        setIsLoadingMore(true)
-        const minDelay = new Promise(r => setTimeout(r, 400))
-        try {
-          await Promise.all([onLoadMore(), minDelay])
-
-          const latestHasMore = sessionId ? messageStore.getSessionState(sessionId)?.hasMoreHistory : hasMoreHistory
-          logger.log(
-            `[ChatArea] startReached:done session=${sessionId ?? 'none'} visibleCount=${visibleMessagesCountRef.current} prependedCount=${virtualPrependedCountRef.current} storePrepended=${prependedCount} hasMore=${String(latestHasMore)}`,
-          )
-
-          if (sessionId && hadMoreBeforeLoad && !latestHasMore) {
-            logger.log('[ChatArea] startReached:no-more-hint', { sessionId })
-            triggerNoMoreHint()
-          }
-        } finally {
-          isLoadingMoreRef.current = false
-          setIsLoadingMore(false)
-        }
-      }, [onLoadMore, sessionId, triggerNoMoreHint, prependedCount, hasMoreHistory])
+      // ============================================
+      // 数据处理
+      // ============================================
 
       // 过滤空消息 + 合并连续工具 assistant 消息
       const visibleMessageEntries = useMemo(() => buildVisibleMessageEntries(messages), [messages])
       const visibleMessages = useMemo(() => visibleMessageEntries.map(entry => entry.message), [visibleMessageEntries])
 
+      // 稳定引用，供回调和 handle 方法读取最新值
+      const visibleMessagesRef = useRef(visibleMessages)
+      visibleMessagesRef.current = visibleMessages
+      const visibleMessageEntriesRef = useRef(visibleMessageEntries)
+      visibleMessageEntriesRef.current = visibleMessageEntries
+      const onVisibleMessageIdsChangeRef = useRef(onVisibleMessageIdsChange)
+      onVisibleMessageIdsChangeRef.current = onVisibleMessageIdsChange
+
       // 计算每个回合的总时长：user.created → 最后一条 assistant.completed
-      // 只在回合最后一条 assistant 消息上标记
       const turnDurationMap = useMemo(() => {
         const map = new Map<string, number>()
         for (let i = 0; i < visibleMessages.length; i++) {
           if (visibleMessages[i].info.role !== 'user') continue
           const userCreated = visibleMessages[i].info.time.created
-          // 找到这个 user 之后的最后一条 assistant（直到下一个 user 或末尾）
           let lastAssistant: Message | undefined
           for (let j = i + 1; j < visibleMessages.length && visibleMessages[j].info.role !== 'user'; j++) {
             lastAssistant = visibleMessages[j]
@@ -248,243 +140,258 @@ export const ChatArea = memo(
         return map
       }, [visibleMessages])
 
-      // 用 ref 追踪最新的消息数量，确保回调和 effect 中能获取到
-      const visibleMessagesCountRef = useRef(visibleMessages.length)
-      visibleMessagesCountRef.current = visibleMessages.length
+      const messageMaxWidthClass = isWideMode ? 'max-w-[95%] xl:max-w-6xl' : 'max-w-2xl'
 
-      // 用 ref 追踪最新的消息列表和回调，供 handleRangeChanged 稳定引用
-      const visibleMessagesRef = useRef(visibleMessages)
-      visibleMessagesRef.current = visibleMessages
-      const visibleMessageEntriesRef = useRef(visibleMessageEntries)
-      visibleMessageEntriesRef.current = visibleMessageEntries
-      const onVisibleMessageIdsChangeRef = useRef(onVisibleMessageIdsChange)
-      onVisibleMessageIdsChangeRef.current = onVisibleMessageIdsChange
+      // ============================================
+      // 滚动控制
+      // ============================================
 
-      // 稳定的 rangeChanged 回调 —— 不随 visibleMessages 变化重建，
-      // 避免 Virtuoso 因为 rangeChanged 引用变化做额外工作
-      const handleRangeChanged = useCallback((range: { startIndex: number; endIndex: number }) => {
-        const cb = onVisibleMessageIdsChangeRef.current
-        if (!cb) return
-        const entries = visibleMessageEntriesRef.current
-        const start = Math.max(0, range.startIndex - MESSAGE_PREFETCH_BUFFER)
-        const end = Math.min(entries.length - 1, range.endIndex + MESSAGE_PREFETCH_BUFFER)
-        const ids: string[] = []
-        for (let i = start; i <= end; i++) {
-          const sourceIds = entries[i]?.sourceIds
-          if (sourceIds?.length) ids.push(...sourceIds)
-        }
-        cb(ids)
-      }, [])
-
-      // 以可见消息为准追踪 prepend 数，避免 tool 合并导致的索引漂移
+      // scroll 事件：更新 isAtBottom、isNearTop
       useEffect(() => {
-        const firstId = visibleMessages[0]?.info.id ?? null
-
-        if (prevPrependedSessionRef.current !== (sessionId ?? null)) {
-          prevPrependedSessionRef.current = sessionId ?? null
-          prevVisibleFirstIdRef.current = firstId
-          virtualPrependedCountRef.current = 0
-          setVirtualPrependedCount(0)
-          return
+        const el = scrollContainerRef.current
+        if (!el) return
+        const onScroll = () => {
+          const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= atBottomThreshold
+          const prev = isAtBottomRef.current
+          isAtBottomRef.current = atBottom
+          if (atBottom) userScrolledAwayRef.current = false
+          if (prev !== atBottom) onAtBottomChange?.(atBottom)
+          setIsNearTop(el.scrollTop < 150)
         }
+        el.addEventListener('scroll', onScroll, { passive: true })
+        return () => el.removeEventListener('scroll', onScroll)
+      }, [atBottomThreshold, onAtBottomChange])
 
-        const prevFirstId = prevVisibleFirstIdRef.current
-        if (!prevFirstId || !firstId) {
-          prevVisibleFirstIdRef.current = firstId
-          return
-        }
-
-        if (prevFirstId === firstId) return
-
-        const prevFirstIndex = visibleMessages.findIndex(m => m.info.id === prevFirstId)
-        if (prevFirstIndex > 0) {
-          virtualPrependedCountRef.current += prevFirstIndex
-          setVirtualPrependedCount(virtualPrependedCountRef.current)
-        } else if (prevFirstIndex === -1) {
-          // 数据被整批替换时重置，防止 firstItemIndex 漂移
-          virtualPrependedCountRef.current = 0
-          setVirtualPrependedCount(0)
-        }
-
-        prevVisibleFirstIdRef.current = firstId
-      }, [sessionId, visibleMessages])
-
-      // 用户停留在顶部且仍有历史时自动继续拉取，避免 startReached 不二次触发造成假停顿
-      useEffect(() => {
-        if (!onLoadMore || isLoadingMore || isLoadingMoreRef.current) return
-        if (!isNearTop) return
-        const latestHasMore = sessionId ? messageStore.getSessionState(sessionId)?.hasMoreHistory : hasMoreHistory
-        if (!latestHasMore) return
-
-        const timer = setTimeout(() => {
-          if (!isLoadingMoreRef.current) {
-            logger.log(`[ChatArea] startReached:auto-chain session=${sessionId ?? 'none'}`)
-            void handleLoadMore()
-          }
-        }, 120)
-
-        return () => clearTimeout(timer)
-      }, [onLoadMore, isLoadingMore, isNearTop, sessionId, hasMoreHistory, handleLoadMore])
-
-      // Always start at the bottom (latest message)
-      const effectiveInitialIndex = Math.max(0, visibleMessages.length - 1)
-
-      // 定时自动滚动：在 streaming 时定期检查是否需要滚动
-      // 这样打字机效果导致的内容增长也会触发滚动
+      // 流式期间：wheel/touchstart 标记用户主动滚离
       useEffect(() => {
         if (!isStreaming) return
-
-        const scrollInterval = setInterval(() => {
-          // 如果用户正在滚动、被禁用、或用户已主动滚离底部，绝对不自动滚
-          if (isUserScrollingRef.current || suppressScrollRef.current || userScrolledAwayRef.current) {
-            return
-          }
-
-          // 只在用户确实在底部时才自动滚动
-          if (!isUserAtBottomRef.current) {
-            return
-          }
-
-          // 标记为程序触发的滚动，防止 handleIsScrolling 误判
-          // 只用 Virtuoso 滚动，不强制 DOM 滚动
-          scrollToIndexProgrammatically({
-            index: visibleMessagesCountRef.current - 1,
-            align: 'end',
-            behavior: 'auto',
-          })
-        }, SCROLL_CHECK_INTERVAL_MS)
-
-        return () => clearInterval(scrollInterval)
-      }, [isStreaming, scrollToIndexProgrammatically])
-
-      // 清理 timeout refs 防止内存泄漏
-      useEffect(() => {
-        return () => {
-          if (scrollingTimeoutRef.current) {
-            clearTimeout(scrollingTimeoutRef.current)
-            scrollingTimeoutRef.current = null
-          }
-          if (programmaticScrollTimerRef.current) {
-            clearTimeout(programmaticScrollTimerRef.current)
-            programmaticScrollTimerRef.current = null
-          }
-          if (noMoreHintTimerRef.current) {
-            clearTimeout(noMoreHintTimerRef.current)
-            noMoreHintTimerRef.current = null
-          }
+        const el = scrollContainerRef.current
+        if (!el) return
+        const markScrolledAway = () => {
+          if (!isAtBottomRef.current) userScrolledAwayRef.current = true
         }
-      }, [])
-
-      // 流式结束时重置"用户滚离"标志，避免下次发消息时残留
-      useEffect(() => {
-        if (!isStreaming) {
-          userScrolledAwayRef.current = false
+        el.addEventListener('wheel', markScrolledAway, { passive: true })
+        el.addEventListener('touchstart', markScrolledAway, { passive: true })
+        return () => {
+          el.removeEventListener('wheel', markScrolledAway)
+          el.removeEventListener('touchstart', markScrolledAway)
         }
       }, [isStreaming])
 
-      // Session 切换时：滚动到底部 + 触发淡入动画
-      // 因为不再用 key 重新挂载 Virtuoso，需要在 sessionId 变化时主动处理
+      // 流式自动滚动：定时 scrollTop = scrollHeight
+      useEffect(() => {
+        if (!isStreaming) return
+        const interval = setInterval(() => {
+          if (suppressScrollRef.current || userScrolledAwayRef.current || !isAtBottomRef.current) return
+          const el = scrollContainerRef.current
+          if (el) el.scrollTop = el.scrollHeight
+        }, SCROLL_CHECK_INTERVAL_MS)
+        return () => clearInterval(interval)
+      }, [isStreaming])
+
+      // 流式结束：重置"用户滚离"标志
+      useEffect(() => {
+        if (!isStreaming) userScrolledAwayRef.current = false
+      }, [isStreaming])
+
+      // Session 切换：重置滚动状态 + 淡入动画
       useEffect(() => {
         if (sessionId === prevSessionIdRef.current) return
         prevSessionIdRef.current = sessionId
-        initialScrollSessionRef.current = null
-        isUserAtBottomRef.current = true
-        isUserScrollingRef.current = false
+        initialScrollDoneRef.current = null
+        isAtBottomRef.current = true
         userScrolledAwayRef.current = false
         suppressScrollRef.current = false
-        if (scrollingTimeoutRef.current) {
-          clearTimeout(scrollingTimeoutRef.current)
-          scrollingTimeoutRef.current = null
-        }
-        if (programmaticScrollTimerRef.current) {
-          clearTimeout(programmaticScrollTimerRef.current)
-          programmaticScrollTimerRef.current = null
-        }
-        programmaticScrollRef.current = false
+        visibleMsgIdsRef.current.clear()
 
-        // 触发淡入动画：移除再添加 animate-fade-in class
-        if (scrollParent) {
-          scrollParent.classList.remove('animate-fade-in')
-          // 强制 reflow 让浏览器重新识别动画
-          void scrollParent.offsetWidth
-          scrollParent.classList.add('animate-fade-in')
+        const el = scrollContainerRef.current
+        if (el) {
+          el.classList.remove('animate-fade-in')
+          void el.offsetWidth // force reflow
+          el.classList.add('animate-fade-in')
         }
-      }, [sessionId, scrollParent])
+      }, [sessionId])
 
-      // 刷新/切 session 加载中时，先清掉浏览器可能恢复的旧 scrollTop
+      // 加载中清除浏览器残留的 scrollTop
       useEffect(() => {
-        if (!sessionId || !scrollParent) return
-        if (loadState !== 'loading') return
-        scrollParent.scrollTop = 0
-      }, [sessionId, scrollParent, loadState])
+        if (!sessionId || loadState !== 'loading') return
+        const el = scrollContainerRef.current
+        if (el) el.scrollTop = 0
+      }, [sessionId, loadState])
 
-      // session 初始显示时只做一次定位，覆盖浏览器/virtuoso 的历史位置残留
+      // Session 加载完成后定位到底部（只执行一次）
       useEffect(() => {
-        if (!sessionId || !scrollParent) return
-        if (loadState !== 'loaded') return
-        if (visibleMessagesCountRef.current === 0) return
-        if (initialScrollSessionRef.current === sessionId) return
+        if (!sessionId || loadState !== 'loaded') return
+        if (visibleMessages.length === 0) return
+        if (initialScrollDoneRef.current === sessionId) return
+        initialScrollDoneRef.current = sessionId
 
-        initialScrollSessionRef.current = sessionId
-        let raf2 = 0
-        const raf1 = requestAnimationFrame(() => {
-          raf2 = requestAnimationFrame(() => {
-            scrollToIndexProgrammatically({
-              index: visibleMessagesCountRef.current - 1,
-              align: 'end',
-              behavior: 'auto',
-            })
-          })
+        requestAnimationFrame(() => {
+          const el = scrollContainerRef.current
+          if (el) el.scrollTop = el.scrollHeight
         })
+      }, [sessionId, loadState, visibleMessages.length])
 
-        return () => {
-          cancelAnimationFrame(raf1)
-          if (raf2) cancelAnimationFrame(raf2)
+      // ============================================
+      // 加载更多历史消息
+      // ============================================
+
+      const triggerNoMoreHint = useCallback(() => {
+        setShowNoMoreHint(true)
+        if (noMoreHintTimerRef.current) clearTimeout(noMoreHintTimerRef.current)
+        noMoreHintTimerRef.current = setTimeout(() => {
+          setShowNoMoreHint(false)
+          noMoreHintTimerRef.current = null
+        }, 1200)
+      }, [])
+
+      const handleLoadMore = useCallback(async () => {
+        if (!onLoadMore || isLoadingMoreRef.current) return
+        const hadMore = sessionId ? (messageStore.getSessionState(sessionId)?.hasMoreHistory ?? false) : hasMoreHistory
+        if (!hadMore) return
+
+        logger.log(`[ChatArea] loadMore: session=${sessionId ?? 'none'}`)
+        isLoadingMoreRef.current = true
+        setIsLoadingMore(true)
+        const minDelay = new Promise(r => setTimeout(r, 400))
+        try {
+          await Promise.all([onLoadMore(), minDelay])
+          const latestHasMore = sessionId ? messageStore.getSessionState(sessionId)?.hasMoreHistory : hasMoreHistory
+          if (hadMore && !latestHasMore) triggerNoMoreHint()
+        } finally {
+          isLoadingMoreRef.current = false
+          setIsLoadingMore(false)
         }
-      }, [sessionId, scrollParent, loadState, visibleMessages.length, scrollToIndexProgrammatically])
+      }, [onLoadMore, sessionId, hasMoreHistory, triggerNoMoreHint])
 
-      // firstItemIndex：基于可见消息 prepend 计数，避免合并后错位
-      const firstItemIndex = START_INDEX - virtualPrependedCount
+      // IntersectionObserver：顶部哨兵触发加载
+      useEffect(() => {
+        const sentinel = topSentinelRef.current
+        const root = scrollContainerRef.current
+        if (!sentinel || !root) return
+        const observer = new IntersectionObserver(
+          ([entry]) => {
+            if (entry.isIntersecting && !isLoadingMoreRef.current) void handleLoadMore()
+          },
+          { root, rootMargin: '200px 0px 0px 0px' },
+        )
+        observer.observe(sentinel)
+        return () => observer.disconnect()
+      }, [handleLoadMore])
 
-      const messageMaxWidthClass = isWideMode ? 'max-w-[95%] xl:max-w-6xl' : 'max-w-2xl'
+      // 用户停在顶部时自动继续拉取
+      useEffect(() => {
+        if (!onLoadMore || isLoadingMore || isLoadingMoreRef.current || !isNearTop) return
+        const latestHasMore = sessionId ? messageStore.getSessionState(sessionId)?.hasMoreHistory : hasMoreHistory
+        if (!latestHasMore) return
+        const timer = setTimeout(() => {
+          if (!isLoadingMoreRef.current) void handleLoadMore()
+        }, 120)
+        return () => clearTimeout(timer)
+      }, [onLoadMore, isLoadingMore, isNearTop, sessionId, hasMoreHistory, handleLoadMore])
+
+      // 定时器清理
+      useEffect(() => {
+        return () => {
+          if (noMoreHintTimerRef.current) clearTimeout(noMoreHintTimerRef.current)
+        }
+      }, [])
+
+      // ============================================
+      // 可见消息追踪（IntersectionObserver）
+      // ============================================
+
+      // 创建 visibility observer — 组件生命周期内只创建一次
+      // rootMargin: '100% 0px' 上下各扩展一屏，提前触发预取
+      useEffect(() => {
+        const root = scrollContainerRef.current
+        if (!root) return
+
+        const observer = new IntersectionObserver(
+          entries => {
+            let changed = false
+            for (const entry of entries) {
+              const id = entry.target.getAttribute('data-message-id')
+              if (!id) continue
+              if (entry.isIntersecting) {
+                if (!visibleMsgIdsRef.current.has(id)) {
+                  visibleMsgIdsRef.current.add(id)
+                  changed = true
+                }
+              } else if (visibleMsgIdsRef.current.has(id)) {
+                visibleMsgIdsRef.current.delete(id)
+                changed = true
+              }
+            }
+            if (!changed) return
+
+            const cb = onVisibleMessageIdsChangeRef.current
+            if (!cb) return
+            const currentEntries = visibleMessageEntriesRef.current
+            const visibleIds = visibleMsgIdsRef.current
+
+            // 找到可见范围的 min/max index → 加 buffer → 收集 sourceIds
+            let minIdx = currentEntries.length
+            let maxIdx = -1
+            for (let i = 0; i < currentEntries.length; i++) {
+              if (visibleIds.has(currentEntries[i].message.info.id)) {
+                if (i < minIdx) minIdx = i
+                if (i > maxIdx) maxIdx = i
+              }
+            }
+            if (maxIdx < 0) return
+
+            const start = Math.max(0, minIdx - MESSAGE_PREFETCH_BUFFER)
+            const end = Math.min(currentEntries.length - 1, maxIdx + MESSAGE_PREFETCH_BUFFER)
+            const ids: string[] = []
+            for (let i = start; i <= end; i++) {
+              const sourceIds = currentEntries[i]?.sourceIds
+              if (sourceIds?.length) ids.push(...sourceIds)
+            }
+            cb(ids)
+          },
+          { root, rootMargin: '100% 0px' },
+        )
+
+        visibilityObserverRef.current = observer
+        return () => {
+          observer.disconnect()
+          visibilityObserverRef.current = null
+        }
+      }, [])
+
+      // 注册消息元素到 visibility observer（引用稳定，不会导致重复 observe）
+      const observeMessage = useCallback((el: HTMLDivElement | null) => {
+        if (el && visibilityObserverRef.current && !observedElementsRef.current.has(el)) {
+          visibilityObserverRef.current.observe(el)
+          observedElementsRef.current.add(el)
+        }
+      }, [])
+
+      // ============================================
+      // Imperative Handle
+      // ============================================
 
       useImperativeHandle(
         ref,
         () => ({
           scrollToBottom: (instant = false) => {
-            scrollToIndexProgrammatically({
-              index: visibleMessagesCountRef.current - 1,
-              align: 'end',
-              behavior: instant ? 'auto' : 'smooth',
-            })
+            const el = scrollContainerRef.current
+            if (!el) return
+            el.scrollTo({ top: el.scrollHeight, behavior: instant ? 'auto' : 'smooth' })
           },
           scrollToBottomIfAtBottom: () => {
-            // 用户正在滚动、被禁用、不在底部、或已主动滚离时，不自动滚动
-            if (
-              isUserScrollingRef.current ||
-              suppressScrollRef.current ||
-              !isUserAtBottomRef.current ||
-              userScrolledAwayRef.current
-            ) {
-              return
-            }
-            // 使用 auto 而不是 smooth，减少和用户滚动的冲突
-            scrollToIndexProgrammatically({
-              index: visibleMessagesCountRef.current - 1,
-              align: 'end',
-              behavior: 'auto',
-            })
+            if (suppressScrollRef.current || !isAtBottomRef.current || userScrolledAwayRef.current) return
+            const el = scrollContainerRef.current
+            if (el) el.scrollTop = el.scrollHeight
           },
           scrollToLastMessage: () => {
-            // 滚动到最后一条消息，显示在视口上部（用于 Undo 后）
-            const count = visibleMessagesCountRef.current
-            if (count > 0) {
-              scrollToIndexProgrammatically({
-                index: count - 1,
-                align: 'start',
-                behavior: 'auto',
-              })
-            }
+            const msgs = visibleMessagesRef.current
+            if (msgs.length === 0) return
+            const lastId = msgs[msgs.length - 1].info.id
+            scrollContainerRef.current
+              ?.querySelector(`[data-message-id="${lastId}"]`)
+              ?.scrollIntoView({ block: 'start', behavior: 'auto' })
           },
           suppressAutoScroll: (duration = 500) => {
             suppressScrollRef.current = true
@@ -493,90 +400,33 @@ export const ChatArea = memo(
             }, duration)
           },
           scrollToMessageIndex: (index: number) => {
-            if (index >= 0 && index < visibleMessagesCountRef.current) {
-              // 临时禁用自动滚动，避免被拉回底部
-              suppressScrollRef.current = true
-              setTimeout(() => {
-                suppressScrollRef.current = false
-              }, 1000)
-
-              scrollToIndexProgrammatically({
-                index,
-                align: 'start',
-                behavior: 'smooth',
-              })
-            }
-          },
-          scrollToMessageId: (messageId: string) => {
-            const index = visibleMessagesRef.current.findIndex(m => m.info.id === messageId)
-            if (index < 0) return
-
+            const msg = visibleMessagesRef.current[index]
+            if (!msg) return
             suppressScrollRef.current = true
             setTimeout(() => {
               suppressScrollRef.current = false
             }, 1000)
-
-            scrollToIndexProgrammatically({
-              index,
-              align: 'start',
-              behavior: 'smooth',
-            })
+            scrollContainerRef.current
+              ?.querySelector(`[data-message-id="${msg.info.id}"]`)
+              ?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+          },
+          scrollToMessageId: (messageId: string) => {
+            suppressScrollRef.current = true
+            setTimeout(() => {
+              suppressScrollRef.current = false
+            }, 1000)
+            scrollContainerRef.current
+              ?.querySelector(`[data-message-id="${messageId}"]`)
+              ?.scrollIntoView({ block: 'start', behavior: 'smooth' })
           },
         }),
-        [scrollToIndexProgrammatically],
+        [],
       )
 
-      // followOutput: 完全禁用，改用手动控制
-      // Virtuoso 的 followOutput 会在每次数据变化时触发，太频繁了
-      const handleFollowOutput = useCallback(() => false, [])
+      // ============================================
+      // 渲染
+      // ============================================
 
-      // 追踪用户滚动位置
-      const handleAtBottomStateChange = useCallback(
-        (atBottom: boolean) => {
-          isUserAtBottomRef.current = atBottom
-          // 用户滚回底部，重置"滚离"标志，恢复自动滚动
-          if (atBottom) {
-            userScrolledAwayRef.current = false
-          }
-          onAtBottomChange?.(atBottom)
-        },
-        [onAtBottomChange],
-      )
-
-      // 追踪用户是否正在滚动
-      const handleIsScrolling = useCallback(
-        (scrolling: boolean) => {
-          // 如果是程序触发的滚动（scrollToIndex），忽略
-          if (programmaticScrollRef.current) return
-
-          if (scrolling) {
-            // 用户开始滚动，立即禁用自动滚动
-            isUserScrollingRef.current = true
-            // 如果正在流式且用户不在底部，标记为"主动滚离"
-            if (isStreaming && !isUserAtBottomRef.current) {
-              userScrolledAwayRef.current = true
-            }
-            // 清除之前的 timeout
-            if (scrollingTimeoutRef.current) {
-              clearTimeout(scrollingTimeoutRef.current)
-              scrollingTimeoutRef.current = null
-            }
-          } else {
-            // 滚动停止后延迟才允许自动滚动
-            // 给用户足够的缓冲时间
-            scrollingTimeoutRef.current = setTimeout(() => {
-              isUserScrollingRef.current = false
-              // 再次检查：如果滚动停止时不在底部且正在流式，确保标记滚离
-              if (isStreaming && !isUserAtBottomRef.current) {
-                userScrolledAwayRef.current = true
-              }
-            }, SCROLL_RESUME_DELAY_MS)
-          }
-        },
-        [isStreaming],
-      )
-
-      // 消息项渲染 - 带 ref 注册
       const renderMessage = useCallback(
         (msg: Message) => {
           const handleRef = (el: HTMLDivElement | null) => {
@@ -614,50 +464,11 @@ export const ChatArea = memo(
         [registerMessage, onUndo, canUndo, messageMaxWidthClass, sessionId, turnDurationMap],
       )
 
-      // Session 正在加载且没有消息 → 显示全屏 spinner（仅在有 sessionId 时，新建对话不显示）
       const showSessionLoading = !!sessionId && loadState === 'loading' && visibleMessages.length === 0
-
-      // 通过 Virtuoso context 传递动态数据给 Footer，让 components 引用保持稳定
-      // 这样 Footer 组件不会被 remount（保留 RetryStatusInline 的 expanded 状态），
-      // 但在 context 变化时会 re-render
-      const virtuosoContext = useMemo(
-        () => ({
-          retryStatus: retryStatus ?? null,
-          bottomPadding,
-          messageMaxWidthClass,
-        }),
-        [retryStatus, bottomPadding, messageMaxWidthClass],
-      )
-
-      // Virtuoso components 必须引用稳定，否则每次 render 都会 remount Footer/Header
-      const virtuosoComponents = useMemo(
-        () => ({
-          Header: VirtuosoHeader,
-          Footer: ({ context }: { context: typeof virtuosoContext }) => (
-            <>
-              {context.retryStatus && (
-                <div className={`w-full ${context.messageMaxWidthClass} mx-auto px-4`}>
-                  <div className="flex justify-start">
-                    <div className="w-full min-w-0">
-                      <RetryStatusInline status={context.retryStatus} />
-                    </div>
-                  </div>
-                </div>
-              )}
-              <div
-                style={{
-                  height: context.bottomPadding > 0 ? `${context.bottomPadding + 16}px` : '256px',
-                }}
-              />
-            </>
-          ),
-        }),
-        [],
-      )
 
       return (
         <div className="h-full overflow-hidden contain-strict relative">
-          {/* Session 加载中的全屏居中 spinner */}
+          {/* Session 加载中 spinner */}
           {showSessionLoading && (
             <div className="absolute inset-0 z-10 flex items-center justify-center">
               <div className="flex flex-col items-center gap-3 text-text-400 animate-in fade-in duration-300">
@@ -666,7 +477,8 @@ export const ChatArea = memo(
               </div>
             </div>
           )}
-          {/* 向上加载历史消息的顶部 spinner：仅在有更多历史且用户停留在顶部时显示 */}
+
+          {/* 顶部加载 spinner */}
           {isLoadingMore && isNearTop && (
             <div className="absolute top-24 left-0 right-0 z-10 flex justify-center pointer-events-none">
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-bg-100/90 border border-border-200 shadow-sm text-text-400 animate-in fade-in slide-in-from-top-2 duration-200">
@@ -675,6 +487,8 @@ export const ChatArea = memo(
               </div>
             </div>
           )}
+
+          {/* 没有更多历史提示 */}
           {!isLoadingMore && showNoMoreHint && isNearTop && (
             <div className="absolute top-24 left-0 right-0 z-10 flex justify-center pointer-events-none">
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-bg-100/90 border border-border-200 shadow-sm text-text-400 animate-in fade-in slide-in-from-top-2 duration-200">
@@ -682,31 +496,42 @@ export const ChatArea = memo(
               </div>
             </div>
           )}
+
+          {/* 滚动容器 */}
           <div
-            ref={setScrollParent}
+            ref={scrollContainerRef}
             className="h-full overflow-y-auto custom-scrollbar animate-fade-in contain-content"
           >
-            {scrollParent && (
-              <Virtuoso
-                ref={virtuosoRef}
-                data={visibleMessages}
-                customScrollParent={scrollParent}
-                context={virtuosoContext}
-                firstItemIndex={firstItemIndex}
-                initialTopMostItemIndex={effectiveInitialIndex}
-                startReached={handleLoadMore}
-                followOutput={handleFollowOutput}
-                atBottomStateChange={handleAtBottomStateChange}
-                isScrolling={handleIsScrolling}
-                atBottomThreshold={atBottomThreshold}
-                defaultItemHeight={VIRTUOSO_ESTIMATED_ITEM_HEIGHT}
-                skipAnimationFrameInResizeObserver
-                overscan={{ main: VIRTUOSO_OVERSCAN_PX, reverse: VIRTUOSO_OVERSCAN_PX }}
-                components={virtuosoComponents}
-                rangeChanged={handleRangeChanged}
-                itemContent={(_, msg) => renderMessage(msg)}
-              />
+            {/* 顶部哨兵：IntersectionObserver 触发加载更多 */}
+            <div ref={topSentinelRef} className="h-px" aria-hidden="true" />
+
+            {/* 顶部留白 */}
+            <div className="h-20" />
+
+            {/* 消息列表 */}
+            {visibleMessages.map(msg => (
+              <div key={msg.info.id} ref={observeMessage} data-message-id={msg.info.id} className="chat-message-item">
+                {renderMessage(msg)}
+              </div>
+            ))}
+
+            {/* Retry 状态 */}
+            {retryStatus && (
+              <div className={`w-full ${messageMaxWidthClass} mx-auto px-4`}>
+                <div className="flex justify-start">
+                  <div className="w-full min-w-0">
+                    <RetryStatusInline status={retryStatus} />
+                  </div>
+                </div>
+              </div>
             )}
+
+            {/* 底部留白 */}
+            <div
+              style={{
+                height: bottomPadding > 0 ? `${bottomPadding + 16}px` : '256px',
+              }}
+            />
           </div>
         </div>
       )
