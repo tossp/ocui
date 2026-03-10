@@ -785,11 +785,12 @@ textarea.custom-scrollbar::-webkit-scrollbar-thumb {
 .reasoning-shimmer-text {
   background: linear-gradient(
     90deg,
-    transparent 0%,
-    hsl(var(--text-200)) 35%,
-    hsl(var(--text-100)) 50%,
-    hsl(var(--text-200)) 65%,
-    transparent 100%
+    hsl(var(--text-300)) 0%,
+    hsl(var(--text-300)) 30%,
+    hsl(var(--text-100)) 48%,
+    hsl(var(--text-100)) 52%,
+    hsl(var(--text-300)) 70%,
+    hsl(var(--text-300)) 100%
   );
   background-size: 200% 100%;
   -webkit-background-clip: text;

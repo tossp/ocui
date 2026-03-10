@@ -70,7 +70,7 @@ function App() {
   // 用 ref 存最新值，只在内容真正变化时才 setState，
   // 避免滚动时 rangeChanged 高频创建新数组引用导致 OutlineIndex 无意义 re-render
   // ============================================
-  const [visibleMessageIds, setVisibleMessageIds] = useState<string[]>([])
+  const [, setVisibleMessageIds] = useState<string[]>([])
   const visibleMessageIdsRef = useRef<string[]>([])
   const setVisibleMessageIdsStable = useCallback((ids: string[]) => {
     const prev = visibleMessageIdsRef.current
