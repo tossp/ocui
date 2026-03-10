@@ -99,6 +99,7 @@ export const ChatArea = memo(
       const isAtBottomRef = useRef(true)
       const userScrolledAwayRef = useRef(false) // 流式期间用户主动上滑
       const suppressScrollRef = useRef(false) // 临时禁用（undo/redo）
+      const userInteractingRef = useRef(false) // 用户正在触摸/滚轮交互中
 
       // ---- 加载更多 ----
       const [isLoadingMore, setIsLoadingMore] = useState(false)
@@ -174,6 +175,9 @@ export const ChatArea = memo(
           const prev = isAtBottomRef.current
           isAtBottomRef.current = atBottom
           if (atBottom) userScrolledAwayRef.current = false
+          // 流式期间：用户主动交互（触摸/滚轮）导致离开底部 → 标记 scrolledAway
+          // 必须检查 userInteractingRef 以区分"自动滚动触发的 onScroll"和"用户主动滑动"
+          if (!atBottom && userInteractingRef.current) userScrolledAwayRef.current = true
           if (prev !== atBottom) onAtBottomChange?.(atBottom)
           setIsNearTop(el.scrollTop < 150)
         }
@@ -181,19 +185,40 @@ export const ChatArea = memo(
         return () => el.removeEventListener('scroll', onScroll)
       }, [atBottomThreshold, onAtBottomChange])
 
-      // 流式期间：wheel/touchstart 标记用户主动滚离
+      // 流式期间：标记用户正在主动交互（触摸/滚轮）
+      // touchstart/wheel 设标记，touchend/timeout 清除
       useEffect(() => {
         if (!isStreaming) return
         const el = scrollContainerRef.current
         if (!el) return
-        const markScrolledAway = () => {
-          if (!isAtBottomRef.current) userScrolledAwayRef.current = true
+        let touchEndTimer: ReturnType<typeof setTimeout> | null = null
+        const onTouchStart = () => {
+          userInteractingRef.current = true
         }
-        el.addEventListener('wheel', markScrolledAway, { passive: true })
-        el.addEventListener('touchstart', markScrolledAway, { passive: true })
+        const onTouchEnd = () => {
+          // 延迟清除：惯性滚动可能在 touchend 后继续触发 onScroll
+          touchEndTimer = setTimeout(() => {
+            userInteractingRef.current = false
+          }, 300)
+        }
+        const onWheel = () => {
+          userInteractingRef.current = true
+          // wheel 事件无明确结束，用短超时自动清除
+          if (touchEndTimer) clearTimeout(touchEndTimer)
+          touchEndTimer = setTimeout(() => {
+            userInteractingRef.current = false
+          }, 150)
+        }
+        el.addEventListener('touchstart', onTouchStart, { passive: true })
+        el.addEventListener('touchend', onTouchEnd, { passive: true })
+        el.addEventListener('touchcancel', onTouchEnd, { passive: true })
+        el.addEventListener('wheel', onWheel, { passive: true })
         return () => {
-          el.removeEventListener('wheel', markScrolledAway)
-          el.removeEventListener('touchstart', markScrolledAway)
+          el.removeEventListener('touchstart', onTouchStart)
+          el.removeEventListener('touchend', onTouchEnd)
+          el.removeEventListener('touchcancel', onTouchEnd)
+          el.removeEventListener('wheel', onWheel)
+          if (touchEndTimer) clearTimeout(touchEndTimer)
         }
       }, [isStreaming])
 
@@ -201,16 +226,26 @@ export const ChatArea = memo(
       useEffect(() => {
         if (!isStreaming) return
         const interval = setInterval(() => {
-          if (suppressScrollRef.current || userScrolledAwayRef.current || !isAtBottomRef.current) return
+          // 用户正在交互（触摸/滚轮）时暂停自动滚动，即使仍在底部阈值内
+          if (
+            suppressScrollRef.current ||
+            userScrolledAwayRef.current ||
+            userInteractingRef.current ||
+            !isAtBottomRef.current
+          )
+            return
           const el = scrollContainerRef.current
           if (el) el.scrollTop = el.scrollHeight
         }, SCROLL_CHECK_INTERVAL_MS)
         return () => clearInterval(interval)
       }, [isStreaming])
 
-      // 流式结束：重置"用户滚离"标志
+      // 流式结束：重置"用户滚离"和交互标志
       useEffect(() => {
-        if (!isStreaming) userScrolledAwayRef.current = false
+        if (!isStreaming) {
+          userScrolledAwayRef.current = false
+          userInteractingRef.current = false
+        }
       }, [isStreaming])
 
       // Session 切换 / 首次 mount：重置滚动状态 + 隐藏容器
@@ -222,6 +257,7 @@ export const ChatArea = memo(
         initialScrollDoneRef.current = null
         isAtBottomRef.current = true
         userScrolledAwayRef.current = false
+        userInteractingRef.current = false
         suppressScrollRef.current = false
         visibleMsgIdsRef.current.clear()
         prePrependRef.current = null
