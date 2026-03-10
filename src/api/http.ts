@@ -97,7 +97,13 @@ export interface RequestOptions {
   method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE'
   body?: unknown
   headers?: Record<string, string>
+  /** 请求超时（毫秒），默认 30000。传 0 表示不超时 */
+  timeout?: number
+  /** 外部传入的 AbortSignal，与 timeout 取先到者 */
+  signal?: AbortSignal
 }
+
+const DEFAULT_TIMEOUT = 30_000
 
 /**
  * 通用 HTTP 请求函数
@@ -111,16 +117,34 @@ export async function request<T>(
   params: Record<string, QueryValue> = {},
   options: RequestOptions = {},
 ): Promise<T> {
-  const { method = 'GET', body, headers = {} } = options
+  const { method = 'GET', body, headers = {}, timeout = DEFAULT_TIMEOUT, signal } = options
 
   const requestHeaders: Record<string, string> = {
     ...getAuthHeader(),
     ...headers,
   }
 
+  // 超时控制：合并外部 signal 和 timeout
+  const controller = new AbortController()
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
+
+  if (timeout > 0) {
+    timeoutId = setTimeout(() => controller.abort(new Error(`Request timed out after ${timeout}ms`)), timeout)
+  }
+
+  // 外部 signal 取消时也中止
+  if (signal) {
+    if (signal.aborted) {
+      controller.abort(signal.reason)
+    } else {
+      signal.addEventListener('abort', () => controller.abort(signal.reason), { once: true })
+    }
+  }
+
   const init: RequestInit = {
     method,
     headers: requestHeaders,
+    signal: controller.signal,
   }
 
   if (body !== undefined) {
@@ -131,32 +155,36 @@ export async function request<T>(
     init.body = JSON.stringify(body)
   }
 
-  const response = await unifiedFetch(buildUrl(path, params), init)
+  try {
+    const response = await unifiedFetch(buildUrl(path, params), init)
 
-  if (!response.ok) {
-    let errorMsg = `Request failed: ${response.status}`
-    try {
-      const errorText = await response.text()
-      if (errorText) {
-        errorMsg += ` - ${errorText}`
+    if (!response.ok) {
+      let errorMsg = `Request failed: ${response.status}`
+      try {
+        const errorText = await response.text()
+        if (errorText) {
+          errorMsg += ` - ${errorText}`
+        }
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
+      throw new Error(errorMsg)
     }
-    throw new Error(errorMsg)
-  }
 
-  // 204 No Content
-  if (response.status === 204) {
-    return undefined as T
-  }
+    // 204 No Content
+    if (response.status === 204) {
+      return undefined as T
+    }
 
-  const text = await response.text()
-  if (!text) {
-    return undefined as T
-  }
+    const text = await response.text()
+    if (!text) {
+      return undefined as T
+    }
 
-  return JSON.parse(text)
+    return JSON.parse(text)
+  } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId)
+  }
 }
 
 /**
