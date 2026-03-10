@@ -8,8 +8,7 @@
  * - 自适应内容大小，有最大尺寸限制
  */
 
-import { memo, useState, useEffect, useCallback, useMemo } from 'react'
-import { createPortal } from 'react-dom'
+import { memo, useState, useEffect, useMemo } from 'react'
 import { diffLines } from 'diff'
 import { CloseIcon } from './Icons'
 import { CopyButton } from './ui'
@@ -17,7 +16,7 @@ import { detectLanguage } from '../utils/languageUtils'
 import { extractContentFromUnifiedDiff } from '../utils/diffUtils'
 import { DiffViewer, type ViewMode } from './DiffViewer'
 import { CodePreview } from './CodePreview'
-import { useDelayedRender } from '../hooks/useDelayedRender'
+import { ModalShell } from './ui/ModalShell'
 
 // ============================================
 // Types
@@ -52,9 +51,7 @@ export type FullscreenViewerProps = CodeViewerProps | DiffViewerProps
 export const FullscreenViewer = memo(function FullscreenViewer(props: FullscreenViewerProps) {
   const { isOpen, onClose, filePath, language } = props
 
-  const [isVisible, setIsVisible] = useState(false)
   const [diffViewMode, setDiffViewMode] = useState<ViewMode>('split')
-  const shouldRender = useDelayedRender(isOpen, 200)
 
   // 响应式 diff view mode
   useEffect(() => {
@@ -64,44 +61,6 @@ export const FullscreenViewer = memo(function FullscreenViewer(props: Fullscreen
     window.addEventListener('resize', checkWidth)
     return () => window.removeEventListener('resize', checkWidth)
   }, [props.mode])
-
-  // 动画控制
-  useEffect(() => {
-    let frameId: number | null = null
-
-    if (shouldRender && isOpen) {
-      frameId = requestAnimationFrame(() => {
-        setIsVisible(true)
-      })
-    } else {
-      frameId = requestAnimationFrame(() => {
-        setIsVisible(false)
-      })
-    }
-
-    return () => {
-      if (frameId !== null) {
-        cancelAnimationFrame(frameId)
-      }
-    }
-  }, [shouldRender, isOpen])
-
-  // ESC 关闭
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) onClose()
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, onClose])
-
-  // 点击背景关闭
-  const handleBackdropClick = useCallback(
-    (e: React.MouseEvent) => {
-      if (e.target === e.currentTarget) onClose()
-    },
-    [onClose],
-  )
 
   // 解析内容
   const { content, resolvedDiff, diffStats, lang, fileName, lineCount } = useMemo(() => {
@@ -149,97 +108,71 @@ export const FullscreenViewer = memo(function FullscreenViewer(props: Fullscreen
     }
   }, [props, language, filePath])
 
-  if (!shouldRender) return null
+  return (
+    <ModalShell isOpen={isOpen} onClose={onClose} variant="card" closeOnBackdrop>
+      {/* Header */}
+      <div className="flex items-center h-11 px-4 border-b border-border-100/60 bg-bg-200/30 shrink-0 gap-3">
+        {/* Left: file info */}
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          {fileName && (
+            <span className="text-text-100 font-mono text-[13px] font-medium truncate min-w-0 flex-1">{fileName}</span>
+          )}
+          {filePath && fileName && filePath !== fileName && (
+            <span className="text-text-500 font-mono text-[11px] truncate hidden sm:block min-w-0">{filePath}</span>
+          )}
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 transition-all duration-200 ease-out"
-      style={{
-        backgroundColor: isVisible ? 'hsl(var(--always-black) / 0.4)' : 'hsl(var(--always-black) / 0)',
-        backdropFilter: isVisible ? 'blur(2px)' : 'blur(0px)',
-      }}
-      onClick={handleBackdropClick}
-      role="dialog"
-      aria-modal="true"
-    >
-      {/* 卡片 - 自适应高度 */}
-      <div
-        className="relative flex flex-col bg-bg-100 border border-border-200/60 rounded-lg shadow-2xl overflow-hidden transition-all duration-200 ease-out"
-        style={{
-          width: 'min(96vw, 1400px)',
-          maxHeight: 'min(90vh, 1000px)',
-          opacity: isVisible ? 1 : 0,
-          transform: isVisible ? 'scale(1) translateY(0)' : 'scale(0.98) translateY(4px)',
-        }}
-        onClick={e => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center h-11 px-4 border-b border-border-100/60 bg-bg-200/30 shrink-0 gap-3">
-          {/* Left: file info */}
-          <div className="flex items-center gap-3 min-w-0 flex-1">
-            {fileName && (
-              <span className="text-text-100 font-mono text-[13px] font-medium truncate min-w-0 flex-1">
-                {fileName}
-              </span>
-            )}
-            {filePath && fileName && filePath !== fileName && (
-              <span className="text-text-500 font-mono text-[11px] truncate hidden sm:block min-w-0">{filePath}</span>
-            )}
+          {/* Diff stats */}
+          {diffStats && (
+            <div className="flex items-center gap-1.5 text-[11px] font-mono tabular-nums shrink-0">
+              {diffStats.additions > 0 && <span className="text-success-100">+{diffStats.additions}</span>}
+              {diffStats.deletions > 0 && <span className="text-danger-100">-{diffStats.deletions}</span>}
+            </div>
+          )}
 
-            {/* Diff stats */}
-            {diffStats && (
-              <div className="flex items-center gap-1.5 text-[11px] font-mono tabular-nums shrink-0">
-                {diffStats.additions > 0 && <span className="text-success-100">+{diffStats.additions}</span>}
-                {diffStats.deletions > 0 && <span className="text-danger-100">-{diffStats.deletions}</span>}
-              </div>
-            )}
-
-            {/* Line count for code */}
-            {props.mode === 'code' && (
-              <span className="text-text-500 text-[11px] font-mono shrink-0">{lineCount} lines</span>
-            )}
-          </div>
-
-          {/* Right: controls */}
-          <div className="flex items-center gap-2 shrink-0">
-            {/* Copy button for code */}
-            {props.mode === 'code' && content && <CopyButton text={content} position="static" />}
-
-            {/* View mode switch for diff */}
-            {props.mode === 'diff' && (
-              <>
-                <ViewModeSwitch viewMode={diffViewMode} onChange={setDiffViewMode} />
-                <div className="w-px h-4 bg-border-200/40" />
-              </>
-            )}
-
-            <button
-              onClick={onClose}
-              className="p-1.5 text-text-400 hover:text-text-100 hover:bg-bg-300/60 rounded-lg transition-colors"
-              title="Close (Esc)"
-            >
-              <CloseIcon size={16} />
-            </button>
-          </div>
+          {/* Line count for code */}
+          {props.mode === 'code' && (
+            <span className="text-text-500 text-[11px] font-mono shrink-0">{lineCount} lines</span>
+          )}
         </div>
 
-        {/* Content - 用 max-height 限制，减去 header 44px */}
-        <div className="overflow-auto custom-scrollbar" style={{ maxHeight: 'calc(min(90vh, 1000px) - 44px)' }}>
-          {props.mode === 'diff' && resolvedDiff ? (
-            <DiffViewer
-              before={resolvedDiff.before}
-              after={resolvedDiff.after}
-              language={lang}
-              viewMode={diffViewMode}
-              autoHeight
-            />
-          ) : props.mode === 'code' && content ? (
-            <CodePreview code={content} language={lang} truncateLines={false} />
-          ) : null}
+        {/* Right: controls */}
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Copy button for code */}
+          {props.mode === 'code' && content && <CopyButton text={content} position="static" />}
+
+          {/* View mode switch for diff */}
+          {props.mode === 'diff' && (
+            <>
+              <ViewModeSwitch viewMode={diffViewMode} onChange={setDiffViewMode} />
+              <div className="w-px h-4 bg-border-200/40" />
+            </>
+          )}
+
+          <button
+            onClick={onClose}
+            className="p-1.5 text-text-400 hover:text-text-100 hover:bg-bg-300/60 rounded-lg transition-colors"
+            title="Close (Esc)"
+          >
+            <CloseIcon size={16} />
+          </button>
         </div>
       </div>
-    </div>,
-    document.body,
+
+      {/* Content - 用 max-height 限制，减去 header 44px */}
+      <div className="overflow-auto custom-scrollbar" style={{ maxHeight: 'calc(min(90vh, 1000px) - 44px)' }}>
+        {props.mode === 'diff' && resolvedDiff ? (
+          <DiffViewer
+            before={resolvedDiff.before}
+            after={resolvedDiff.after}
+            language={lang}
+            viewMode={diffViewMode}
+            autoHeight
+          />
+        ) : props.mode === 'code' && content ? (
+          <CodePreview code={content} language={lang} truncateLines={false} />
+        ) : null}
+      </div>
+    </ModalShell>
   )
 })
 

@@ -5,13 +5,13 @@
  */
 
 import { memo, useState, useEffect, useMemo } from 'react'
-import { createPortal } from 'react-dom'
 import { diffLines } from 'diff'
 import { CloseIcon } from './Icons'
 import { detectLanguage } from '../utils/languageUtils'
 import { extractContentFromUnifiedDiff } from '../utils/diffUtils'
 import { DiffViewer, type ViewMode } from './DiffViewer'
-import { useDelayedRender } from '../hooks/useDelayedRender'
+import { ModalShell } from './ui/ModalShell'
+import { ViewModeSwitch } from './FullscreenViewer'
 
 // ============================================
 // Types
@@ -38,9 +38,7 @@ export const DiffModal = memo(function DiffModal({
   language,
   diffStats: providedStats,
 }: DiffModalProps) {
-  const [isVisible, setIsVisible] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>('split')
-  const shouldRender = useDelayedRender(isOpen, 200)
 
   useEffect(() => {
     const checkWidth = () => setViewMode(window.innerWidth >= 1000 ? 'split' : 'unified')
@@ -48,34 +46,6 @@ export const DiffModal = memo(function DiffModal({
     window.addEventListener('resize', checkWidth)
     return () => window.removeEventListener('resize', checkWidth)
   }, [])
-
-  useEffect(() => {
-    let frameId: number | null = null
-
-    if (shouldRender && isOpen) {
-      frameId = requestAnimationFrame(() => {
-        setIsVisible(true)
-      })
-    } else {
-      frameId = requestAnimationFrame(() => {
-        setIsVisible(false)
-      })
-    }
-
-    return () => {
-      if (frameId !== null) {
-        cancelAnimationFrame(frameId)
-      }
-    }
-  }, [shouldRender, isOpen])
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) onClose()
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, onClose])
 
   const { before, after } = useMemo(() => {
     if (typeof diff === 'object') return diff
@@ -97,91 +67,42 @@ export const DiffModal = memo(function DiffModal({
     return { additions, deletions }
   }, [before, after, providedStats])
 
-  if (!shouldRender) return null
-
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[100] flex items-center justify-center transition-all duration-200 ease-out"
-      style={{
-        backgroundColor: isVisible ? 'hsl(var(--always-black) / 0.4)' : 'hsl(var(--always-black) / 0)',
-        backdropFilter: isVisible ? 'blur(2px)' : 'blur(0px)',
-      }}
-      role="dialog"
-      aria-modal="true"
-    >
-      {/* 内容面板 - 全屏铺满但有不透明背景 */}
-      <div
-        className="w-full h-full flex flex-col bg-bg-000 transition-all duration-200 ease-out"
-        style={{
-          opacity: isVisible ? 1 : 0,
-          transform: isVisible ? 'scale(1)' : 'scale(0.98)',
-        }}
-      >
-        {/* Toolbar */}
-        <div className="flex items-center h-11 px-4 border-b border-border-100/40 shrink-0 gap-3">
-          {/* Left: file info */}
-          <div className="flex items-center gap-3 min-w-0 flex-1">
-            {fileName && (
-              <span className="text-text-100 font-mono text-[13px] font-medium truncate min-w-0 flex-1">
-                {fileName}
-              </span>
-            )}
-            {filePath && fileName && filePath !== fileName && (
-              <span className="text-text-500 font-mono text-[11px] truncate hidden sm:block min-w-0">{filePath}</span>
-            )}
-            <div className="flex items-center gap-1.5 text-[11px] font-mono tabular-nums shrink-0">
-              {diffStats.additions > 0 && <span className="text-success-100">+{diffStats.additions}</span>}
-              {diffStats.deletions > 0 && <span className="text-danger-100">-{diffStats.deletions}</span>}
-            </div>
-          </div>
-
-          {/* Right: controls */}
-          <div className="flex items-center gap-2 shrink-0">
-            <ViewModeSwitch viewMode={viewMode} onChange={setViewMode} />
-            <div className="w-px h-4 bg-border-200/30" />
-            <button
-              onClick={onClose}
-              className="p-1 text-text-400 hover:text-text-100 hover:bg-bg-200/60 rounded-md transition-colors"
-              title="Close (Esc)"
-            >
-              <CloseIcon size={16} />
-            </button>
+  return (
+    <ModalShell isOpen={isOpen} onClose={onClose} variant="fullscreen">
+      {/* Toolbar */}
+      <div className="flex items-center h-11 px-4 border-b border-border-100/40 shrink-0 gap-3">
+        {/* Left: file info */}
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          {fileName && (
+            <span className="text-text-100 font-mono text-[13px] font-medium truncate min-w-0 flex-1">{fileName}</span>
+          )}
+          {filePath && fileName && filePath !== fileName && (
+            <span className="text-text-500 font-mono text-[11px] truncate hidden sm:block min-w-0">{filePath}</span>
+          )}
+          <div className="flex items-center gap-1.5 text-[11px] font-mono tabular-nums shrink-0">
+            {diffStats.additions > 0 && <span className="text-success-100">+{diffStats.additions}</span>}
+            {diffStats.deletions > 0 && <span className="text-danger-100">-{diffStats.deletions}</span>}
           </div>
         </div>
 
-        {/* Diff — 填满剩余空间 */}
-        <div className="flex-1 min-h-0">
-          <DiffViewer before={before} after={after} language={lang} viewMode={viewMode} />
+        {/* Right: controls */}
+        <div className="flex items-center gap-2 shrink-0">
+          <ViewModeSwitch viewMode={viewMode} onChange={setViewMode} />
+          <div className="w-px h-4 bg-border-200/30" />
+          <button
+            onClick={onClose}
+            className="p-1 text-text-400 hover:text-text-100 hover:bg-bg-200/60 rounded-md transition-colors"
+            title="Close (Esc)"
+          >
+            <CloseIcon size={16} />
+          </button>
         </div>
       </div>
-    </div>,
-    document.body,
+
+      {/* Diff — 填满剩余空间 */}
+      <div className="flex-1 min-h-0">
+        <DiffViewer before={before} after={after} language={lang} viewMode={viewMode} />
+      </div>
+    </ModalShell>
   )
 })
-
-// ============================================
-// ViewModeSwitch
-// ============================================
-
-export function ViewModeSwitch({ viewMode, onChange }: { viewMode: ViewMode; onChange: (mode: ViewMode) => void }) {
-  return (
-    <div className="flex items-center bg-bg-200/60 rounded-md p-0.5 text-[11px]">
-      <button
-        className={`px-2 py-0.5 rounded transition-colors ${
-          viewMode === 'split' ? 'bg-bg-000 text-text-100 shadow-sm' : 'text-text-400 hover:text-text-200'
-        }`}
-        onClick={() => onChange('split')}
-      >
-        Split
-      </button>
-      <button
-        className={`px-2 py-0.5 rounded transition-colors ${
-          viewMode === 'unified' ? 'bg-bg-000 text-text-100 shadow-sm' : 'text-text-400 hover:text-text-200'
-        }`}
-        onClick={() => onChange('unified')}
-      >
-        Unified
-      </button>
-    </div>
-  )
-}

@@ -5,7 +5,6 @@
  */
 
 import { memo, useState, useEffect, useMemo, useRef } from 'react'
-import { createPortal } from 'react-dom'
 import { CloseIcon } from './Icons'
 import { getMaterialIconUrl } from '../utils/materialIcons'
 import { DiffViewer, type ViewMode } from './DiffViewer'
@@ -13,7 +12,7 @@ import { ViewModeSwitch } from './FullscreenViewer'
 import { getSessionDiff } from '../api/session'
 import type { FileDiff } from '../api/types'
 import { detectLanguage } from '../utils/languageUtils'
-import { useDelayedRender } from '../hooks/useDelayedRender'
+import { ModalShell } from './ui/ModalShell'
 
 // ============================================
 // Types
@@ -34,14 +33,11 @@ export const MultiFileDiffModal = memo(function MultiFileDiffModal({
   onClose,
   sessionId,
 }: MultiFileDiffModalProps) {
-  const [isVisible, setIsVisible] = useState(false)
-
   const [loading, setLoading] = useState(false)
   const [diffs, setDiffs] = useState<FileDiff[]>([])
   const [selectedFileIndex, setSelectedFileIndex] = useState(0)
   const [viewMode, setViewMode] = useState<ViewMode>('split')
   const [error, setError] = useState<string | null>(null)
-  const shouldRender = useDelayedRender(isOpen, 200)
   const requestIdRef = useRef(0)
 
   useEffect(() => {
@@ -87,32 +83,6 @@ export const MultiFileDiffModal = memo(function MultiFileDiffModal({
     }
   }, [isOpen, sessionId])
 
-  useEffect(() => {
-    let frameId: number | null = null
-
-    if (shouldRender && isOpen) {
-      frameId = requestAnimationFrame(() => {
-        setIsVisible(true)
-      })
-    } else {
-      frameId = requestAnimationFrame(() => {
-        setIsVisible(false)
-      })
-    }
-
-    return () => {
-      if (frameId !== null) cancelAnimationFrame(frameId)
-    }
-  }, [shouldRender, isOpen])
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) onClose()
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, onClose])
-
   const selectedDiff = diffs[selectedFileIndex]
   const language = selectedDiff ? detectLanguage(selectedDiff.file) || 'text' : 'text'
 
@@ -126,149 +96,127 @@ export const MultiFileDiffModal = memo(function MultiFileDiffModal({
     return { additions, deletions, files: diffs.length }
   }, [diffs])
 
-  if (!shouldRender) return null
-
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[100] flex items-center justify-center transition-all duration-200 ease-out"
-      style={{
-        backgroundColor: isVisible ? 'hsl(var(--always-black) / 0.4)' : 'hsl(var(--always-black) / 0)',
-        backdropFilter: isVisible ? 'blur(2px)' : 'blur(0px)',
-      }}
-      role="dialog"
-      aria-modal="true"
-    >
-      {/* 内容面板 - 全屏铺满但有不透明背景 */}
-      <div
-        className="w-full h-full flex flex-col bg-bg-000 transition-all duration-200 ease-out"
-        style={{
-          opacity: isVisible ? 1 : 0,
-          transform: isVisible ? 'scale(1)' : 'scale(0.98)',
-        }}
-      >
-        {/* Toolbar */}
-        <div className="flex items-center justify-between h-11 px-4 border-b border-border-100/40 shrink-0">
-          <div className="flex items-center gap-4 min-w-0">
-            <span className="text-text-100 font-medium text-[13px]">Session Changes</span>
-            <div className="flex items-center gap-3 text-[11px] font-mono text-text-400 tabular-nums">
-              <span>
-                {stats.files} file{stats.files !== 1 ? 's' : ''}
-              </span>
-              {(stats.additions > 0 || stats.deletions > 0) && (
-                <div className="flex items-center gap-1.5">
-                  {stats.additions > 0 && <span className="text-success-100">+{stats.additions}</span>}
-                  {stats.deletions > 0 && <span className="text-danger-100">-{stats.deletions}</span>}
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            <ViewModeSwitch viewMode={viewMode} onChange={setViewMode} />
-            <div className="w-px h-4 bg-border-200/30" />
-            <button
-              onClick={onClose}
-              className="p-1 text-text-400 hover:text-text-100 hover:bg-bg-200/60 rounded-md transition-colors"
-              title="Close (Esc)"
-            >
-              <CloseIcon size={16} />
-            </button>
-          </div>
-        </div>
-
-        {/* Body */}
-        <div className="flex-1 flex overflow-hidden min-h-0">
-          {/* Sidebar */}
-          <div className="w-56 border-r border-border-100/30 flex flex-col shrink-0">
-            <div className="flex-1 overflow-y-auto custom-scrollbar py-1">
-              {loading ? (
-                <div className="p-4 text-center text-text-400 text-xs">Loading...</div>
-              ) : error ? (
-                <div className="p-4 text-center text-danger-100 text-xs">{error}</div>
-              ) : diffs.length === 0 ? (
-                <div className="p-4 text-center text-text-400 text-xs">No changes found</div>
-              ) : (
-                diffs.map((d, idx) => {
-                  const name = d.file.split(/[/\\]/).pop() || d.file
-                  const isSelected = selectedFileIndex === idx
-
-                  return (
-                    <button
-                      key={idx}
-                      onClick={() => setSelectedFileIndex(idx)}
-                      className={`w-full min-w-0 text-left px-3 py-1.5 text-xs flex items-center gap-2 transition-colors ${
-                        isSelected
-                          ? 'bg-accent-main-100/10 text-text-100'
-                          : 'text-text-300 hover:bg-bg-200/40 hover:text-text-200'
-                      }`}
-                    >
-                      <img
-                        src={getMaterialIconUrl(d.file, 'file')}
-                        alt=""
-                        width={14}
-                        height={14}
-                        className="shrink-0"
-                        loading="lazy"
-                        decoding="async"
-                        onError={e => {
-                          e.currentTarget.style.visibility = 'hidden'
-                        }}
-                      />
-                      <span className="font-mono truncate flex-1 min-w-0">{name}</span>
-                      <div className="flex items-center gap-1 text-[10px] font-mono tabular-nums shrink-0">
-                        {d.additions > 0 && <span className="text-success-100">+{d.additions}</span>}
-                        {d.deletions > 0 && <span className="text-danger-100">-{d.deletions}</span>}
-                      </div>
-                    </button>
-                  )
-                })
-              )}
-            </div>
-          </div>
-
-          {/* Diff View */}
-          <div className="flex-1 flex flex-col min-w-0">
-            {selectedDiff ? (
-              <>
-                {/* File path bar */}
-                <div className="h-8 px-4 border-b border-border-100/20 flex items-center gap-2 shrink-0">
-                  <img
-                    src={getMaterialIconUrl(selectedDiff.file, 'file')}
-                    alt=""
-                    width={14}
-                    height={14}
-                    className="shrink-0"
-                    onError={e => {
-                      e.currentTarget.style.visibility = 'hidden'
-                    }}
-                  />
-                  <span className="font-mono text-[11px] text-text-300 truncate flex-1 min-w-0">
-                    {selectedDiff.file}
-                  </span>
-                  <div className="flex items-center gap-1.5 text-[10px] font-mono tabular-nums shrink-0">
-                    {selectedDiff.additions > 0 && <span className="text-success-100">+{selectedDiff.additions}</span>}
-                    {selectedDiff.deletions > 0 && <span className="text-danger-100">-{selectedDiff.deletions}</span>}
-                  </div>
-                </div>
-
-                <div className="flex-1 min-h-0">
-                  <DiffViewer
-                    before={selectedDiff.before}
-                    after={selectedDiff.after}
-                    language={language}
-                    viewMode={viewMode}
-                  />
-                </div>
-              </>
-            ) : (
-              <div className="flex-1 flex items-center justify-center text-text-400 text-xs">
-                {loading ? 'Loading changes...' : 'Select a file to view changes'}
+  return (
+    <ModalShell isOpen={isOpen} onClose={onClose} variant="fullscreen">
+      {/* Toolbar */}
+      <div className="flex items-center justify-between h-11 px-4 border-b border-border-100/40 shrink-0">
+        <div className="flex items-center gap-4 min-w-0">
+          <span className="text-text-100 font-medium text-[13px]">Session Changes</span>
+          <div className="flex items-center gap-3 text-[11px] font-mono text-text-400 tabular-nums">
+            <span>
+              {stats.files} file{stats.files !== 1 ? 's' : ''}
+            </span>
+            {(stats.additions > 0 || stats.deletions > 0) && (
+              <div className="flex items-center gap-1.5">
+                {stats.additions > 0 && <span className="text-success-100">+{stats.additions}</span>}
+                {stats.deletions > 0 && <span className="text-danger-100">-{stats.deletions}</span>}
               </div>
             )}
           </div>
         </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <ViewModeSwitch viewMode={viewMode} onChange={setViewMode} />
+          <div className="w-px h-4 bg-border-200/30" />
+          <button
+            onClick={onClose}
+            className="p-1 text-text-400 hover:text-text-100 hover:bg-bg-200/60 rounded-md transition-colors"
+            title="Close (Esc)"
+          >
+            <CloseIcon size={16} />
+          </button>
+        </div>
       </div>
-    </div>,
-    document.body,
+
+      {/* Body */}
+      <div className="flex-1 flex overflow-hidden min-h-0">
+        {/* Sidebar */}
+        <div className="w-56 border-r border-border-100/30 flex flex-col shrink-0">
+          <div className="flex-1 overflow-y-auto custom-scrollbar py-1">
+            {loading ? (
+              <div className="p-4 text-center text-text-400 text-xs">Loading...</div>
+            ) : error ? (
+              <div className="p-4 text-center text-danger-100 text-xs">{error}</div>
+            ) : diffs.length === 0 ? (
+              <div className="p-4 text-center text-text-400 text-xs">No changes found</div>
+            ) : (
+              diffs.map((d, idx) => {
+                const name = d.file.split(/[/\\]/).pop() || d.file
+                const isSelected = selectedFileIndex === idx
+
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => setSelectedFileIndex(idx)}
+                    className={`w-full min-w-0 text-left px-3 py-1.5 text-xs flex items-center gap-2 transition-colors ${
+                      isSelected
+                        ? 'bg-accent-main-100/10 text-text-100'
+                        : 'text-text-300 hover:bg-bg-200/40 hover:text-text-200'
+                    }`}
+                  >
+                    <img
+                      src={getMaterialIconUrl(d.file, 'file')}
+                      alt=""
+                      width={14}
+                      height={14}
+                      className="shrink-0"
+                      loading="lazy"
+                      decoding="async"
+                      onError={e => {
+                        e.currentTarget.style.visibility = 'hidden'
+                      }}
+                    />
+                    <span className="font-mono truncate flex-1 min-w-0">{name}</span>
+                    <div className="flex items-center gap-1 text-[10px] font-mono tabular-nums shrink-0">
+                      {d.additions > 0 && <span className="text-success-100">+{d.additions}</span>}
+                      {d.deletions > 0 && <span className="text-danger-100">-{d.deletions}</span>}
+                    </div>
+                  </button>
+                )
+              })
+            )}
+          </div>
+        </div>
+
+        {/* Diff View */}
+        <div className="flex-1 flex flex-col min-w-0">
+          {selectedDiff ? (
+            <>
+              {/* File path bar */}
+              <div className="h-8 px-4 border-b border-border-100/20 flex items-center gap-2 shrink-0">
+                <img
+                  src={getMaterialIconUrl(selectedDiff.file, 'file')}
+                  alt=""
+                  width={14}
+                  height={14}
+                  className="shrink-0"
+                  onError={e => {
+                    e.currentTarget.style.visibility = 'hidden'
+                  }}
+                />
+                <span className="font-mono text-[11px] text-text-300 truncate flex-1 min-w-0">{selectedDiff.file}</span>
+                <div className="flex items-center gap-1.5 text-[10px] font-mono tabular-nums shrink-0">
+                  {selectedDiff.additions > 0 && <span className="text-success-100">+{selectedDiff.additions}</span>}
+                  {selectedDiff.deletions > 0 && <span className="text-danger-100">-{selectedDiff.deletions}</span>}
+                </div>
+              </div>
+
+              <div className="flex-1 min-h-0">
+                <DiffViewer
+                  before={selectedDiff.before}
+                  after={selectedDiff.after}
+                  language={language}
+                  viewMode={viewMode}
+                />
+              </div>
+            </>
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-text-400 text-xs">
+              {loading ? 'Loading changes...' : 'Select a file to view changes'}
+            </div>
+          )}
+        </div>
+      </div>
+    </ModalShell>
   )
 })
