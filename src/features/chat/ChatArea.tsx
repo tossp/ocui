@@ -4,11 +4,21 @@
 //
 // 使用原生滚动 + CSS content-visibility 替代 react-virtuoso：
 // - content-visibility: auto  跳过视口外元素的 layout/paint
-// - overflow-anchor: auto     prepend 历史消息时浏览器自动保持滚动位置
+// - overflow-anchor: none     禁用浏览器锚定，由 useLayoutEffect 手动补偿 prepend 位置
 // - IntersectionObserver       追踪可见消息 / 触顶加载
 // ============================================
 
-import { useRef, useImperativeHandle, forwardRef, useState, memo, useCallback, useEffect, useMemo } from 'react'
+import {
+  useRef,
+  useImperativeHandle,
+  forwardRef,
+  useState,
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+} from 'react'
 import { MessageRenderer } from '../message'
 import { messageStore } from '../../store'
 import { useTheme } from '../../hooks/useTheme'
@@ -26,7 +36,7 @@ interface ChatAreaProps {
   sessionId?: string | null
   /** 是否正在 streaming */
   isStreaming?: boolean
-  /** @deprecated 原生 overflow-anchor 自动处理 prepend，不再需要 */
+  /** @deprecated 位置保持改用 useLayoutEffect + scrollHeight 差值补偿，此 prop 不再使用 */
   prependedCount?: number
   /** Session 加载状态 */
   loadState?: 'idle' | 'loading' | 'loaded' | 'error'
@@ -97,6 +107,11 @@ export const ChatArea = memo(
       const [showNoMoreHint, setShowNoMoreHint] = useState(false)
       const noMoreHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
       const [isNearTop, setIsNearTop] = useState(false)
+
+      // ---- Prepend 位置保持 ----
+      // handleLoadMore 发起前快照 scrollTop/scrollHeight/首条消息ID，
+      // useLayoutEffect 检测首条 ID 变化后用差值补偿 scrollTop
+      const prePrependRef = useRef<{ top: number; height: number; firstId: string } | null>(null)
 
       // ---- Session 切换 ----
       const prevSessionIdRef = useRef(sessionId)
@@ -203,6 +218,7 @@ export const ChatArea = memo(
         userScrolledAwayRef.current = false
         suppressScrollRef.current = false
         visibleMsgIdsRef.current.clear()
+        prePrependRef.current = null
 
         const el = scrollContainerRef.current
         if (el) {
@@ -250,6 +266,13 @@ export const ChatArea = memo(
         const hadMore = sessionId ? (messageStore.getSessionState(sessionId)?.hasMoreHistory ?? false) : hasMoreHistory
         if (!hadMore) return
 
+        // 快照 prepend 前的滚动位置，供 useLayoutEffect 补偿
+        const el = scrollContainerRef.current
+        const msgs = visibleMessagesRef.current
+        if (el && msgs.length > 0) {
+          prePrependRef.current = { top: el.scrollTop, height: el.scrollHeight, firstId: msgs[0].info.id }
+        }
+
         logger.log(`[ChatArea] loadMore: session=${sessionId ?? 'none'}`)
         isLoadingMoreRef.current = true
         setIsLoadingMore(true)
@@ -296,6 +319,26 @@ export const ChatArea = memo(
           if (noMoreHintTimerRef.current) clearTimeout(noMoreHintTimerRef.current)
         }
       }, [])
+
+      // Prepend 后恢复滚动位置
+      // 浏览器 overflow-anchor 在 content-visibility: auto 下不可靠（估算高度 ≠ 实际高度），
+      // 改用手动补偿：检测首条消息 ID 变化 → scrollTop += scrollHeight 增量
+      useLayoutEffect(() => {
+        const snap = prePrependRef.current
+        if (!snap) return
+        prePrependRef.current = null
+
+        const el = scrollContainerRef.current
+        if (!el || visibleMessages.length === 0) return
+
+        // 首条消息 ID 没变 → 不是 prepend，跳过
+        if (visibleMessages[0].info.id === snap.firstId) return
+
+        const delta = el.scrollHeight - snap.height
+        if (delta > 0) {
+          el.scrollTop = snap.top + delta
+        }
+      }, [visibleMessages])
 
       // ============================================
       // 可见消息追踪（IntersectionObserver）
@@ -497,10 +540,11 @@ export const ChatArea = memo(
             </div>
           )}
 
-          {/* 滚动容器 */}
+          {/* 滚动容器 — overflow-anchor: none 禁用浏览器锚定，由 useLayoutEffect 手动补偿 */}
           <div
             ref={scrollContainerRef}
             className="h-full overflow-y-auto custom-scrollbar animate-fade-in contain-content"
+            style={{ overflowAnchor: 'none' }}
           >
             {/* 顶部哨兵：IntersectionObserver 触发加载更多 */}
             <div ref={topSentinelRef} className="h-px" aria-hidden="true" />

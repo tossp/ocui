@@ -310,6 +310,22 @@ const DesktopFisheye = memo(function DesktopFisheye({ entries, onSelect }: Fishe
     ensureLoop()
   }, [ensureLoop])
 
+  // 点击后立即收回鱼眼，避免滚动期间 margin 反馈环路导致颤抖
+  const handleItemClick = useCallback(
+    (messageId: string) => {
+      cursorYRef.current = null
+      isHoveringRef.current = false
+      const el = containerRef.current
+      if (el) {
+        el.style.paddingLeft = ''
+        el.style.marginLeft = ''
+      }
+      ensureLoop()
+      onSelect(messageId)
+    },
+    [onSelect, ensureLoop],
+  )
+
   useEffect(() => () => cancelAnimationFrame(rafIdRef.current), [])
 
   return (
@@ -326,7 +342,7 @@ const DesktopFisheye = memo(function DesktopFisheye({ entries, onSelect }: Fishe
           data-oi
           className="relative flex items-center justify-end cursor-pointer"
           style={{ marginTop: `${DESKTOP.margin.min}px`, marginBottom: `${DESKTOP.margin.min}px` }}
-          onClick={() => onSelect(entry.messageId)}
+          onClick={() => handleItemClick(entry.messageId)}
         >
           <div
             data-label

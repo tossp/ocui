@@ -106,7 +106,9 @@ export function buildVisibleMessageEntries(messages: Message[]): VisibleMessageE
       } else if (isMergeableTrailing(filteredMessages[j])) {
         sourceIds.push(filteredMessages[j].info.id)
         j++
-        break
+        // 如果该消息也以 tool 结尾（text 在 tool 前面，是中间说明不是结论），
+        // 继续合并链；只有 text 在 tool 后面（真正收尾）才终止
+        if (!endsWithTool(filteredMessages[j - 1])) break
       } else {
         break
       }
