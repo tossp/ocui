@@ -75,7 +75,6 @@ export const ChatArea = memo(
         sessionId,
         isStreaming = false,
         loadState = 'idle',
-        hasMoreHistory = false,
         onLoadMore,
         onUndo,
         canUndo,
@@ -236,9 +235,8 @@ export const ChatArea = memo(
       }, [sessionId, loadState])
 
       // Session 加载完成后定位到底部（只执行一次）
-      // content-visibility: auto 导致首帧 scrollHeight 基于估算高度（120px/item），
-      // 滚到"底部"后可见区域渲染出实际高度 → scrollHeight 变化。
-      // 需要多帧重试直到真正到底
+      // content-visibility: auto 首帧用估算高度，可见区域渲染后 scrollHeight 会变，
+      // 用 immediate + rAF + timeout 三级保证滚到真正的底部
       useEffect(() => {
         if (!sessionId || loadState !== 'loaded') return
         if (visibleMessages.length === 0) return
@@ -248,12 +246,13 @@ export const ChatArea = memo(
         const el = scrollContainerRef.current
         if (!el) return
 
-        let retries = 0
-        const scrollToEnd = () => {
+        const snap = () => {
           el.scrollTop = el.scrollHeight
-          if (++retries < 8) requestAnimationFrame(scrollToEnd)
         }
-        scrollToEnd()
+        snap()
+        requestAnimationFrame(snap)
+        const timer = setTimeout(snap, 120)
+        return () => clearTimeout(timer)
       }, [sessionId, loadState, visibleMessages.length])
 
       // ============================================
@@ -269,9 +268,11 @@ export const ChatArea = memo(
         }, 1200)
       }, [])
 
+      // handleLoadMore 不依赖 hasMoreHistory（从 store 直接读），
+      // 避免每次加载后回调重建 → Observer 重连 → 无限循环
       const handleLoadMore = useCallback(async () => {
-        if (!onLoadMore || isLoadingMoreRef.current) return
-        const hadMore = sessionId ? (messageStore.getSessionState(sessionId)?.hasMoreHistory ?? false) : hasMoreHistory
+        if (!onLoadMore || !sessionId || isLoadingMoreRef.current) return
+        const hadMore = messageStore.getSessionState(sessionId)?.hasMoreHistory ?? false
         if (!hadMore) return
 
         // 快照 prepend 前的滚动位置，供 useLayoutEffect 补偿
@@ -281,45 +282,53 @@ export const ChatArea = memo(
           prePrependRef.current = { top: el.scrollTop, height: el.scrollHeight, firstId: msgs[0].info.id }
         }
 
-        logger.log(`[ChatArea] loadMore: session=${sessionId ?? 'none'}`)
+        logger.log(`[ChatArea] loadMore: session=${sessionId}`)
         isLoadingMoreRef.current = true
         setIsLoadingMore(true)
         const minDelay = new Promise(r => setTimeout(r, 400))
         try {
           await Promise.all([onLoadMore(), minDelay])
-          const latestHasMore = sessionId ? messageStore.getSessionState(sessionId)?.hasMoreHistory : hasMoreHistory
+          const latestHasMore = messageStore.getSessionState(sessionId)?.hasMoreHistory ?? false
           if (hadMore && !latestHasMore) triggerNoMoreHint()
         } finally {
           isLoadingMoreRef.current = false
           setIsLoadingMore(false)
         }
-      }, [onLoadMore, sessionId, hasMoreHistory, triggerNoMoreHint])
+      }, [onLoadMore, sessionId, triggerNoMoreHint])
 
-      // IntersectionObserver：顶部哨兵触发加载
+      // 稳定 ref：IntersectionObserver 和 auto-continue 通过 ref 调用最新 handleLoadMore，
+      // 避免回调重建导致 observer 断开重连
+      const handleLoadMoreRef = useRef(handleLoadMore)
+      handleLoadMoreRef.current = handleLoadMore
+
+      // IntersectionObserver：顶部哨兵触发加载（只创建一次）
       useEffect(() => {
         const sentinel = topSentinelRef.current
         const root = scrollContainerRef.current
         if (!sentinel || !root) return
         const observer = new IntersectionObserver(
           ([entry]) => {
-            if (entry.isIntersecting && !isLoadingMoreRef.current) void handleLoadMore()
+            if (entry.isIntersecting && !isLoadingMoreRef.current) void handleLoadMoreRef.current()
           },
           { root, rootMargin: '200px 0px 0px 0px' },
         )
         observer.observe(sentinel)
         return () => observer.disconnect()
-      }, [handleLoadMore])
+      }, [])
 
       // 用户停在顶部时自动继续拉取
       useEffect(() => {
-        if (!onLoadMore || isLoadingMore || isLoadingMoreRef.current || !isNearTop) return
-        const latestHasMore = sessionId ? messageStore.getSessionState(sessionId)?.hasMoreHistory : hasMoreHistory
+        if (!onLoadMore || isLoadingMore || isLoadingMoreRef.current || !isNearTop || !sessionId) return
+        const latestHasMore = messageStore.getSessionState(sessionId)?.hasMoreHistory ?? false
         if (!latestHasMore) return
         const timer = setTimeout(() => {
-          if (!isLoadingMoreRef.current) void handleLoadMore()
-        }, 120)
+          // 再次检查实际位置，避免 stale state 误触发
+          const el = scrollContainerRef.current
+          if (!el || el.scrollTop >= 150 || isLoadingMoreRef.current) return
+          void handleLoadMoreRef.current()
+        }, 300)
         return () => clearTimeout(timer)
-      }, [onLoadMore, isLoadingMore, isNearTop, sessionId, hasMoreHistory, handleLoadMore])
+      }, [onLoadMore, isLoadingMore, isNearTop, sessionId])
 
       // 定时器清理
       useEffect(() => {
