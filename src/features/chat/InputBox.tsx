@@ -11,14 +11,13 @@ import {
 import { SlashCommandMenu, type SlashCommandMenuHandle } from '../slash-command'
 import { InputToolbar } from './input/InputToolbar'
 import { InputFooter } from './input/InputFooter'
-import { UndoStatus } from './input/UndoStatus'
+import { FloatingActions, CollapsedCapsule } from './input/InputActions'
 import { useMobileCollapse } from './input/useMobileCollapse'
 import { useAttachmentRail } from './input/useAttachmentRail'
 import { useInputHistory } from './input/useInputHistory'
 import { TEXT_STYLE, detectSlashTrigger, isFileSupported, ensureFileMime, readFileAsDataUrl } from './input/inputUtils'
 import { keybindingStore, matchesKeybinding } from '../../store/keybindingStore'
 import { useIsMobile } from '../../hooks'
-import { ArrowDownIcon, ArrowUpIcon, PermissionListIcon, QuestionIcon } from '../../components/Icons'
 import type { ApiAgent } from '../../api/client'
 import type { ModelInfo, FileCapabilities } from '../../api'
 import type { Command } from '../../api/command'
@@ -884,76 +883,25 @@ function InputBoxComponent({
           className={`flex flex-col gap-2 ${isCollapsed ? 'justify-end' : ''}`}
           style={isCollapsed && expandedHeight > 0 ? { minHeight: expandedHeight } : undefined}
         >
-          {(showScrollToBottom || canRedo || collapsedPermission || collapsedQuestion) && (
-            <div className={`flex items-center justify-center gap-2`}>
-              {/* Collapsed Permission Capsule */}
-              {collapsedPermission && (
-                <button
-                  type="button"
-                  onClick={collapsedPermission.onExpand}
-                  className="flex items-center gap-1.5 px-3 h-[32px] rounded-full bg-accent-main-100/10 backdrop-blur-md border border-accent-main-100/20 text-[11px] text-accent-main-000 hover:bg-accent-main-100/20 transition-colors animate-in fade-in slide-in-from-bottom-2 duration-150"
-                >
-                  <PermissionListIcon size={14} />
-                  <span className="whitespace-nowrap">{collapsedPermission.label}</span>
-                  {collapsedPermission.queueLength > 1 && (
-                    <span className="text-[10px] opacity-70">+{collapsedPermission.queueLength - 1}</span>
-                  )}
-                </button>
-              )}
-
-              {/* Collapsed Question Capsule */}
-              {collapsedQuestion && (
-                <button
-                  type="button"
-                  onClick={collapsedQuestion.onExpand}
-                  className="flex items-center gap-1.5 px-3 h-[32px] rounded-full bg-accent-main-100/10 backdrop-blur-md border border-accent-main-100/20 text-[11px] text-accent-main-000 hover:bg-accent-main-100/20 transition-colors animate-in fade-in slide-in-from-bottom-2 duration-150"
-                >
-                  <QuestionIcon size={14} />
-                  <span className="whitespace-nowrap">{collapsedQuestion.label}</span>
-                  {collapsedQuestion.queueLength > 1 && (
-                    <span className="text-[10px] opacity-70">+{collapsedQuestion.queueLength - 1}</span>
-                  )}
-                </button>
-              )}
-
-              {canRedo && (
-                <UndoStatus canRedo={canRedo} revertSteps={revertSteps} onRedo={onRedo} onRedoAll={onRedoAll} />
-              )}
-              {showScrollToBottom && !isCollapsed && (
-                <button
-                  type="button"
-                  onClick={onScrollToBottom}
-                  className="h-[32px] w-[32px] min-w-[32px] rounded-full bg-accent-main-100/10 border border-accent-main-100/20 backdrop-blur-md flex items-center justify-center text-accent-main-000 hover:bg-accent-main-100/20 transition-colors shrink-0"
-                  aria-label="Scroll to bottom"
-                >
-                  <ArrowDownIcon size={16} />
-                </button>
-              )}
-            </div>
-          )}
+          <FloatingActions
+            showScrollToBottom={showScrollToBottom}
+            isCollapsed={isCollapsed}
+            canRedo={canRedo}
+            revertSteps={revertSteps}
+            onRedo={onRedo}
+            onRedoAll={onRedoAll}
+            onScrollToBottom={onScrollToBottom}
+            collapsedPermission={collapsedPermission}
+            collapsedQuestion={collapsedQuestion}
+          />
 
           {/* Collapsed Capsule - 移动端收起状态 */}
           {isCollapsed ? (
-            <div className="flex items-center justify-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-200">
-              <button
-                type="button"
-                onClick={handleExpandInput}
-                className="flex items-center gap-1.5 px-3 h-[32px] rounded-full bg-bg-000/95 backdrop-blur-md border border-border-200/50 shadow-lg shadow-black/5 text-text-300 hover:text-text-200 hover:bg-bg-000 active:scale-95 transition-all"
-              >
-                <ArrowUpIcon size={14} />
-                <span className="text-[11px]">Reply...</span>
-              </button>
-              {showScrollToBottom && (
-                <button
-                  type="button"
-                  onClick={onScrollToBottom}
-                  className="h-[32px] w-[32px] min-w-[32px] rounded-full bg-accent-main-100/10 border border-accent-main-100/20 backdrop-blur-md flex items-center justify-center text-accent-main-000 hover:bg-accent-main-100/20 transition-colors shrink-0"
-                  aria-label="Scroll to bottom"
-                >
-                  <ArrowDownIcon size={16} />
-                </button>
-              )}
-            </div>
+            <CollapsedCapsule
+              onExpand={handleExpandInput}
+              showScrollToBottom={showScrollToBottom}
+              onScrollToBottom={onScrollToBottom}
+            />
           ) : (
             <>
               {/* Input Container */}
