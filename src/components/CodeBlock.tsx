@@ -44,7 +44,11 @@ export const CodeBlock = memo(function CodeBlock({
   if (!showHeader) {
     // 无 header 的紧凑模式
     return (
-      <div ref={ref} className={`rounded-lg overflow-hidden bg-bg-300/50 ${className}`} style={containerStyle}>
+      <div
+        ref={ref}
+        className={`rounded-lg overflow-hidden bg-bg-300/50 contain-content ${className}`}
+        style={containerStyle}
+      >
         <div className="overflow-auto custom-scrollbar" style={maxHeight ? { maxHeight } : undefined}>
           {!html ? (
             <pre className="p-2 m-0 font-mono text-text-200 text-xs leading-relaxed">
@@ -65,7 +69,7 @@ export const CodeBlock = memo(function CodeBlock({
   return (
     <div
       ref={ref}
-      className={`rounded-lg overflow-hidden border border-border-200/50 bg-bg-300 w-full max-w-full flex flex-col ${className}`}
+      className={`rounded-lg overflow-hidden border border-border-200/50 bg-bg-300 w-full max-w-full flex flex-col contain-content ${className}`}
       style={style}
     >
       {/* Header with Language and Copy */}

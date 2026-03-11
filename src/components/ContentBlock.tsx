@@ -142,7 +142,7 @@ export const ContentBlock = memo(function ContentBlock({
 
   return (
     <div
-      className={`rounded-lg overflow-hidden text-xs ${
+      className={`rounded-lg overflow-hidden text-xs contain-content ${
         isError ? 'border border-danger-100/30 bg-danger-100/5' : 'bg-bg-100/80 border border-border-200/40'
       }`}
     >
