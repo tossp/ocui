@@ -880,6 +880,7 @@ function InputBoxComponent({
       >
         <div
           ref={contentWrapRef}
+          onPointerDown={handleContainerPointerDown}
           className={`flex flex-col gap-2 ${isCollapsed ? 'justify-end' : ''}`}
           style={isCollapsed && expandedHeight > 0 ? { minHeight: expandedHeight } : undefined}
         >

@@ -105,11 +105,18 @@ export function useMobileCollapse({
   const handleBlur = useCallback(
     (e: React.FocusEvent) => {
       const nextTarget = e.relatedTarget as Node | null
+      // 焦点移到输入框容器或外层 contentWrap（包含 FloatingActions）内，不收起
       if (nextTarget && inputContainerRef.current?.contains(nextTarget)) {
+        return
+      }
+      if (nextTarget && contentWrapRef.current?.contains(nextTarget)) {
         return
       }
       blurTimerRef.current = setTimeout(() => {
         if (inputContainerRef.current?.contains(document.activeElement)) {
+          return
+        }
+        if (contentWrapRef.current?.contains(document.activeElement)) {
           return
         }
         if (containerInteractingRef.current) {
@@ -118,7 +125,7 @@ export function useMobileCollapse({
         setIsFocused(false)
       }, 150)
     },
-    [inputContainerRef],
+    [inputContainerRef, contentWrapRef],
   )
 
   // focus 时清掉 pending 的 blur timer
@@ -138,8 +145,9 @@ export function useMobileCollapse({
     if (!isFocused || !isMobile) return
 
     const handleOutsidePointerDown = (e: PointerEvent) => {
-      // 点击在容器内部，不清除
+      // 点击在输入框容器或外层 contentWrap 内部，不清除
       if (inputContainerRef.current?.contains(e.target as Node)) return
+      if (contentWrapRef.current?.contains(e.target as Node)) return
       setIsFocused(false)
     }
 
@@ -148,7 +156,7 @@ export function useMobileCollapse({
     return () => {
       document.removeEventListener('pointerdown', handleOutsidePointerDown, { capture: true })
     }
-  }, [isFocused, isMobile, inputContainerRef])
+  }, [isFocused, isMobile, inputContainerRef, contentWrapRef])
 
   // ---- 持续追踪展开态内容区高度 ----
   useEffect(() => {
