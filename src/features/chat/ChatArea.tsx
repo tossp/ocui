@@ -22,7 +22,6 @@ import {
 import { MessageRenderer } from '../message'
 import { messageStore } from '../../store'
 import { useTheme } from '../../hooks/useTheme'
-import { SpinnerIcon } from '../../components/Icons'
 import type { Message } from '../../types/message'
 import { RetryStatusInline, type RetryStatusInlineData } from './RetryStatusInline'
 import { buildVisibleMessageEntries } from './chatAreaVisibility'
@@ -95,7 +94,7 @@ export const ChatArea = memo(
       // 移动端输入框收起/展开导致高度差，加大阈值防抖动
       const atBottomThreshold = isMobile ? 150 : AT_BOTTOM_THRESHOLD_PX
 
-      // ---- 滚动状态（3 个 ref 替代原来的 7 个） ----
+      // ---- 滚动状态 ----
       const isAtBottomRef = useRef(true)
       const userScrolledAwayRef = useRef(false) // 流式期间用户主动上滑
       const suppressScrollRef = useRef(false) // 临时禁用（undo/redo）
@@ -104,11 +103,7 @@ export const ChatArea = memo(
       const isNearTopRef = useRef(false)
 
       // ---- 加载更多 ----
-      const [isLoadingMore, setIsLoadingMore] = useState(false)
       const isLoadingMoreRef = useRef(false)
-      const [showNoMoreHint, setShowNoMoreHint] = useState(false)
-      const noMoreHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-      const [isNearTop, setIsNearTop] = useState(false)
 
       // ---- Prepend 位置保持 ----
       // handleLoadMore 发起前快照 scrollTop/scrollHeight/首条消息ID，
@@ -191,12 +186,7 @@ export const ChatArea = memo(
           // 必须检查 userInteractingRef 以区分"自动滚动触发的 onScroll"和"用户主动滑动"
           if (!atBottom && userInteractingRef.current) userScrolledAwayRef.current = true
           if (prev !== atBottom) onAtBottomChange?.(atBottom)
-          // 边沿触发：只在 isNearTop 实际变化时 setState，避免每次 scroll 都 re-render
-          const nearTop = currentTop < 150
-          if (nearTop !== isNearTopRef.current) {
-            isNearTopRef.current = nearTop
-            setIsNearTop(nearTop)
-          }
+          isNearTopRef.current = currentTop < 150
         }
         el.addEventListener('scroll', onScroll, { passive: true })
         return () => el.removeEventListener('scroll', onScroll)
@@ -352,15 +342,6 @@ export const ChatArea = memo(
       // 加载更多历史消息
       // ============================================
 
-      const triggerNoMoreHint = useCallback(() => {
-        setShowNoMoreHint(true)
-        if (noMoreHintTimerRef.current) clearTimeout(noMoreHintTimerRef.current)
-        noMoreHintTimerRef.current = setTimeout(() => {
-          setShowNoMoreHint(false)
-          noMoreHintTimerRef.current = null
-        }, 1200)
-      }, [])
-
       // handleLoadMore 不依赖 hasMoreHistory（从 store 直接读），
       // 避免每次加载后回调重建 → Observer 重连 → 无限循环
       const handleLoadMore = useCallback(async () => {
@@ -377,17 +358,12 @@ export const ChatArea = memo(
 
         logger.log(`[ChatArea] loadMore: session=${sessionId}`)
         isLoadingMoreRef.current = true
-        setIsLoadingMore(true)
-        const minDelay = new Promise(r => setTimeout(r, 400))
         try {
-          await Promise.all([onLoadMore(), minDelay])
-          const latestHasMore = messageStore.getSessionState(sessionId)?.hasMoreHistory ?? false
-          if (hadMore && !latestHasMore) triggerNoMoreHint()
+          await onLoadMore()
         } finally {
           isLoadingMoreRef.current = false
-          setIsLoadingMore(false)
         }
-      }, [onLoadMore, sessionId, triggerNoMoreHint])
+      }, [onLoadMore, sessionId])
 
       // 稳定 ref：IntersectionObserver 和 auto-continue 通过 ref 调用最新 handleLoadMore，
       // 避免回调重建导致 observer 断开重连
@@ -411,24 +387,18 @@ export const ChatArea = memo(
 
       // 用户停在顶部时自动继续拉取
       useEffect(() => {
-        if (!onLoadMore || isLoadingMore || isLoadingMoreRef.current || !isNearTop || !sessionId) return
-        const latestHasMore = messageStore.getSessionState(sessionId)?.hasMoreHistory ?? false
-        if (!latestHasMore) return
-        const timer = setTimeout(() => {
-          // 再次检查实际位置，避免 stale state 误触发
+        if (!onLoadMore || !sessionId) return
+        // 定时检查，避免依赖不稳定的 state
+        const timer = setInterval(() => {
+          if (isLoadingMoreRef.current || !isNearTopRef.current) return
           const el = scrollContainerRef.current
-          if (!el || el.scrollTop >= 150 || isLoadingMoreRef.current) return
+          if (!el || el.scrollTop >= 150) return
+          const latestHasMore = messageStore.getSessionState(sessionId)?.hasMoreHistory ?? false
+          if (!latestHasMore) return
           void handleLoadMoreRef.current()
-        }, 300)
-        return () => clearTimeout(timer)
-      }, [onLoadMore, isLoadingMore, isNearTop, sessionId])
-
-      // 定时器清理
-      useEffect(() => {
-        return () => {
-          if (noMoreHintTimerRef.current) clearTimeout(noMoreHintTimerRef.current)
-        }
-      }, [])
+        }, 500)
+        return () => clearInterval(timer)
+      }, [onLoadMore, sessionId])
 
       // Prepend 后恢复滚动位置
       // 手动补偿 scrollTop：检测首条消息 ID 变化 → scrollTop += scrollHeight 增量
@@ -623,39 +593,8 @@ export const ChatArea = memo(
         [registerMessage, onUndo, canUndo, messageMaxWidthClass, sessionId, turnDurationMap],
       )
 
-      const showSessionLoading = !!sessionId && loadState === 'loading' && visibleMessages.length === 0
-
       return (
         <div className="h-full overflow-hidden contain-strict relative">
-          {/* Session 加载中 spinner — 延迟 150ms 显示，避免快速加载时闪烁 */}
-          {showSessionLoading && (
-            <div className="absolute inset-0 z-10 flex items-center justify-center">
-              <div className="flex flex-col items-center gap-3 text-text-400 session-loading-indicator">
-                <SpinnerIcon size={24} className="animate-spin" />
-                <span className="text-sm">Loading session...</span>
-              </div>
-            </div>
-          )}
-
-          {/* 顶部加载 spinner */}
-          {isLoadingMore && isNearTop && (
-            <div className="absolute top-24 left-0 right-0 z-10 flex justify-center pointer-events-none">
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-bg-100/90 border border-border-200 shadow-sm text-text-400 animate-in fade-in slide-in-from-top-2 duration-200">
-                <SpinnerIcon size={14} className="animate-spin" />
-                <span className="text-xs">Loading...</span>
-              </div>
-            </div>
-          )}
-
-          {/* 没有更多历史提示 */}
-          {!isLoadingMore && showNoMoreHint && isNearTop && (
-            <div className="absolute top-24 left-0 right-0 z-10 flex justify-center pointer-events-none">
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-bg-100/90 border border-border-200 shadow-sm text-text-400 animate-in fade-in slide-in-from-top-2 duration-200">
-                <span className="text-xs">No more history</span>
-              </div>
-            </div>
-          )}
-
           {/* 滚动容器 — containerReady 控制可见性和淡入动画 */}
           <div
             ref={scrollContainerRef}
