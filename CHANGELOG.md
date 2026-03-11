@@ -1,5 +1,17 @@
 # Changelog
 
+## [v0.1.17] - 2026-03-11
+
+- fix: update CodePreview test mock to use useSyntaxHighlightRef (a10075f)
+- fix: move history loading indicator below top spacing so it's visible (4cfc71c)
+- fix: remove MAX_HISTORY_MESSAGES cap and restore loading UI (43d2273)
+- perf: reduce sidebar resize lag with CSS containment and DOM-only sidebar drag (63bc0c5)
+- fix: enable virtual scrolling in CodePreview by adding height constraint (43c9e3a)
+- fix: mobile input collapses when tapping FloatingActions buttons (a777334)
+- refactor: simplify loadMore pagination and remove prependedCount (8614df4)
+- refactor: rewrite messageStore and ChatArea, remove IndexedDB cache layer (eecdeaf)
+- refactor: remove loading spinners/skeletons and reduce scroll-related re-renders (eb7ebff)
+
 ## [v0.1.16] - 2026-03-11
 
 - fix: scroll jitter after streaming ends caused by content-visibility height mismatch (765052a)
