@@ -1,5 +1,12 @@
 # Changelog
 
+## [v0.1.18] - 2026-03-13
+
+- ci: 加速 release 编译 — Rust 多线程 codegen + Android 双架构并行 (2398c54)
+- fix: FloatingActions 高度抖动、滚动按钮误显示 (466f4ea)
+- refactor: gutter/content 分离架构 + 水平滚动独立化 + FullscreenViewer 确定高度 (e327e59)
+- perf: streaming 渲染地基优化 — rAF 滚动、delta 批量化、布局稳定性 (f689910)
+
 ## [v0.1.17] - 2026-03-11
 
 - fix: update CodePreview test mock to use useSyntaxHighlightRef (a10075f)

@@ -9,29 +9,13 @@ export function isSupportedLanguage(lang: string): boolean {
 export function normalizeLanguage(lang: string): string {
   if (!lang) return 'text'
 
+  // shiki 自身已支持绝大部分别名（js, ts, py, sh, yml, md, cs, c++, c# 等）
+  // 只映射 shiki 确实不认识的
   const aliases: Record<string, string> = {
-    js: 'javascript',
-    ts: 'typescript',
-    tsx: 'tsx',
-    jsx: 'jsx',
-    py: 'python',
-    rb: 'ruby',
-    sh: 'bash',
-    shell: 'bash',
-    zsh: 'bash',
-    yml: 'yaml',
-    md: 'markdown',
-    'c++': 'cpp',
-    'c#': 'csharp',
-    cs: 'csharp',
     golang: 'go',
-    rs: 'rust',
-    kt: 'kotlin',
   }
 
-  const normalized = aliases[lang.toLowerCase()] || lang.toLowerCase()
-  // Check if supported by shiki (if we have the bundle loaded), otherwise fallback to text or keep as is if shiki loads dynamically
-  return normalized
+  return aliases[lang.toLowerCase()] || lang.toLowerCase()
 }
 
 export function detectLanguage(filePath?: string): string {

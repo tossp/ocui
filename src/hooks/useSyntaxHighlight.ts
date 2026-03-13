@@ -138,18 +138,27 @@ async function highlightWithCache(
       return cached
     }
 
-    const html = await codeToHtml(code, { lang: lang as CodeToHtmlOptions['lang'], theme })
-    htmlCache.set(cacheKey, html)
-    return html
+    try {
+      const html = await codeToHtml(code, { lang: lang as CodeToHtmlOptions['lang'], theme })
+      htmlCache.set(cacheKey, html)
+      return html
+    } catch {
+      // 语言不在 shiki bundle 中，跳过高亮
+      return null
+    }
   } else {
     const cached = tokensCache.get(cacheKey)
     if (cached !== undefined) {
       return cached
     }
 
-    const result = await codeToTokens(code, { lang: lang as CodeToTokensOptions['lang'], theme })
-    tokensCache.set(cacheKey, result.tokens)
-    return result.tokens
+    try {
+      const result = await codeToTokens(code, { lang: lang as CodeToTokensOptions['lang'], theme })
+      tokensCache.set(cacheKey, result.tokens)
+      return result.tokens
+    } catch {
+      return null
+    }
   }
 }
 
