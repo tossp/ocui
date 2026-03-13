@@ -2,10 +2,16 @@
  * FullscreenViewer - 通用全屏查看器
  *
  * 设计理念：
- * - 卡片居中而非全屏铺满，内容少时不会显得空洞
+ * - 卡片居中，固定高度 min(90vh, 1000px)，和 IDE 行为一致
  * - 优雅的暗色背景 + 微弱光晕效果
  * - 支持代码预览和 Diff 两种模式
- * - 自适应内容大小，有最大尺寸限制
+ *
+ * 布局：
+ *   ModalShell card (flex-col, max-height: min(90vh,1000px), overflow-hidden)
+ *     Header (h-11 = 44px, shrink-0)
+ *     Content (height: calc(min(90vh,1000px) - 44px))
+ *       → 确定的 CSS 高度，子组件 h-full 正确解析，虚拟滚动正常工作
+ *       → 卡片被 children 撑满到 maxHeight，不会收缩
  */
 
 import { memo, useState, useEffect, useMemo } from 'react'
@@ -158,16 +164,15 @@ export const FullscreenViewer = memo(function FullscreenViewer(props: Fullscreen
         </div>
       </div>
 
-      {/* Content - 用固定 height 限制（减去 header 44px），子组件各自管理滚动 */}
-      <div className="overflow-auto custom-scrollbar" style={{ height: 'calc(min(90vh, 1000px) - 44px)' }}>
+      {/*
+        Content 区：
+        - 给确定的 CSS 高度 = ModalShell 卡片 maxHeight - header 高度(44px)
+        - 这样子组件 h-full 能解析为确定 px 值，虚拟滚动正常工作
+        - 卡片固定高度，和 IDE 行为一致（小文件也用大窗口）
+      */}
+      <div style={{ height: 'calc(min(90vh, 1000px) - 44px)' }}>
         {props.mode === 'diff' && resolvedDiff ? (
-          <DiffViewer
-            before={resolvedDiff.before}
-            after={resolvedDiff.after}
-            language={lang}
-            viewMode={diffViewMode}
-            autoHeight
-          />
+          <DiffViewer before={resolvedDiff.before} after={resolvedDiff.after} language={lang} viewMode={diffViewMode} />
         ) : props.mode === 'code' && content ? (
           <CodePreview code={content} language={lang} truncateLines={false} />
         ) : null}

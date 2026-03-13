@@ -1,10 +1,12 @@
 /**
  * DiffViewer - 核心 Diff 渲染组件
  *
- * 参考 FileExplorer 的 CodePreview 实现：
- * 1. 始终使用虚拟滚动
- * 2. 填满父容器（h-full）
- * 3. 大文件跳过词级别diff和语法高亮
+ * 两列架构（和 CodePreview 一致）：
+ * - Gutter 列：行号 + 增删标记，固定不水平滚动
+ * - Content 列：代码内容，独立水平滚动
+ *
+ * 始终使用虚拟滚动，填满父容器（h-full）
+ * 大文件跳过词级别diff和语法高亮
  */
 
 import { memo, useMemo, useRef, useState, useEffect, useCallback } from 'react'
@@ -22,53 +24,6 @@ const OVERSCAN = 5
 const LARGE_FILE_LINES = 2000
 const LARGE_FILE_CHARS = 300000
 
-// 自适应高度阈值 - 行数少于此值时不用虚拟滚动
-const AUTO_HEIGHT_THRESHOLD = 100
-
-// 滚动节流间隔（毫秒）
-const SCROLL_THROTTLE_MS = 16 // ~60fps
-
-// ============================================
-// Throttle 工具函数
-// ============================================
-
-function throttle<Args extends unknown[]>(
-  fn: (...args: Args) => void,
-  delay: number,
-): ((...args: Args) => void) & { cancel: () => void } {
-  let lastCall = 0
-  let timeoutId: ReturnType<typeof setTimeout> | null = null
-
-  const throttled = ((...args: Args) => {
-    const now = Date.now()
-    const remaining = delay - (now - lastCall)
-
-    if (remaining <= 0) {
-      if (timeoutId) {
-        clearTimeout(timeoutId)
-        timeoutId = null
-      }
-      lastCall = now
-      fn(...args)
-    } else if (!timeoutId) {
-      timeoutId = setTimeout(() => {
-        lastCall = Date.now()
-        timeoutId = null
-        fn(...args)
-      }, remaining)
-    }
-  }) as ((...args: Args) => void) & { cancel: () => void }
-
-  throttled.cancel = () => {
-    if (timeoutId) {
-      clearTimeout(timeoutId)
-      timeoutId = null
-    }
-  }
-
-  return throttled
-}
-
 // ============================================
 // Types
 // ============================================
@@ -83,8 +38,6 @@ export interface DiffViewerProps {
   /** 不传则填满父容器 */
   maxHeight?: number
   isResizing?: boolean
-  /** 自适应高度模式：内容少时自动撑开，多时限制高度 */
-  autoHeight?: boolean
 }
 
 export type LineType = 'add' | 'delete' | 'context' | 'empty'
@@ -123,6 +76,19 @@ function getLineBgClass(type: LineType): string {
   }
 }
 
+function getGutterBgClass(type: LineType): string {
+  switch (type) {
+    case 'add':
+      return 'bg-success-bg/50'
+    case 'delete':
+      return 'bg-danger-bg/50'
+    case 'empty':
+      return 'bg-bg-100/50'
+    default:
+      return 'bg-bg-100'
+  }
+}
+
 function escapeHtml(str: string): string {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
@@ -138,14 +104,10 @@ export const DiffViewer = memo(function DiffViewer({
   viewMode = 'split',
   maxHeight,
   isResizing = false,
-  autoHeight = false,
 }: DiffViewerProps) {
   // 检测大文件
   const totalLines = before.split('\n').length + after.split('\n').length
   const isLargeFile = totalLines > LARGE_FILE_LINES || before.length + after.length > LARGE_FILE_CHARS
-
-  // autoHeight 模式下，内容少时不用虚拟滚动
-  const useVirtualScroll = !autoHeight || totalLines > AUTO_HEIGHT_THRESHOLD
 
   if (viewMode === 'split') {
     return (
@@ -156,24 +118,28 @@ export const DiffViewer = memo(function DiffViewer({
         isResizing={isResizing}
         isLargeFile={isLargeFile}
         maxHeight={maxHeight}
-        useVirtualScroll={useVirtualScroll}
       />
     )
   }
   return (
-    <UnifiedDiffView
-      before={before}
-      after={after}
-      language={language}
-      isResizing={isResizing}
-      maxHeight={maxHeight}
-      useVirtualScroll={useVirtualScroll}
-    />
+    <UnifiedDiffView before={before} after={after} language={language} isResizing={isResizing} maxHeight={maxHeight} />
   )
 })
 
 // ============================================
-// Split Diff View - 整体垂直滚动，左右各自水平滚动
+// Split Diff View - 两列架构
+//
+// 结构:
+//   外层容器 (overflow-y: auto) — 垂直滚动主控
+//     flex 行
+//       左面板 (flex-1, flex row)
+//         左 gutter (shrink-0, overflow: hidden)
+//         左 content (flex-1, overflow-x: auto scrollbar-none)
+//       分隔线
+//       右面板 (flex-1, flex row)
+//         右 gutter (shrink-0, overflow: hidden)
+//         右 content (flex-1, overflow-x: auto scrollbar-none)
+//     sticky proxy scrollbar 底部
 // ============================================
 
 const SplitDiffView = memo(function SplitDiffView({
@@ -183,7 +149,6 @@ const SplitDiffView = memo(function SplitDiffView({
   isResizing,
   isLargeFile,
   maxHeight,
-  useVirtualScroll,
 }: {
   before: string
   after: string
@@ -191,17 +156,20 @@ const SplitDiffView = memo(function SplitDiffView({
   isResizing: boolean
   isLargeFile: boolean
   maxHeight?: number
-  useVirtualScroll: boolean
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const leftPanelRef = useRef<HTMLDivElement>(null)
-  const rightPanelRef = useRef<HTMLDivElement>(null)
+  const leftContentRef = useRef<HTMLDivElement>(null)
+  const rightContentRef = useRef<HTMLDivElement>(null)
   const leftScrollbarRef = useRef<HTMLDivElement>(null)
   const rightScrollbarRef = useRef<HTMLDivElement>(null)
+  const leftScrollSourceRef = useRef<'content' | 'scrollbar' | null>(null)
+  const rightScrollSourceRef = useRef<'content' | 'scrollbar' | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [containerHeight, setContainerHeight] = useState(300)
   const [leftContentWidth, setLeftContentWidth] = useState(0)
   const [rightContentWidth, setRightContentWidth] = useState(0)
+  const [leftClientWidth, setLeftClientWidth] = useState(0)
+  const [rightClientWidth, setRightClientWidth] = useState(0)
 
   const shouldHighlight = !isResizing && language !== 'text'
   const { output: beforeTokens } = useSyntaxHighlight(before, {
@@ -220,16 +188,12 @@ const SplitDiffView = memo(function SplitDiffView({
 
   const totalHeight = pairedLines.length * LINE_HEIGHT
 
-  // 可见范围 - 不用虚拟滚动时渲染全部
   const { startIndex, endIndex, offsetY } = useMemo(() => {
-    if (!useVirtualScroll) {
-      return { startIndex: 0, endIndex: pairedLines.length, offsetY: 0 }
-    }
     const start = Math.max(0, Math.floor(scrollTop / LINE_HEIGHT) - OVERSCAN)
     const visibleCount = Math.ceil(containerHeight / LINE_HEIGHT)
     const end = Math.min(pairedLines.length, start + visibleCount + OVERSCAN * 2)
     return { startIndex: start, endIndex: end, offsetY: start * LINE_HEIGHT }
-  }, [scrollTop, containerHeight, pairedLines.length, useVirtualScroll])
+  }, [scrollTop, containerHeight, pairedLines.length])
 
   // 监听容器大小
   useEffect(() => {
@@ -242,141 +206,210 @@ const SplitDiffView = memo(function SplitDiffView({
     return () => resizeObserver.disconnect()
   }, [isResizing])
 
-  // 测量内容宽度
+  // 测量 content 宽度（scrollWidth vs clientWidth）
   useEffect(() => {
-    const leftPanel = leftPanelRef.current
-    const rightPanel = rightPanelRef.current
-    if (!leftPanel || !rightPanel) return
+    const leftContent = leftContentRef.current
+    const rightContent = rightContentRef.current
+    if (!leftContent || !rightContent) return
 
-    const updateWidths = () => {
-      const leftContent = leftPanel.firstElementChild as HTMLElement
-      const rightContent = rightPanel.firstElementChild as HTMLElement
-      if (leftContent) setLeftContentWidth(leftContent.scrollWidth)
-      if (rightContent) setRightContentWidth(rightContent.scrollWidth)
+    const measure = () => {
+      const leftInner = leftContent.firstElementChild as HTMLElement
+      const rightInner = rightContent.firstElementChild as HTMLElement
+      if (leftInner) setLeftContentWidth(leftInner.scrollWidth)
+      if (rightInner) setRightContentWidth(rightInner.scrollWidth)
+      setLeftClientWidth(leftContent.clientWidth)
+      setRightClientWidth(rightContent.clientWidth)
     }
 
-    updateWidths()
-    const observer = new MutationObserver(updateWidths)
-    observer.observe(leftPanel, { childList: true, subtree: true })
-    observer.observe(rightPanel, { childList: true, subtree: true })
-    return () => observer.disconnect()
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(leftContent)
+    ro.observe(rightContent)
+    const mo = new MutationObserver(measure)
+    mo.observe(leftContent, { childList: true, subtree: true })
+    mo.observe(rightContent, { childList: true, subtree: true })
+    return () => {
+      ro.disconnect()
+      mo.disconnect()
+    }
   }, [pairedLines, startIndex, endIndex])
 
-  // 使用 throttle 优化滚动性能
-  const throttledSetScrollTop = useMemo(() => throttle((value: number) => setScrollTop(value), SCROLL_THROTTLE_MS), [])
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    setScrollTop(e.currentTarget.scrollTop)
+  }, [])
 
-  // 清理 throttle
-  useEffect(() => {
-    return () => throttledSetScrollTop.cancel()
-  }, [throttledSetScrollTop])
-
-  const handleScroll = useCallback(
-    (e: React.UIEvent<HTMLDivElement>) => {
-      throttledSetScrollTop(e.currentTarget.scrollTop)
-    },
-    [throttledSetScrollTop],
-  )
-
-  // 同步 proxy 滚动条 <-> 面板
+  // 同步 proxy 滚动条 <-> content 面板（带 guard 防循环）
   const handleLeftScrollbar = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    if (leftPanelRef.current) leftPanelRef.current.scrollLeft = e.currentTarget.scrollLeft
+    if (leftScrollSourceRef.current === 'content') return
+    leftScrollSourceRef.current = 'scrollbar'
+    if (leftContentRef.current) leftContentRef.current.scrollLeft = e.currentTarget.scrollLeft
+    requestAnimationFrame(() => {
+      leftScrollSourceRef.current = null
+    })
   }, [])
   const handleRightScrollbar = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    if (rightPanelRef.current) rightPanelRef.current.scrollLeft = e.currentTarget.scrollLeft
+    if (rightScrollSourceRef.current === 'content') return
+    rightScrollSourceRef.current = 'scrollbar'
+    if (rightContentRef.current) rightContentRef.current.scrollLeft = e.currentTarget.scrollLeft
+    requestAnimationFrame(() => {
+      rightScrollSourceRef.current = null
+    })
   }, [])
-  const handleLeftPanelScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+  const handleLeftContentScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    if (leftScrollSourceRef.current === 'scrollbar') return
+    leftScrollSourceRef.current = 'content'
     if (leftScrollbarRef.current) leftScrollbarRef.current.scrollLeft = e.currentTarget.scrollLeft
+    requestAnimationFrame(() => {
+      leftScrollSourceRef.current = null
+    })
   }, [])
-  const handleRightPanelScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+  const handleRightContentScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    if (rightScrollSourceRef.current === 'scrollbar') return
+    rightScrollSourceRef.current = 'content'
     if (rightScrollbarRef.current) rightScrollbarRef.current.scrollLeft = e.currentTarget.scrollLeft
+    requestAnimationFrame(() => {
+      rightScrollSourceRef.current = null
+    })
   }, [])
 
   if (pairedLines.length === 0) {
     return <div className="h-full flex items-center justify-center text-text-400 text-sm">No changes</div>
   }
 
-  const leftRows: React.ReactNode[] = []
-  const rightRows: React.ReactNode[] = []
+  // 渲染可见行 — 分别生成 gutter 和 content
+  const leftGutterRows: React.ReactNode[] = []
+  const leftContentRows: React.ReactNode[] = []
+  const rightGutterRows: React.ReactNode[] = []
+  const rightContentRows: React.ReactNode[] = []
 
   for (let i = startIndex; i < endIndex; i++) {
     const pair = pairedLines[i]
 
-    leftRows.push(
-      <div key={i} className={`flex min-w-full ${getLineBgClass(pair.left.type)}`} style={{ height: LINE_HEIGHT }}>
+    // Left gutter: 行号 + 删除标记
+    leftGutterRows.push(
+      <div key={i} className={`flex ${getGutterBgClass(pair.left.type)}`} style={{ height: LINE_HEIGHT }}>
         <div className="w-8 shrink-0 px-1 text-right text-text-500 text-[11px] leading-5 select-none opacity-60">
           {pair.left.lineNo}
         </div>
         <div className="w-5 shrink-0 text-center text-[11px] leading-5 select-none">
           {pair.left.type === 'delete' && <span className="text-danger-100">−</span>}
         </div>
-        <div className="flex-1 pr-2 leading-5 text-[11px] whitespace-pre">
-          {pair.left.type !== 'empty' && <LineContent line={pair.left} tokens={beforeTokens} />}
-        </div>
       </div>,
     )
 
-    rightRows.push(
-      <div key={i} className={`flex min-w-full ${getLineBgClass(pair.right.type)}`} style={{ height: LINE_HEIGHT }}>
+    // Left content: 代码
+    leftContentRows.push(
+      <div
+        key={i}
+        className={`pr-2 leading-5 text-[11px] whitespace-pre ${getLineBgClass(pair.left.type)}`}
+        style={{ height: LINE_HEIGHT }}
+      >
+        {pair.left.type !== 'empty' && <LineContent line={pair.left} tokens={beforeTokens} />}
+      </div>,
+    )
+
+    // Right gutter
+    rightGutterRows.push(
+      <div key={i} className={`flex ${getGutterBgClass(pair.right.type)}`} style={{ height: LINE_HEIGHT }}>
         <div className="w-8 shrink-0 px-1 text-right text-text-500 text-[11px] leading-5 select-none opacity-60">
           {pair.right.lineNo}
         </div>
         <div className="w-5 shrink-0 text-center text-[11px] leading-5 select-none">
           {pair.right.type === 'add' && <span className="text-success-100">+</span>}
         </div>
-        <div className="flex-1 pr-2 leading-5 text-[11px] whitespace-pre">
-          {pair.right.type !== 'empty' && <LineContent line={pair.right} tokens={afterTokens} />}
-        </div>
+      </div>,
+    )
+
+    // Right content
+    rightContentRows.push(
+      <div
+        key={i}
+        className={`pr-2 leading-5 text-[11px] whitespace-pre ${getLineBgClass(pair.right.type)}`}
+        style={{ height: LINE_HEIGHT }}
+      >
+        {pair.right.type !== 'empty' && <LineContent line={pair.right} tokens={afterTokens} />}
       </div>,
     )
   }
-
   return (
     <div
       ref={containerRef}
-      className={`overflow-y-auto overflow-x-hidden custom-scrollbar font-mono ${useVirtualScroll ? 'h-full' : ''}`}
+      className="overflow-y-auto overflow-x-hidden custom-scrollbar font-mono h-full"
       style={maxHeight !== undefined ? { maxHeight } : undefined}
-      onScroll={useVirtualScroll ? handleScroll : undefined}
+      onScroll={handleScroll}
     >
-      {/* 虚拟滚动时用占位 + 绝对定位，否则直接渲染 */}
-      <div style={useVirtualScroll ? { height: totalHeight, position: 'relative' } : undefined}>
-        <div
-          className={useVirtualScroll ? 'absolute top-0 left-0 right-0 flex' : 'flex'}
-          style={useVirtualScroll ? { transform: `translateY(${offsetY}px)` } : undefined}
-        >
-          {/* Left — 隐藏自身滚动条，由 proxy 控制 */}
-          <div
-            ref={leftPanelRef}
-            className="flex-1 overflow-x-auto scrollbar-none border-r border-border-100/30"
-            onScroll={handleLeftPanelScroll}
-          >
-            <div className="inline-block min-w-full">{leftRows}</div>
+      {/* 虚拟滚动高度占位 */}
+      <div style={{ height: totalHeight, position: 'relative' }}>
+        <div className="absolute top-0 left-0 right-0 flex" style={{ transform: `translateY(${offsetY}px)` }}>
+          {/* 左面板 */}
+          <div className="flex-1 flex min-w-0 border-r border-border-100/30">
+            {/* 左 gutter */}
+            <div className="shrink-0 overflow-hidden" style={{ width: 52 /* 32+20 */ }}>
+              {leftGutterRows}
+            </div>
+            {/* 左 content — 隐藏自身滚动条，由 proxy 控制 */}
+            <div
+              ref={leftContentRef}
+              className="flex-1 min-w-0 overflow-x-auto scrollbar-none"
+              onScroll={handleLeftContentScroll}
+            >
+              <div className="inline-block min-w-full">{leftContentRows}</div>
+            </div>
           </div>
-          {/* Right */}
-          <div ref={rightPanelRef} className="flex-1 overflow-x-auto scrollbar-none" onScroll={handleRightPanelScroll}>
-            <div className="inline-block min-w-full">{rightRows}</div>
+
+          {/* 右面板 */}
+          <div className="flex-1 flex min-w-0">
+            {/* 右 gutter */}
+            <div className="shrink-0 overflow-hidden" style={{ width: 52 }}>
+              {rightGutterRows}
+            </div>
+            {/* 右 content */}
+            <div
+              ref={rightContentRef}
+              className="flex-1 min-w-0 overflow-x-auto scrollbar-none"
+              onScroll={handleRightContentScroll}
+            >
+              <div className="inline-block min-w-full">{rightContentRows}</div>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Sticky proxy 横向滚动条 — 固定在可视区底部，和面板天然对齐 */}
-      <div className="sticky bottom-0 z-10 flex bg-bg-100/90 backdrop-blur-sm">
-        <div
-          ref={leftScrollbarRef}
-          className="flex-1 overflow-x-auto code-scrollbar border-r border-border-100/30"
-          onScroll={handleLeftScrollbar}
-        >
-          <div style={{ width: leftContentWidth, height: 1 }} />
+      {/* Sticky proxy 横向滚动条 — 只在内容实际溢出时显示 */}
+      {(leftContentWidth > leftClientWidth || rightContentWidth > rightClientWidth) && (
+        <div className="sticky bottom-0 z-10 flex bg-bg-100/90 backdrop-blur-sm">
+          <div
+            ref={leftScrollbarRef}
+            className="flex-1 overflow-x-auto code-scrollbar border-r border-border-100/30"
+            onScroll={handleLeftScrollbar}
+          >
+            <div style={{ width: leftContentWidth, height: 1 }} />
+          </div>
+          <div
+            ref={rightScrollbarRef}
+            className="flex-1 overflow-x-auto code-scrollbar"
+            onScroll={handleRightScrollbar}
+          >
+            <div style={{ width: rightContentWidth, height: 1 }} />
+          </div>
         </div>
-        <div ref={rightScrollbarRef} className="flex-1 overflow-x-auto code-scrollbar" onScroll={handleRightScrollbar}>
-          <div style={{ width: rightContentWidth, height: 1 }} />
-        </div>
-      </div>
+      )}
     </div>
   )
 })
 
 // ============================================
-// Unified Diff View - 始终虚拟滚动
+// Unified Diff View — 和 SplitDiffView / CodePreview 一致的架构
+//
+// 结构:
+//   外层容器 (overflow-y: auto, overflow-x: hidden) — 垂直滚动唯一来源
+//     高度占位 (height: totalHeight, relative) — 虚拟滚动
+//       absolute div (translateY: offsetY) — 可见行
+//         flex row
+//           gutter (shrink-0, overflow: hidden): oldLineNo | newLineNo | +/-
+//           content (flex-1, overflow-x: auto, scrollbar-none): 代码
+//             inline-block min-w-full — 被最宽行撑开
+//     sticky proxy scrollbar (bottom: 0) — 可见的横向滚动条
 // ============================================
 
 const UnifiedDiffView = memo(function UnifiedDiffView({
@@ -385,20 +418,22 @@ const UnifiedDiffView = memo(function UnifiedDiffView({
   language,
   isResizing,
   maxHeight,
-  useVirtualScroll,
 }: {
   before: string
   after: string
   language: string
   isResizing: boolean
   maxHeight?: number
-  useVirtualScroll: boolean
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
+  const scrollbarRef = useRef<HTMLDivElement>(null)
+  const scrollSourceRef = useRef<'content' | 'scrollbar' | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [containerHeight, setContainerHeight] = useState(300)
+  const [contentWidth, setContentWidth] = useState(0)
+  const [contentClientWidth, setContentClientWidth] = useState(0)
 
-  // resize时禁用高亮（大文件仍然高亮，因为useSyntaxHighlight是异步的不会阻塞）
   const shouldHighlight = !isResizing && language !== 'text'
   const { output: beforeTokens } = useSyntaxHighlight(before, {
     lang: language,
@@ -416,14 +451,11 @@ const UnifiedDiffView = memo(function UnifiedDiffView({
   const totalHeight = lines.length * LINE_HEIGHT
 
   const { startIndex, endIndex, offsetY } = useMemo(() => {
-    if (!useVirtualScroll) {
-      return { startIndex: 0, endIndex: lines.length, offsetY: 0 }
-    }
     const start = Math.max(0, Math.floor(scrollTop / LINE_HEIGHT) - OVERSCAN)
     const visibleCount = Math.ceil(containerHeight / LINE_HEIGHT)
     const end = Math.min(lines.length, start + visibleCount + OVERSCAN * 2)
     return { startIndex: start, endIndex: end, offsetY: start * LINE_HEIGHT }
-  }, [scrollTop, containerHeight, lines.length, useVirtualScroll])
+  }, [scrollTop, containerHeight, lines.length])
 
   useEffect(() => {
     const container = containerRef.current
@@ -435,26 +467,60 @@ const UnifiedDiffView = memo(function UnifiedDiffView({
     return () => resizeObserver.disconnect()
   }, [isResizing])
 
-  // 使用 throttle 优化滚动性能
-  const throttledSetScrollTop = useMemo(() => throttle((value: number) => setScrollTop(value), SCROLL_THROTTLE_MS), [])
-
-  // 清理 throttle
+  // 测量 content 宽度（scrollWidth vs clientWidth）
   useEffect(() => {
-    return () => throttledSetScrollTop.cancel()
-  }, [throttledSetScrollTop])
+    const content = contentRef.current
+    if (!content) return
 
-  const handleScroll = useCallback(
-    (e: React.UIEvent<HTMLDivElement>) => {
-      throttledSetScrollTop(e.currentTarget.scrollTop)
-    },
-    [throttledSetScrollTop],
-  )
+    const measure = () => {
+      const inner = content.firstElementChild as HTMLElement
+      if (inner) setContentWidth(inner.scrollWidth)
+      setContentClientWidth(content.clientWidth)
+    }
+
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(content)
+    const mo = new MutationObserver(measure)
+    mo.observe(content, { childList: true, subtree: true })
+    return () => {
+      ro.disconnect()
+      mo.disconnect()
+    }
+  }, [startIndex, endIndex])
+
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    setScrollTop(e.currentTarget.scrollTop)
+  }, [])
+
+  // proxy scrollbar ↔ content 面板水平同步（带 guard 防循环）
+  const handleScrollbar = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    if (scrollSourceRef.current === 'content') return
+    scrollSourceRef.current = 'scrollbar'
+    if (contentRef.current) contentRef.current.scrollLeft = e.currentTarget.scrollLeft
+    requestAnimationFrame(() => {
+      scrollSourceRef.current = null
+    })
+  }, [])
+  const handleContentScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    if (scrollSourceRef.current === 'scrollbar') return
+    scrollSourceRef.current = 'content'
+    if (scrollbarRef.current) scrollbarRef.current.scrollLeft = e.currentTarget.scrollLeft
+    requestAnimationFrame(() => {
+      scrollSourceRef.current = null
+    })
+  }, [])
 
   if (lines.length === 0) {
     return <div className="h-full flex items-center justify-center text-text-400 text-sm">No changes</div>
   }
 
-  const visibleRows: React.ReactNode[] = []
+  // gutter 宽度: oldLineNo(32px) + newLineNo(32px) + 标记(20px) = 84px
+  const GUTTER_WIDTH = 84
+
+  const gutterRows: React.ReactNode[] = []
+  const contentRows: React.ReactNode[] = []
+
   for (let i = startIndex; i < endIndex; i++) {
     const line = lines[i]
     let tokens: HighlightTokens | null = null
@@ -467,8 +533,9 @@ const UnifiedDiffView = memo(function UnifiedDiffView({
       lineNo = line.newLineNo
     }
 
-    visibleRows.push(
-      <div key={i} className={`flex min-w-full ${getLineBgClass(line.type)}`} style={{ height: LINE_HEIGHT }}>
+    // Gutter 行: oldLineNo | newLineNo | +/-
+    gutterRows.push(
+      <div key={i} className={`flex ${getGutterBgClass(line.type)}`} style={{ height: LINE_HEIGHT }}>
         <div className="w-8 shrink-0 px-1 text-right text-text-500 text-[11px] leading-5 select-none opacity-60">
           {line.oldLineNo}
         </div>
@@ -479,9 +546,17 @@ const UnifiedDiffView = memo(function UnifiedDiffView({
           {line.type === 'add' && <span className="text-success-100">+</span>}
           {line.type === 'delete' && <span className="text-danger-100">−</span>}
         </div>
-        <div className="flex-1 pr-2 leading-5 text-[11px] whitespace-pre">
-          <LineContent line={{ ...line, lineNo }} tokens={tokens} />
-        </div>
+      </div>,
+    )
+
+    // Content 行
+    contentRows.push(
+      <div
+        key={i}
+        className={`pr-2 pl-2 leading-5 text-[11px] whitespace-pre ${getLineBgClass(line.type)}`}
+        style={{ height: LINE_HEIGHT }}
+      >
+        <LineContent line={{ ...line, lineNo }} tokens={tokens} />
       </div>,
     )
   }
@@ -489,22 +564,38 @@ const UnifiedDiffView = memo(function UnifiedDiffView({
   return (
     <div
       ref={containerRef}
-      className={`overflow-auto custom-scrollbar font-mono ${useVirtualScroll ? 'h-full' : ''}`}
+      className="overflow-y-auto overflow-x-hidden custom-scrollbar font-mono h-full"
       style={maxHeight !== undefined ? { maxHeight } : undefined}
-      onScroll={useVirtualScroll ? handleScroll : undefined}
+      onScroll={handleScroll}
     >
-      <div style={useVirtualScroll ? { height: totalHeight, position: 'relative' } : undefined}>
-        <div
-          className="inline-block min-w-full"
-          style={
-            useVirtualScroll
-              ? { position: 'absolute', top: 0, left: 0, transform: `translateY(${offsetY}px)` }
-              : undefined
-          }
-        >
-          {visibleRows}
+      {/* 虚拟滚动高度占位 */}
+      <div style={{ height: totalHeight, position: 'relative' }}>
+        <div className="absolute top-0 left-0 right-0 flex" style={{ transform: `translateY(${offsetY}px)` }}>
+          {/* Gutter: 固定宽度，不水平滚动 */}
+          <div className="shrink-0 overflow-hidden" style={{ width: GUTTER_WIDTH }}>
+            {gutterRows}
+          </div>
+
+          {/* Content: 独立水平滚动，隐藏自身滚动条 */}
+          <div
+            ref={contentRef}
+            className="flex-1 min-w-0 overflow-x-auto scrollbar-none"
+            onScroll={handleContentScroll}
+          >
+            <div className="inline-block min-w-full">{contentRows}</div>
+          </div>
         </div>
       </div>
+
+      {/* Sticky proxy 横向滚动条 — 只在内容实际溢出时显示 */}
+      {contentWidth > contentClientWidth && (
+        <div className="sticky bottom-0 z-10 flex bg-bg-100/90 backdrop-blur-sm">
+          <div className="shrink-0" style={{ width: GUTTER_WIDTH }} />
+          <div ref={scrollbarRef} className="flex-1 min-w-0 overflow-x-auto code-scrollbar" onScroll={handleScrollbar}>
+            <div style={{ width: contentWidth, height: 1 }} />
+          </div>
+        </div>
+      )}
     </div>
   )
 })

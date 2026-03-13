@@ -13,6 +13,19 @@ interface CodePreviewProps {
   isResizing?: boolean
 }
 
+/**
+ * CodePreview - 代码预览组件
+ *
+ * 架构（和 SplitDiffView 一致）：
+ *   外层容器 (overflow-y: auto, overflow-x: hidden) — 垂直滚动唯一来源
+ *     高度占位 (height: totalHeight, relative) — 虚拟滚动
+ *       absolute div (translateY: offsetY) — 可见行
+ *         flex row
+ *           gutter (shrink-0, overflow: hidden) — 行号，不水平滚动
+ *           content (flex-1, overflow-x: auto, scrollbar-none) — 代码，独立水平滚动
+ *             inline-block min-w-full — 被最宽行撑开
+ *     sticky proxy scrollbar (bottom: 0) — 可见的横向滚动条
+ */
 export function CodePreview({ code, language, truncateLines = true, maxHeight, isResizing = false }: CodePreviewProps) {
   const lines = useMemo(() => {
     const raw = code.split('\n')
@@ -22,9 +35,12 @@ export function CodePreview({ code, language, truncateLines = true, maxHeight, i
     return raw
   }, [code])
   const totalHeight = lines.length * LINE_HEIGHT
+  // 行号栏宽度：根据总行数的位数动态计算，用 ch 单位
+  const gutterCh = Math.max(2, String(lines.length).length)
+  // gutter 总宽度 = pl-4(16px) + 数字(gutterCh ch) + pr-3(12px)
+  const gutterWidth = `calc(${gutterCh}ch + 1.75rem)`
 
   // tokens 存在 ref 里，不经过 React state/props
-  // version 是一个自增 number，只用来通知 useMemo 重算可视行
   const enableHighlight = language !== 'text'
   const { tokensRef, version } = useSyntaxHighlightRef(code, {
     lang: language,
@@ -32,8 +48,13 @@ export function CodePreview({ code, language, truncateLines = true, maxHeight, i
   })
 
   const containerRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
+  const scrollbarRef = useRef<HTMLDivElement>(null)
+  const scrollSourceRef = useRef<'content' | 'scrollbar' | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [containerHeight, setContainerHeight] = useState(0)
+  const [contentWidth, setContentWidth] = useState(0)
+  const [contentClientWidth, setContentClientWidth] = useState(0)
 
   const { startIndex, endIndex, offsetY } = useMemo(() => {
     const start = Math.max(0, Math.floor(scrollTop / LINE_HEIGHT) - OVERSCAN)
@@ -46,6 +67,7 @@ export function CodePreview({ code, language, truncateLines = true, maxHeight, i
     }
   }, [scrollTop, containerHeight, lines.length])
 
+  // 监听外层容器大小
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
@@ -70,17 +92,57 @@ export function CodePreview({ code, language, truncateLines = true, maxHeight, i
     }
   }, [isResizing])
 
+  // 测量 content 宽度（scrollWidth vs clientWidth，判断是否需要横向滚动条）
+  useEffect(() => {
+    const content = contentRef.current
+    if (!content) return
+
+    const measure = () => {
+      const inner = content.firstElementChild as HTMLElement
+      if (inner) setContentWidth(inner.scrollWidth)
+      setContentClientWidth(content.clientWidth)
+    }
+
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(content)
+    const mo = new MutationObserver(measure)
+    mo.observe(content, { childList: true, subtree: true })
+    return () => {
+      ro.disconnect()
+      mo.disconnect()
+    }
+  }, [startIndex, endIndex])
+
+  // 外层垂直滚动
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     setScrollTop(e.currentTarget.scrollTop)
   }, [])
 
-  // 直接在 useMemo 里读 ref，通过 version 触发重算
-  // tokens 数组本身不出现在任何 React 管线里
-  const visibleLines = useMemo(() => {
-    // version 在依赖里只是触发重算的信号，不实际使用
+  // proxy scrollbar ↔ content 面板水平同步（带 guard 防循环触发）
+  const handleScrollbar = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    if (scrollSourceRef.current === 'content') return
+    scrollSourceRef.current = 'scrollbar'
+    if (contentRef.current) contentRef.current.scrollLeft = e.currentTarget.scrollLeft
+    requestAnimationFrame(() => {
+      scrollSourceRef.current = null
+    })
+  }, [])
+  const handleContentScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    if (scrollSourceRef.current === 'scrollbar') return
+    scrollSourceRef.current = 'content'
+    if (scrollbarRef.current) scrollbarRef.current.scrollLeft = e.currentTarget.scrollLeft
+    requestAnimationFrame(() => {
+      scrollSourceRef.current = null
+    })
+  }, [])
+
+  // 渲染可见行：分别生成 gutter 和 content
+  const { gutterRows, contentRows } = useMemo(() => {
     void version
     const tokens = tokensRef.current
-    const result: React.ReactNode[] = []
+    const gutters: React.ReactNode[] = []
+    const contents: React.ReactNode[] = []
 
     for (let i = startIndex; i < endIndex; i++) {
       const rawLine = lines[i] || ' '
@@ -106,7 +168,6 @@ export function CodePreview({ code, language, truncateLines = true, maxHeight, i
           )
         }
       } else {
-        // 无 token，纯文本 fallback
         if (truncateLines && rawLine.length > MAX_LINE_LENGTH) {
           isTruncated = true
           displayContent = <span className="text-text-200 whitespace-pre">{rawLine.slice(0, MAX_LINE_LENGTH)}</span>
@@ -115,45 +176,63 @@ export function CodePreview({ code, language, truncateLines = true, maxHeight, i
         }
       }
 
-      result.push(
-        <div key={i} className="flex hover:bg-bg-200/30" style={{ height: LINE_HEIGHT }}>
-          <span className="select-none text-text-500 w-10 text-right pr-3 shrink-0 border-r border-border-100/30 mr-3 leading-5">
-            {i + 1}
-          </span>
-          <span className="leading-5 pr-4">
-            {displayContent}
-            {isTruncated && <span className="text-text-500 ml-1">… (truncated)</span>}
-          </span>
+      gutters.push(
+        <div
+          key={i}
+          className="text-text-500 text-right pr-3 pl-4 leading-5 select-none bg-bg-100"
+          style={{ height: LINE_HEIGHT }}
+        >
+          {i + 1}
+        </div>,
+      )
+
+      contents.push(
+        <div key={i} className="leading-5 pl-3 pr-4 whitespace-pre" style={{ height: LINE_HEIGHT }}>
+          {displayContent}
+          {isTruncated && <span className="text-text-500 ml-1">… (truncated)</span>}
         </div>,
       )
     }
-    return result
+
+    return { gutterRows: gutters, contentRows: contents }
   }, [startIndex, endIndex, lines, version, tokensRef, truncateLines])
 
   return (
     <div
       ref={containerRef}
-      className="overflow-y-auto overflow-x-hidden code-scrollbar h-full"
+      className="overflow-y-auto overflow-x-hidden code-scrollbar h-full font-mono text-[11px] leading-relaxed"
       onScroll={handleScroll}
       style={maxHeight !== undefined ? { maxHeight } : undefined}
     >
-      {/* 虚拟滚动占位：contain: strict 隔离内部 layout，
-          外层容器宽度变化时浏览器不会对这块做 reflow */}
-      <div style={{ height: totalHeight, position: 'relative', contain: 'strict' }}>
-        {/* 可见行区域：独立横向滚动，只有 20-30 行参与 layout */}
-        <div
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            transform: `translateY(${offsetY}px)`,
-          }}
-          className="font-mono text-[11px] leading-relaxed overflow-x-auto code-scrollbar"
-        >
-          {visibleLines}
+      {/* 虚拟滚动高度占位 */}
+      <div style={{ height: totalHeight, position: 'relative' }}>
+        <div className="absolute top-0 left-0 right-0 flex" style={{ transform: `translateY(${offsetY}px)` }}>
+          {/* Gutter: 固定宽度，不水平滚动，跟外层一起垂直滚动 */}
+          <div className="shrink-0 overflow-hidden bg-bg-100" style={{ width: gutterWidth }}>
+            {gutterRows}
+          </div>
+
+          {/* Content: 独立水平滚动，隐藏自身滚动条，由 proxy 控制 */}
+          <div
+            ref={contentRef}
+            className="flex-1 min-w-0 overflow-x-auto scrollbar-none"
+            onScroll={handleContentScroll}
+          >
+            <div className="inline-block min-w-full">{contentRows}</div>
+          </div>
         </div>
       </div>
+
+      {/* Sticky proxy 横向滚动条 — 只在内容实际溢出时显示 */}
+      {contentWidth > contentClientWidth && (
+        <div className="sticky bottom-0 z-10 flex bg-bg-100/90 backdrop-blur-sm">
+          {/* gutter 占位 */}
+          <div className="shrink-0" style={{ width: gutterWidth }} />
+          <div ref={scrollbarRef} className="flex-1 min-w-0 overflow-x-auto code-scrollbar" onScroll={handleScrollbar}>
+            <div style={{ width: contentWidth, height: 1 }} />
+          </div>
+        </div>
+      )}
     </div>
   )
 }
