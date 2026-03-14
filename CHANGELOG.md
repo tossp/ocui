@@ -1,5 +1,10 @@
 # Changelog
 
+## [v0.2.1] - 2026-03-14
+
+- refactor: 用 ResizeObserver 替代 RAF 轮询实现流式自动滚动 (10d9e6a)
+- fix: 空消息不参与可见列表，消除 abort 时的滚动跳变 (9dbaa4d)
+
 ## [v0.2.0] - 2026-03-14
 
 - feat: RECENTS 列表标记活跃 session 状态 (closes #25) (98ecce9)
