@@ -59,7 +59,7 @@ export const ChatArea = memo(
       {
         messages,
         sessionId,
-        isStreaming = false,
+        isStreaming: _isStreaming = false,
         loadState = 'idle',
         onLoadMore,
         onUndo,
@@ -78,8 +78,6 @@ export const ChatArea = memo(
       const topSentinelRef = useRef<HTMLDivElement>(null)
       const isAtBottomRef = useRef(true)
       const suppressScrollRef = useRef(false)
-      const userInteractingRef = useRef(false)
-      const userInteractingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
       const loadMoreRef = useRef(onLoadMore)
       loadMoreRef.current = onLoadMore
       const isLoadingRef = useRef(false)
@@ -136,83 +134,32 @@ export const ChatArea = memo(
       }, [atBottomThreshold, onAtBottomChange])
 
       // ============================================
-      // Scroll: auto-scroll during streaming
+      // Scroll: auto-scroll on content resize
       // ============================================
+      // ResizeObserver 监听内容高度变化，实时判断是否在底部。
+      // 不依赖 isAtBottomRef（scroll 事件异步更新有竞态），
+      // 而是每次 resize 时用 resize 前的 scrollHeight 同步计算 gap。
 
-      // User interaction tracking: pause auto-scroll while user is touching/scrolling
       useEffect(() => {
         const el = scrollRef.current
         if (!el) return
 
-        const clearTimer = () => {
-          if (userInteractingTimerRef.current) {
-            clearTimeout(userInteractingTimerRef.current)
-            userInteractingTimerRef.current = null
-          }
-        }
-
-        const markInteracting = () => {
-          userInteractingRef.current = true
-          clearTimer()
-        }
-
-        const settleInteracting = (delay: number) => {
-          userInteractingRef.current = true
-          clearTimer()
-          userInteractingTimerRef.current = setTimeout(() => {
-            userInteractingRef.current = false
-          }, delay)
-        }
-
-        const handleWheel = () => settleInteracting(150)
-        const handleTouchStart = () => markInteracting()
-        const handleTouchMove = () => markInteracting()
-        const handleTouchEnd = () => settleInteracting(300)
-
-        el.addEventListener('wheel', handleWheel, { passive: true })
-        el.addEventListener('touchstart', handleTouchStart, { passive: true })
-        el.addEventListener('touchmove', handleTouchMove, { passive: true })
-        el.addEventListener('touchend', handleTouchEnd, { passive: true })
-        el.addEventListener('touchcancel', handleTouchEnd, { passive: true })
-
-        return () => {
-          el.removeEventListener('wheel', handleWheel)
-          el.removeEventListener('touchstart', handleTouchStart)
-          el.removeEventListener('touchmove', handleTouchMove)
-          el.removeEventListener('touchend', handleTouchEnd)
-          el.removeEventListener('touchcancel', handleTouchEnd)
-          clearTimer()
-          userInteractingRef.current = false
-        }
-      }, [])
-
-      // Streaming 时：RAF 循环高频 pin 底部
-      useEffect(() => {
-        if (!isStreaming) return
-        let rafId: number
-        const tick = () => {
-          if (suppressScrollRef.current || !isAtBottomRef.current || userInteractingRef.current) {
-            rafId = requestAnimationFrame(tick)
-            return
-          }
-          const el = scrollRef.current
-          if (el) el.scrollTop = el.scrollHeight
-          rafId = requestAnimationFrame(tick)
-        }
-        rafId = requestAnimationFrame(tick)
-        return () => cancelAnimationFrame(rafId)
-      }, [isStreaming])
-
-      // 非 streaming 时：ResizeObserver 监听内容高度变化，保持底部
-      // 覆盖所有场景：reasoning 折叠动画、CopyButton 出现、StepFinish 渲染、图片加载等
-      useEffect(() => {
-        if (isStreaming) return
-        const el = scrollRef.current
-        if (!el) return
+        // 记录上一次已知的 scrollHeight，只在内容变高时才自动滚动
+        let prevScrollHeight = el.scrollHeight
 
         const ro = new ResizeObserver(() => {
-          if (isAtBottomRef.current && !userInteractingRef.current && !suppressScrollRef.current) {
-            el.scrollTop = el.scrollHeight
+          if (suppressScrollRef.current) return
+          const currScrollHeight = el.scrollHeight
+          // 只在内容变高时触发（排除折叠、删除等缩小场景）
+          if (currScrollHeight <= prevScrollHeight) {
+            prevScrollHeight = currScrollHeight
+            return
+          }
+          // 用 resize 前的 scrollHeight 判断：resize 前是否在底部
+          const gap = prevScrollHeight - el.scrollTop - el.clientHeight
+          prevScrollHeight = currScrollHeight
+          if (gap <= atBottomThreshold) {
+            el.scrollTop = currScrollHeight
           }
         })
 
@@ -222,7 +169,7 @@ export const ChatArea = memo(
         }
 
         return () => ro.disconnect()
-      }, [isStreaming, visibleMessages])
+      }, [visibleMessages, atBottomThreshold])
 
       // ============================================
       // Session switch: snap to bottom
@@ -477,7 +424,7 @@ export const ChatArea = memo(
             </div>
           )}
 
-          <div ref={scrollRef} className="h-full overflow-y-auto custom-scrollbar contain-content">
+          <div ref={scrollRef} className="h-full overflow-y-auto overflow-x-hidden custom-scrollbar contain-content">
             {/* Top sentinel for loadMore */}
             <div ref={topSentinelRef} className="h-px" aria-hidden="true" />
 
