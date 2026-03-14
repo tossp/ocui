@@ -35,27 +35,19 @@ export function SmoothHeight({
       return
     }
 
-    // 活跃：监听内容高度变化，命令式动画驱动容器
+    // 锁定 outer 为当前内容高度 — 之后内容增长不会自动撑开 outer，
+    // 必须由 animate() 驱动 outer 增长，从而产生平滑的高度过渡效果
+    outer.style.height = `${inner.scrollHeight}px`
+    outer.style.overflow = 'hidden'
+
     const update = () => {
       const target = inner.scrollHeight
       const current = outer.offsetHeight
-      // 差值 < 1px 不值得动画
       if (Math.abs(target - current) < 1) return
 
       animRef.current?.stop()
-      outer.style.overflow = 'hidden'
       animRef.current = animate(outer, { height: `${target}px` }, { duration: 0.12, ease: 'ease-out' })
-      // 动画结束后让 height 回到 auto，避免后续 resize 被 inline style 卡住
-      animRef.current
-        .then(() => {
-          if (outer && isActive) {
-            outer.style.height = 'auto'
-          }
-        })
-        .catch(() => {})
     }
-
-    update()
 
     const ro = new ResizeObserver(update)
     ro.observe(inner)
