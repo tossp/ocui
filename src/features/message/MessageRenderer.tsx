@@ -375,12 +375,12 @@ const AssistantMessageView = memo(function AssistantMessageView({
       {/* Message-level error */}
       {messageError && <MessageErrorView error={messageError} />}
 
-      {/* Copy button — 始终占位避免 text 到达时布局跳变 */}
-      <div
-        className={`md:opacity-0 md:group-hover:opacity-100 transition-opacity ${fullText.trim() ? '' : 'invisible'}`}
-      >
-        <CopyButton text={fullText} position="static" />
-      </div>
+      {/* Copy button */}
+      {fullText.trim() && (
+        <div className="md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+          <CopyButton text={fullText} position="static" />
+        </div>
+      )}
     </div>
   )
 })
