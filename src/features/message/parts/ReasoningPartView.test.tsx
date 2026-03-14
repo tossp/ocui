@@ -11,10 +11,6 @@ vi.mock('../../../hooks/useTheme', () => ({
   useTheme: () => ({ reasoningDisplayMode: 'italic' }),
 }))
 
-vi.mock('../../../hooks/useSmoothStream', () => ({
-  useSmoothStream: () => ({ displayText: 'thinking through steps...' }),
-}))
-
 describe('ReasoningPartView', () => {
   beforeEach(() => {
     vi.useFakeTimers()

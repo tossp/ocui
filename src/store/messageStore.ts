@@ -72,12 +72,12 @@ class MessageStore {
       return
     }
 
-    // 只对被标记 dirty 的消息生成新引用
+    // 只对被标记 dirty 的消息生成新引用（包括 parts 内的对象）
     let changed = false
     const newMessages = state.messages.map(m => {
       if (this.dirtyMessages.has(m.info.id)) {
         changed = true
-        return { ...m, parts: [...m.parts] }
+        return { ...m, parts: m.parts.map(p => ({ ...p })) }
       }
       return m
     })
