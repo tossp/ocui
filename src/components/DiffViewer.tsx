@@ -188,6 +188,27 @@ const SplitDiffView = memo(function SplitDiffView({
 
   const totalHeight = pairedLines.length * LINE_HEIGHT
 
+  // 最长行文本 — 用于 probe 元素精确撑开 inner div 的 scrollWidth
+  const { leftLongest, rightLongest } = useMemo(() => {
+    let lMax = '',
+      lLen = 0,
+      rMax = '',
+      rLen = 0
+    for (const l of before.split('\n')) {
+      if (l.length > lLen) {
+        lLen = l.length
+        lMax = l
+      }
+    }
+    for (const l of after.split('\n')) {
+      if (l.length > rLen) {
+        rLen = l.length
+        rMax = l
+      }
+    }
+    return { leftLongest: lMax, rightLongest: rMax }
+  }, [before, after])
+
   const { startIndex, endIndex, offsetY } = useMemo(() => {
     const start = Math.max(0, Math.floor(scrollTop / LINE_HEIGHT) - OVERSCAN)
     const visibleCount = Math.ceil(containerHeight / LINE_HEIGHT)
@@ -353,7 +374,13 @@ const SplitDiffView = memo(function SplitDiffView({
               className="flex-1 min-w-0 overflow-x-auto scrollbar-none"
               onScroll={handleLeftContentScroll}
             >
-              <div className="inline-block min-w-full">{leftContentRows}</div>
+              <div className="inline-block min-w-full">
+                {leftContentRows}
+                {/* Probe: 最长行撑开 scrollWidth */}
+                <div className="pr-2 whitespace-pre" style={{ visibility: 'hidden', height: 0, overflow: 'hidden' }}>
+                  {leftLongest}
+                </div>
+              </div>
             </div>
           </div>
 
@@ -369,7 +396,13 @@ const SplitDiffView = memo(function SplitDiffView({
               className="flex-1 min-w-0 overflow-x-auto scrollbar-none"
               onScroll={handleRightContentScroll}
             >
-              <div className="inline-block min-w-full">{rightContentRows}</div>
+              <div className="inline-block min-w-full">
+                {rightContentRows}
+                {/* Probe: 最长行撑开 scrollWidth */}
+                <div className="pr-2 whitespace-pre" style={{ visibility: 'hidden', height: 0, overflow: 'hidden' }}>
+                  {rightLongest}
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -377,7 +410,7 @@ const SplitDiffView = memo(function SplitDiffView({
 
       {/* Sticky proxy 横向滚动条 — 只在内容实际溢出时显示 */}
       {(leftContentWidth > leftClientWidth || rightContentWidth > rightClientWidth) && (
-        <div className="sticky bottom-0 z-10 flex backdrop-blur-sm">
+        <div className="sticky bottom-0 z-10 flex">
           <div
             ref={leftScrollbarRef}
             className="flex-1 overflow-x-auto code-scrollbar border-r border-border-100/30"
@@ -426,13 +459,8 @@ const UnifiedDiffView = memo(function UnifiedDiffView({
   maxHeight?: number
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const contentRef = useRef<HTMLDivElement>(null)
-  const scrollbarRef = useRef<HTMLDivElement>(null)
-  const scrollSourceRef = useRef<'content' | 'scrollbar' | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [containerHeight, setContainerHeight] = useState(300)
-  const [contentWidth, setContentWidth] = useState(0)
-  const [contentClientWidth, setContentClientWidth] = useState(0)
 
   const shouldHighlight = !isResizing && language !== 'text'
   const { output: beforeTokens } = useSyntaxHighlight(before, {
@@ -447,8 +475,26 @@ const UnifiedDiffView = memo(function UnifiedDiffView({
   })
 
   const lines = useMemo(() => computeUnifiedLines(before, after), [before, after])
-
   const totalHeight = lines.length * LINE_HEIGHT
+
+  // 最长行文本 — 用于 probe 元素撑开 scrollWidth
+  const longestLine = useMemo(() => {
+    let max = '',
+      maxLen = 0
+    for (const l of before.split('\n')) {
+      if (l.length > maxLen) {
+        maxLen = l.length
+        max = l
+      }
+    }
+    for (const l of after.split('\n')) {
+      if (l.length > maxLen) {
+        maxLen = l.length
+        max = l
+      }
+    }
+    return max
+  }, [before, after])
 
   const { startIndex, endIndex, offsetY } = useMemo(() => {
     const start = Math.max(0, Math.floor(scrollTop / LINE_HEIGHT) - OVERSCAN)
@@ -460,67 +506,23 @@ const UnifiedDiffView = memo(function UnifiedDiffView({
   useEffect(() => {
     const container = containerRef.current
     if (!container || isResizing) return
-
     setContainerHeight(container.clientHeight)
-    const resizeObserver = new ResizeObserver(() => setContainerHeight(container.clientHeight))
-    resizeObserver.observe(container)
-    return () => resizeObserver.disconnect()
+    const ro = new ResizeObserver(() => setContainerHeight(container.clientHeight))
+    ro.observe(container)
+    return () => ro.disconnect()
   }, [isResizing])
-
-  // 测量 content 宽度（scrollWidth vs clientWidth）
-  useEffect(() => {
-    const content = contentRef.current
-    if (!content) return
-
-    const measure = () => {
-      const inner = content.firstElementChild as HTMLElement
-      if (inner) setContentWidth(inner.scrollWidth)
-      setContentClientWidth(content.clientWidth)
-    }
-
-    measure()
-    const ro = new ResizeObserver(measure)
-    ro.observe(content)
-    const mo = new MutationObserver(measure)
-    mo.observe(content, { childList: true, subtree: true })
-    return () => {
-      ro.disconnect()
-      mo.disconnect()
-    }
-  }, [startIndex, endIndex])
 
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     setScrollTop(e.currentTarget.scrollTop)
-  }, [])
-
-  // proxy scrollbar ↔ content 面板水平同步（带 guard 防循环）
-  const handleScrollbar = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    if (scrollSourceRef.current === 'content') return
-    scrollSourceRef.current = 'scrollbar'
-    if (contentRef.current) contentRef.current.scrollLeft = e.currentTarget.scrollLeft
-    requestAnimationFrame(() => {
-      scrollSourceRef.current = null
-    })
-  }, [])
-  const handleContentScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    if (scrollSourceRef.current === 'scrollbar') return
-    scrollSourceRef.current = 'content'
-    if (scrollbarRef.current) scrollbarRef.current.scrollLeft = e.currentTarget.scrollLeft
-    requestAnimationFrame(() => {
-      scrollSourceRef.current = null
-    })
   }, [])
 
   if (lines.length === 0) {
     return <div className="h-full flex items-center justify-center text-text-400 text-sm">No changes</div>
   }
 
-  // gutter 宽度: oldLineNo(32px) + newLineNo(32px) + 标记(20px) = 84px
   const GUTTER_WIDTH = 84
 
-  const gutterRows: React.ReactNode[] = []
-  const contentRows: React.ReactNode[] = []
-
+  const rows: React.ReactNode[] = []
   for (let i = startIndex; i < endIndex; i++) {
     const line = lines[i]
     let tokens: HighlightTokens | null = null
@@ -533,30 +535,26 @@ const UnifiedDiffView = memo(function UnifiedDiffView({
       lineNo = line.newLineNo
     }
 
-    // Gutter 行: oldLineNo | newLineNo | +/-
-    gutterRows.push(
-      <div key={i} className={`flex ${getGutterBgClass(line.type)}`} style={{ height: LINE_HEIGHT }}>
-        <div className="w-8 shrink-0 px-1 text-right text-text-500 text-[11px] leading-5 select-none opacity-60">
-          {line.oldLineNo}
+    rows.push(
+      <div key={i} className={`flex ${getLineBgClass(line.type)}`} style={{ height: LINE_HEIGHT }}>
+        <div
+          className={`shrink-0 sticky left-0 z-[1] flex ${getGutterBgClass(line.type)}`}
+          style={{ width: GUTTER_WIDTH }}
+        >
+          <div className="w-8 shrink-0 px-1 text-right text-text-500 text-[11px] leading-5 select-none opacity-60">
+            {line.oldLineNo}
+          </div>
+          <div className="w-8 shrink-0 px-1 text-right text-text-500 text-[11px] leading-5 select-none opacity-60">
+            {line.newLineNo}
+          </div>
+          <div className="w-5 shrink-0 text-center text-[11px] leading-5 select-none">
+            {line.type === 'add' && <span className="text-success-100">+</span>}
+            {line.type === 'delete' && <span className="text-danger-100">−</span>}
+          </div>
         </div>
-        <div className="w-8 shrink-0 px-1 text-right text-text-500 text-[11px] leading-5 select-none opacity-60">
-          {line.newLineNo}
+        <div className="pr-2 pl-2 leading-5 text-[11px] whitespace-pre">
+          <LineContent line={{ ...line, lineNo }} tokens={tokens} />
         </div>
-        <div className="w-5 shrink-0 text-center text-[11px] leading-5 select-none">
-          {line.type === 'add' && <span className="text-success-100">+</span>}
-          {line.type === 'delete' && <span className="text-danger-100">−</span>}
-        </div>
-      </div>,
-    )
-
-    // Content 行
-    contentRows.push(
-      <div
-        key={i}
-        className={`pr-2 pl-2 leading-5 text-[11px] whitespace-pre ${getLineBgClass(line.type)}`}
-        style={{ height: LINE_HEIGHT }}
-      >
-        <LineContent line={{ ...line, lineNo }} tokens={tokens} />
       </div>,
     )
   }
@@ -564,38 +562,21 @@ const UnifiedDiffView = memo(function UnifiedDiffView({
   return (
     <div
       ref={containerRef}
-      className="overflow-y-auto overflow-x-hidden custom-scrollbar font-mono h-full"
+      className="overflow-auto code-scrollbar font-mono h-full"
       style={maxHeight !== undefined ? { maxHeight } : undefined}
       onScroll={handleScroll}
     >
-      {/* 虚拟滚动高度占位 */}
       <div style={{ height: totalHeight, position: 'relative' }}>
-        <div className="absolute top-0 left-0 right-0 flex" style={{ transform: `translateY(${offsetY}px)` }}>
-          {/* Gutter: 固定宽度，不水平滚动 */}
-          <div className="shrink-0 overflow-hidden" style={{ width: GUTTER_WIDTH }}>
-            {gutterRows}
-          </div>
-
-          {/* Content: 独立水平滚动，隐藏自身滚动条 */}
-          <div
-            ref={contentRef}
-            className="flex-1 min-w-0 overflow-x-auto scrollbar-none"
-            onScroll={handleContentScroll}
-          >
-            <div className="inline-block min-w-full">{contentRows}</div>
-          </div>
+        <div className="absolute top-0 left-0 right-0" style={{ transform: `translateY(${offsetY}px)` }}>
+          {rows}
         </div>
       </div>
 
-      {/* Sticky proxy 横向滚动条 — 只在内容实际溢出时显示 */}
-      {contentWidth > contentClientWidth && (
-        <div className="sticky bottom-0 z-10 flex backdrop-blur-sm">
-          <div className="shrink-0" style={{ width: GUTTER_WIDTH }} />
-          <div ref={scrollbarRef} className="flex-1 min-w-0 overflow-x-auto code-scrollbar" onScroll={handleScrollbar}>
-            <div style={{ width: contentWidth, height: 1 }} />
-          </div>
-        </div>
-      )}
+      {/* Probe: 最长行文本撑开 scrollWidth，与行内容同样的 padding */}
+      <div className="flex" style={{ visibility: 'hidden', height: 0, overflow: 'hidden' }}>
+        <div className="shrink-0" style={{ width: GUTTER_WIDTH }} />
+        <div className="pl-2 pr-2 whitespace-pre">{longestLine}</div>
+      </div>
     </div>
   )
 })
