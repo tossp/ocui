@@ -1,7 +1,8 @@
-import { memo, type ReactNode } from 'react'
+import { memo, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { ArrowDownIcon, ArrowUpIcon, PermissionListIcon, QuestionIcon } from '../../../components/Icons'
 import { UndoStatus } from './UndoStatus'
 import { usePresence } from '../../../hooks'
+import { animate } from 'motion/mini'
 import type { CollapsedDialogInfo } from '../InputBox'
 
 // ============================================
@@ -133,8 +134,18 @@ export const CollapsedCapsule = memo(function CollapsedCapsule({
   showScrollToBottom,
   onScrollToBottom,
 }: CollapsedCapsuleProps) {
+  // 只做入场动画，退场时直接 unmount（不延迟），避免和输入框入场重叠闪烁
+  const ref = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    el.style.opacity = '0'
+    el.style.transform = 'translateY(8px) scale(0.95)'
+    animate(el, { opacity: 1, transform: 'translateY(0px) scale(1)' }, { duration: 0.15, ease: 'easeOut' })
+  }, [])
+
   return (
-    <div className="flex items-center justify-center gap-2">
+    <div ref={ref} className="flex items-center justify-center gap-2">
       <button
         type="button"
         onClick={onExpand}

@@ -11,7 +11,7 @@ import {
 import { SlashCommandMenu, type SlashCommandMenuHandle } from '../slash-command'
 import { InputToolbar } from './input/InputToolbar'
 import { InputFooter } from './input/InputFooter'
-import { FloatingActions, CollapsedCapsule, PresenceItem } from './input/InputActions'
+import { FloatingActions, CollapsedCapsule } from './input/InputActions'
 import { useMobileCollapse } from './input/useMobileCollapse'
 import { useAttachmentRail } from './input/useAttachmentRail'
 import { useInputHistory } from './input/useInputHistory'
@@ -905,13 +905,13 @@ function InputBoxComponent({
           </div>
 
           {/* Collapsed Capsule - 移动端收起状态 */}
-          <PresenceItem show={isCollapsed}>
+          {isCollapsed && (
             <CollapsedCapsule
               onExpand={handleExpandInput}
               showScrollToBottom={showScrollToBottom}
               onScrollToBottom={onScrollToBottom}
             />
-          </PresenceItem>
+          )}
 
           {!isCollapsed && (
             <>

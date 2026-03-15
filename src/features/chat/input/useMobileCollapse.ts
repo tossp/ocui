@@ -73,7 +73,37 @@ export function useMobileCollapse({
 
   // 直接计算是否收起（纯派生值）
   const hasPendingDialogs = !!collapsedPermission || !!collapsedQuestion
-  const isCollapsed = isMobile && !isAtBottom && !hasContent && !isFocused && !hasPendingDialogs
+  const wantsCollapse = isMobile && !isAtBottom && !hasContent && !isFocused && !hasPendingDialogs
+
+  // 展开→收起 做延迟防抖（滚动边界处 isAtBottom 抖动时不反复触发胶囊 mount/unmount）
+  // 收起→展开 立即生效（用户点胶囊要即时响应）
+  const [isCollapsed, setIsCollapsed] = useState(wantsCollapse)
+  const collapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    if (wantsCollapse) {
+      // 延迟收起
+      if (!collapseTimerRef.current) {
+        collapseTimerRef.current = setTimeout(() => {
+          collapseTimerRef.current = null
+          setIsCollapsed(true)
+        }, 120)
+      }
+    } else {
+      // 立即展开
+      if (collapseTimerRef.current) {
+        clearTimeout(collapseTimerRef.current)
+        collapseTimerRef.current = null
+      }
+      setIsCollapsed(false)
+    }
+    return () => {
+      if (collapseTimerRef.current) {
+        clearTimeout(collapseTimerRef.current)
+        collapseTimerRef.current = null
+      }
+    }
+  }, [wantsCollapse])
 
   // 展开态内容区高度（用于收起时占位，防 isAtBottom 反馈循环）
   const [expandedHeight, setExpandedHeight] = useState(0)
