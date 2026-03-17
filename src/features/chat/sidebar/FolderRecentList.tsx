@@ -65,6 +65,8 @@ export function FolderRecentList({
   // ---- 拖拽状态 ----
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<{ id: string; position: DropPosition }>({ id: '', position: null })
+  // ref 作为拖拽 id 的真相源，避免回调闭包 stale state
+  const draggedIdRef = useRef<string | null>(null)
   // 拖拽开始前保存展开状态，结束后恢复
   const savedExpandedRef = useRef<string[] | null>(null)
 
@@ -105,30 +107,30 @@ export function FolderRecentList({
   // ============================================
   const startDrag = useCallback(
     (projectId: string) => {
-      // 保存展开状态并收起所有文件夹
-      savedExpandedRef.current = expandedProjectIds
-      setExpandedProjectIds([])
+      draggedIdRef.current = projectId
       setDraggedId(projectId)
+      // 延迟一帧再收起文件夹，避免 dragstart 期间 DOM 变化导致浏览器取消拖拽
+      requestAnimationFrame(() => {
+        savedExpandedRef.current = expandedProjectIds
+        setExpandedProjectIds([])
+      })
     },
     [expandedProjectIds],
   )
 
-  const handleDragOver = useCallback(
-    (e: React.DragEvent, projectId: string) => {
-      e.preventDefault()
-      e.dataTransfer.dropEffect = 'move'
-      if (!draggedId || projectId === draggedId) {
-        setDropTarget({ id: '', position: null })
-        return
-      }
-      // 根据鼠标在目标元素的上/下半区决定插入位置
-      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-      const midY = rect.top + rect.height / 2
-      const position: DropPosition = e.clientY < midY ? 'above' : 'below'
-      setDropTarget({ id: projectId, position })
-    },
-    [draggedId],
-  )
+  const handleDragOver = useCallback((e: React.DragEvent, projectId: string) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    const currentDragged = draggedIdRef.current
+    if (!currentDragged || projectId === currentDragged) {
+      setDropTarget({ id: '', position: null })
+      return
+    }
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const midY = rect.top + rect.height / 2
+    const position: DropPosition = e.clientY < midY ? 'above' : 'below'
+    setDropTarget({ id: projectId, position })
+  }, [])
 
   const handleDragLeave = useCallback(() => {
     setDropTarget({ id: '', position: null })
@@ -136,8 +138,9 @@ export function FolderRecentList({
 
   const finishDrag = useCallback(
     (targetProjectId: string) => {
-      if (draggedId && draggedId !== targetProjectId) {
-        const draggedProject = projects.find(p => p.id === draggedId)
+      const currentDragged = draggedIdRef.current
+      if (currentDragged && currentDragged !== targetProjectId) {
+        const draggedProject = projects.find(p => p.id === currentDragged)
         const targetProject = projects.find(p => p.id === targetProjectId)
         if (draggedProject?.canReorder && targetProject?.canReorder) {
           onReorderProject(draggedProject.worktree, targetProject.worktree)
@@ -148,10 +151,11 @@ export function FolderRecentList({
         setExpandedProjectIds(savedExpandedRef.current)
         savedExpandedRef.current = null
       }
+      draggedIdRef.current = null
       setDraggedId(null)
       setDropTarget({ id: '', position: null })
     },
-    [draggedId, projects, onReorderProject],
+    [projects, onReorderProject],
   )
 
   const cancelDrag = useCallback(() => {
@@ -159,6 +163,7 @@ export function FolderRecentList({
       setExpandedProjectIds(savedExpandedRef.current)
       savedExpandedRef.current = null
     }
+    draggedIdRef.current = null
     setDraggedId(null)
     setDropTarget({ id: '', position: null })
   }, [])
@@ -166,6 +171,8 @@ export function FolderRecentList({
   // ============================================
   // 移动端触摸拖拽
   // ============================================
+  const touchDragIdRef = useRef<string | null>(null)
+
   const handleTouchStart = useCallback(
     (projectId: string, e: React.TouchEvent) => {
       const project = projects.find(p => p.id === projectId)
@@ -179,6 +186,7 @@ export function FolderRecentList({
           // 触发拖拽模式
           savedExpandedRef.current = expandedProjectIds
           setExpandedProjectIds([])
+          touchDragIdRef.current = projectId
           setTouchDragId(projectId)
         }
       }, 400)
@@ -186,35 +194,32 @@ export function FolderRecentList({
     [projects, expandedProjectIds],
   )
 
-  const handleTouchMove = useCallback(
-    (e: React.TouchEvent) => {
-      const dy = Math.abs(e.touches[0].clientY - touchStartY.current)
-      if (dy > 8) touchMovedRef.current = true
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    const dy = Math.abs(e.touches[0].clientY - touchStartY.current)
+    if (dy > 8) touchMovedRef.current = true
 
-      if (longPressTimer.current && touchMovedRef.current && !touchDragId) {
-        clearTimeout(longPressTimer.current)
-        longPressTimer.current = null
+    if (longPressTimer.current && touchMovedRef.current && !touchDragIdRef.current) {
+      clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
+    }
+
+    if (!touchDragIdRef.current) return
+
+    // 找到手指下方的文件夹
+    const touchY = e.touches[0].clientY
+    let foundTarget: { id: string; position: DropPosition } = { id: '', position: null }
+
+    for (const [id, el] of folderRefs.current.entries()) {
+      if (id === touchDragIdRef.current) continue
+      const rect = el.getBoundingClientRect()
+      if (touchY >= rect.top && touchY <= rect.bottom) {
+        const midY = rect.top + rect.height / 2
+        foundTarget = { id, position: touchY < midY ? 'above' : 'below' }
+        break
       }
-
-      if (!touchDragId) return
-
-      // 找到手指下方的文件夹
-      const touchY = e.touches[0].clientY
-      let foundTarget: { id: string; position: DropPosition } = { id: '', position: null }
-
-      for (const [id, el] of folderRefs.current.entries()) {
-        if (id === touchDragId) continue
-        const rect = el.getBoundingClientRect()
-        if (touchY >= rect.top && touchY <= rect.bottom) {
-          const midY = rect.top + rect.height / 2
-          foundTarget = { id, position: touchY < midY ? 'above' : 'below' }
-          break
-        }
-      }
-      setDropTarget(foundTarget)
-    },
-    [touchDragId],
-  )
+    }
+    setDropTarget(foundTarget)
+  }, [])
 
   const handleTouchEnd = useCallback(() => {
     if (longPressTimer.current) {
@@ -222,12 +227,19 @@ export function FolderRecentList({
       longPressTimer.current = null
     }
 
-    if (touchDragId && dropTarget.id && dropTarget.id !== touchDragId) {
-      const draggedProject = projects.find(p => p.id === touchDragId)
-      const targetProject = projects.find(p => p.id === dropTarget.id)
-      if (draggedProject?.canReorder && targetProject?.canReorder) {
-        onReorderProject(draggedProject.worktree, targetProject.worktree)
-      }
+    const currentTouchDrag = touchDragIdRef.current
+    if (currentTouchDrag) {
+      // 读取最新的 dropTarget
+      setDropTarget(prev => {
+        if (prev.id && prev.id !== currentTouchDrag) {
+          const draggedProject = projects.find(p => p.id === currentTouchDrag)
+          const targetProject = projects.find(p => p.id === prev.id)
+          if (draggedProject?.canReorder && targetProject?.canReorder) {
+            onReorderProject(draggedProject.worktree, targetProject.worktree)
+          }
+        }
+        return { id: '', position: null }
+      })
     }
 
     // 恢复展开状态
@@ -235,9 +247,9 @@ export function FolderRecentList({
       setExpandedProjectIds(savedExpandedRef.current)
       savedExpandedRef.current = null
     }
+    touchDragIdRef.current = null
     setTouchDragId(null)
-    setDropTarget({ id: '', position: null })
-  }, [touchDragId, dropTarget, projects, onReorderProject])
+  }, [projects, onReorderProject])
 
   // 清理长按定时器
   useEffect(() => {
