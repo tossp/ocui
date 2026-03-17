@@ -25,9 +25,9 @@ export const ReasoningPartView = memo(function ReasoningPartView({ part, isStrea
 
   const displayText = rawText
   const [expanded, setExpanded] = useState(false)
-  const shouldRenderBody = useDelayedRender(expanded, reasoningDisplayMode === 'capsule' ? 300 : 200)
+  const shouldRenderBody = useDelayedRender(expanded)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
-  
+
   const collapsedPreview = useMemo(() => (displayText || '').replace(/\s+/g, ' ').trim(), [displayText])
   const thoughtDurationLabel = useMemo(() => {
     const start = part.time?.start
@@ -92,8 +92,12 @@ export const ReasoningPartView = memo(function ReasoningPartView({ part, isStrea
           className="group/reasoning flex w-full min-w-0 items-start gap-2 m-0 border-0 bg-transparent p-0 pr-2 text-left cursor-pointer text-text-400 hover:text-text-200"
         >
           <div className="relative min-w-0 flex-1 overflow-hidden">
-            <span className={`block min-w-0 italic ${summaryClassName} ${isPartStreaming ? 'reasoning-shimmer-text' : ''}`}>
-              {expanded ? expandedMetaText : summaryText}
+            <span className="relative inline-block min-w-0 max-w-full align-top">
+              <span
+                className={`block min-w-0 italic ${summaryClassName} ${isPartStreaming ? 'reasoning-shimmer-text' : ''}`}
+              >
+                {expanded ? expandedMetaText : summaryText}
+              </span>
             </span>
           </div>
           <span
@@ -105,7 +109,7 @@ export const ReasoningPartView = memo(function ReasoningPartView({ part, isStrea
 
         <div
           className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${
-            expanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+            expanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-75'
           }`}
         >
           <div className="min-h-0 min-w-0 overflow-hidden" style={{ clipPath: 'inset(0 -100% 0 -100%)' }}>
