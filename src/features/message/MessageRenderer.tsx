@@ -33,6 +33,15 @@ import type {
   AssistantMessageInfo,
 } from '../../types/message'
 
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`
+  const s = ms / 1000
+  if (s < 60) return `${s.toFixed(1)}s`
+  const m = Math.floor(s / 60)
+  const rem = Math.round(s % 60)
+  return rem > 0 ? `${m}m${rem}s` : `${m}m`
+}
+
 interface MessageRendererProps {
   message: Message
   /** 回合总时长（毫秒），仅在回合最后一条 assistant 消息上有值 */
@@ -285,6 +294,7 @@ const AssistantMessageView = memo(function AssistantMessageView({
   onEnsureParts?: (messageId: string) => void
 }) {
   const { parts, isStreaming, info } = message
+  const { stepFinishDisplay } = useTheme()
 
   const wrapperRef = useEntryGrowAnimation(info.time.created)
 
@@ -327,7 +337,13 @@ const AssistantMessageView = memo(function AssistantMessageView({
 
   // 消息总耗时
   const { created, completed } = info.time
-  const duration = completed ? completed - created : undefined
+  const duration = completed != null ? completed - created : undefined
+  const hasStepFinishPart = parts.some(part => part.type === 'step-finish')
+  const showTurnDurationFooter = !isStreaming
+    && !hasStepFinishPart
+    && stepFinishDisplay.turnDuration
+    && turnDuration != null
+    && turnDuration > 0
 
   if (!isStreaming && parts.length === 0) {
     // 有错误时直接显示错误信息
@@ -407,6 +423,12 @@ const AssistantMessageView = memo(function AssistantMessageView({
 
       {/* Message-level error */}
       {messageError && <MessageErrorView error={messageError} />}
+
+      {showTurnDurationFooter && (
+        <div className="flex items-center gap-3 text-[10px] text-text-500 pl-5 py-0.5">
+          <span>total {formatDuration(turnDuration!)}</span>
+        </div>
+      )}
 
       {/* Copy button */}
       {fullText.trim() && (
