@@ -140,7 +140,7 @@ const MOBILE_EXTRA_KEY_ROWS: MobileExtraKey[][] = [
     { label: 'HOME', data: '\x1b[H' },
     { label: '↑', data: '\x1b[A' },
     { label: 'END', data: '\x1b[F' },
-    { label: 'PGUP', data: '\x1b[5~' },
+    { label: 'PgUp', data: '\x1b[5~' },
   ],
   [
     { label: 'TAB', data: '\t' },
@@ -149,7 +149,7 @@ const MOBILE_EXTRA_KEY_ROWS: MobileExtraKey[][] = [
     { label: '←', data: '\x1b[D' },
     { label: '↓', data: '\x1b[B' },
     { label: '→', data: '\x1b[C' },
-    { label: 'PGDN', data: '\x1b[6~' },
+    { label: 'PgDn', data: '\x1b[6~' },
   ],
 ]
 
@@ -198,6 +198,8 @@ interface MobileExtraKeysProps {
 }
 
 function MobileExtraKeys({ onSend, stickyModifier, onToggleSticky, onFocusTerminal }: MobileExtraKeysProps) {
+  const toolbarGridStyle = { gridTemplateColumns: 'repeat(7, minmax(0, 1fr))' } as const
+
   const handlePointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
     e.preventDefault()
   }, [])
@@ -211,16 +213,19 @@ function MobileExtraKeys({ onSend, stickyModifier, onToggleSticky, onFocusTermin
   )
 
   const btnBase =
-    'flex h-8 min-w-0 w-full items-center justify-center rounded-md border px-0.5 text-[clamp(9px,2.7vw,11px)] font-mono font-semibold tracking-tight text-text-200 transition-[background-color,color,border-color,transform] duration-100 select-none active:scale-[0.98]'
+    'flex h-8 min-w-0 w-full items-center justify-center overflow-hidden whitespace-nowrap rounded-md border px-0 text-[10px] leading-none font-mono font-semibold tracking-[-0.02em] text-text-200 transition-[background-color,color,border-color,transform] duration-100 select-none active:scale-[0.98]'
   const btnNormal = `${btnBase} border-border-200/20 bg-bg-200/70 active:bg-bg-300/80`
   const btnActive = `${btnBase} border-accent-main-100/45 bg-accent-main-100/18 text-accent-main-100`
 
   return (
-    <div className="border-t border-border-200/40 bg-bg-100/95 supports-[backdrop-filter]:bg-bg-100/85 supports-[backdrop-filter]:backdrop-blur-sm">
+    <div
+      className="w-full border-t border-border-200/40 bg-bg-100/95 supports-[backdrop-filter]:bg-bg-100/85 supports-[backdrop-filter]:backdrop-blur-sm"
+      style={{ WebkitTextSizeAdjust: '100%', textSizeAdjust: '100%' }}
+    >
       <div className="px-1 py-1">
         <div className="grid gap-0.5">
           {MOBILE_EXTRA_KEY_ROWS.map((row, rowIndex) => (
-            <div key={rowIndex} className="grid grid-cols-7 gap-0.5">
+            <div key={rowIndex} className="grid w-full gap-0.5" style={toolbarGridStyle}>
               {row.map(key => {
                 const isModifier = key.modifier !== undefined
                 const isActive = isModifier && stickyModifier === key.modifier
@@ -243,7 +248,9 @@ function MobileExtraKeys({ onSend, stickyModifier, onToggleSticky, onFocusTermin
                       }
                     }}
                   >
-                    {key.label}
+                    <span className="block max-w-full overflow-hidden whitespace-nowrap text-center leading-none [text-wrap:nowrap]">
+                      {key.label}
+                    </span>
                   </button>
                 )
               })}
