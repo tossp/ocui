@@ -63,7 +63,7 @@ export interface StepFinishDisplay {
   turnDuration: boolean
 }
 
-export type ReasoningDisplayMode = 'capsule' | 'italic'
+export type ReasoningDisplayMode = 'capsule' | 'italic' | 'markdown'
 
 /** Diff 行标记风格：markers = 传统 +/- 符号, changeBars = 行号左侧彩色竖条 */
 export type DiffStyle = 'markers' | 'changeBars'
@@ -134,7 +134,9 @@ class ThemeStore {
     const collapseUserMessages = savedCollapse === null ? true : savedCollapse === 'true'
     const savedReasoningDisplay = localStorage.getItem(STORAGE_KEY_REASONING_DISPLAY_MODE)
     const reasoningDisplayMode: ReasoningDisplayMode =
-      savedReasoningDisplay === 'italic' ? 'italic' : DEFAULT_REASONING_DISPLAY_MODE
+      savedReasoningDisplay === 'italic' || savedReasoningDisplay === 'markdown'
+        ? savedReasoningDisplay
+        : DEFAULT_REASONING_DISPLAY_MODE
 
     let stepFinishDisplay = DEFAULT_STEP_FINISH_DISPLAY
     try {

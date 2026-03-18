@@ -121,12 +121,15 @@ export function ChatSettings() {
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="text-[13px] font-medium text-text-100">Thinking Display</div>
-                  <div className="text-[11px] text-text-400 mt-0.5 mb-2">Choose capsule or low-noise italic style</div>
+                  <div className="text-[11px] text-text-400 mt-0.5 mb-2">
+                    Choose capsule, low-noise italic, or markdown reasoning style
+                  </div>
                   <SegmentedControl
                     value={reasoningDisplayMode}
                     options={[
                       { value: 'capsule', label: 'Capsule' },
                       { value: 'italic', label: 'Italic' },
+                      { value: 'markdown', label: 'Markdown' },
                     ]}
                     onChange={v => handleReasoningDisplayModeChange(v as ReasoningDisplayMode)}
                   />
