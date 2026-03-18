@@ -424,21 +424,31 @@ export function SessionListItem({
           </span>
         )}
 
-        {/* 标题 */}
-        <span className="min-w-0 flex-1 truncate text-[12px]" title={session.title || t('sessions.untitledChat')}>
-          {session.title || t('sessions.untitledChat')}
-        </span>
-
-        {/* 时间 — hover 时被操作按钮覆盖 */}
-        {session.time?.updated && (
-          <span className="shrink-0 text-[10px] text-text-500 group-hover:opacity-0 transition-opacity duration-150">
-            {formatRelativeTime(session.time.updated)}
+        <div
+          className={`flex min-w-0 flex-1 items-center gap-1.5 transition-[padding] duration-200 ${
+            showActions ? 'pr-[60px]' : 'pr-0 group-hover:pr-[60px]'
+          }`}
+        >
+          {/* 标题 */}
+          <span className="min-w-0 flex-1 truncate text-[12px]" title={session.title || t('sessions.untitledChat')}>
+            {session.title || t('sessions.untitledChat')}
           </span>
-        )}
+
+          {/* 时间 — 操作按钮出现时隐藏，并为按钮预留空间 */}
+          {session.time?.updated && (
+            <span
+              className={`shrink-0 text-[10px] text-text-500 transition-opacity duration-150 ${
+                actionsVisible ? 'opacity-0' : 'opacity-100 group-hover:opacity-0'
+              }`}
+            >
+              {formatRelativeTime(session.time.updated)}
+            </span>
+          )}
+        </div>
 
         {/* 操作按钮 */}
         <div
-          className={`absolute right-2 shrink-0 flex items-center gap-0.5 transition-opacity duration-150 ${
+          className={`absolute right-2 z-10 shrink-0 flex items-center gap-0.5 transition-opacity duration-150 ${
             actionsVisible
               ? 'opacity-100 pointer-events-auto'
               : 'opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto'
