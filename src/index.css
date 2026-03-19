@@ -260,6 +260,25 @@ body {
   font-family: var(--font-ui-sans);
 }
 
+/* ============================================
+ * Markdown Math Theme Integration
+ * ============================================
+ * @streamdown/math 生成 KaTeX DOM，但插件声明的样式不会自动被本项目打包。
+ * 在显式引入 katex.css 后，这里再把公式根节点绑定到当前文本色，
+ * 让默认消息 / reasoning / 主题切换都能稳定继承 color。
+ */
+.markdown-content .katex,
+.markdown-content .katex-display,
+.markdown-content .katex-display > .katex,
+.markdown-content .katex .base {
+  color: inherit;
+}
+
+.markdown-content .katex svg {
+  fill: currentColor;
+  stroke: currentColor;
+}
+
 /* Theme View Transition (Circular Reveal) */
 ::view-transition-old(root),
 ::view-transition-new(root) {
