@@ -360,10 +360,10 @@ export type ToolCategory =
   | 'other'
 
 const categoryMatchers: Array<{ category: ToolCategory; match: (name: string) => boolean }> = [
-  // 顺序很重要：todo/question 在 read/write 之前
+  // 顺序很重要：todo/task 在 question 之前，否则 'task'.includes('ask') 会误判
   { category: 'todo', match: includes('todo') },
-  { category: 'question', match: includes('question', 'ask') },
   { category: 'task', match: exact('task') },
+  { category: 'question', match: includes('question', 'ask') },
   { category: 'read', match: includes('read', 'cat') },
   { category: 'edit', match: includes('write', 'save', 'edit', 'replace', 'patch') },
   { category: 'search', match: includes('search', 'find', 'grep', 'glob') },
