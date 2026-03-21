@@ -1,4 +1,4 @@
-import { memo, useState, useMemo, useRef, useEffect } from 'react'
+import { memo, useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ToolPart, StepFinishPart } from '../../../types/message'
 import { useDelayedRender } from '../../../hooks'
@@ -177,7 +177,8 @@ export const AmbientToolGroup = memo(function AmbientToolGroup({
 
 // ============================================
 // AmbientToolItem — 工具列表中的一行
-// 没有自己的展开/收起，摘要就是 steps header 控制整个列表
+// 每个工具有独立的展开/收起，和经典模式 ToolPartView 一致
+// running/pending 默认展开，completed 默认收起
 // ============================================
 
 const AmbientToolItem = memo(function AmbientToolItem({ part }: { part: ToolPart }) {
@@ -187,6 +188,17 @@ const AmbientToolItem = memo(function AmbientToolItem({ part }: { part: ToolPart
   const isActive = state.status === 'running' || state.status === 'pending'
   const isError = state.status === 'error'
 
+  // 展开/收起：running 默认展开
+  const [expanded, setExpanded] = useState(() => isActive)
+  const toggle = useCallback(() => setExpanded(prev => !prev), [])
+
+  // running 时自动展开
+  useEffect(() => {
+    if (isActive) setExpanded(true)
+  }, [isActive])
+
+  const shouldRenderBody = useDelayedRender(expanded)
+
   // 关联的权限请求 / 提问请求
   const { pendingPermissions, pendingQuestions, onPermissionReply, onQuestionReply, onQuestionReject, isReplying } =
     useAmbientPermission()
@@ -194,7 +206,11 @@ const AmbientToolItem = memo(function AmbientToolItem({ part }: { part: ToolPart
   const permissionRequest = findPermissionForTool(pendingPermissions, part.callID, childSessionId)
   const questionRequest = findQuestionForTool(pendingQuestions, part.callID, childSessionId)
 
-  // 有 pending question/permission 时，直接渲染 inline UI
+  // 有 pending permission/question 时强制展开
+  const hasPending = !!permissionRequest || !!questionRequest
+  const effectiveExpanded = expanded || hasPending
+
+  // 有 pending question/permission 时，直接渲染 inline UI（不走 body 折叠）
   if (permissionRequest) {
     return (
       <div className="min-w-0 py-1">
@@ -218,8 +234,16 @@ const AmbientToolItem = memo(function AmbientToolItem({ part }: { part: ToolPart
 
   return (
     <div className="min-w-0">
-      {/* 工具名行 */}
-      <div className="flex items-center gap-1.5 w-full text-left py-1">
+      {/* 工具名行 — 可点击切换展开 */}
+      <div
+        className="flex items-center gap-1.5 w-full text-left py-1 cursor-pointer hover:bg-bg-200/30 rounded-md transition-colors -mx-1 px-1"
+        role="button"
+        tabIndex={0}
+        onClick={toggle}
+        onKeyDown={e => {
+          if (e.key === 'Enter' || e.key === ' ') toggle()
+        }}
+      >
         <span
           className={`text-sm leading-5 shrink-0 ${
             isActive ? 'reasoning-shimmer-text' : isError ? 'text-danger-100' : 'text-text-400'
@@ -237,9 +261,19 @@ const AmbientToolItem = memo(function AmbientToolItem({ part }: { part: ToolPart
         </span>
       </div>
 
-      {/* Body — 永远显示，紧贴工具名行 */}
-      <div>
-        <AmbientToolBody part={part} />
+      {/* Body — grid collapse 动画 */}
+      <div
+        className={`grid transition-[grid-template-rows] duration-300 ease-in-out ${
+          effectiveExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
+        }`}
+      >
+        <div className="overflow-hidden">
+          {shouldRenderBody && (
+            <div>
+              <AmbientToolBody part={part} />
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
