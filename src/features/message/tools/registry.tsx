@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import type { ToolPart } from '../../../types/message'
 import type { ToolConfig, ToolRegistry, ExtractedToolData, DiagnosticInfo } from './types'
+import { BashRenderer } from './renderers'
 import {
   FileReadIcon,
   FileWriteIcon,
@@ -251,6 +252,7 @@ export const toolRegistry: ToolRegistry = [
     match: includes('bash', 'sh', 'cmd', 'terminal', 'shell'),
     icon: <TerminalIcon />,
     extractData: bashExtractData,
+    renderer: BashRenderer,
   },
 
   // Todo (must be before write/read to avoid TodoWrite matching "write")

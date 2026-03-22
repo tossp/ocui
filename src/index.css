@@ -900,6 +900,16 @@ textarea.custom-scrollbar::-webkit-scrollbar-thumb {
   }
 }
 
+@keyframes terminal-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
 .animate-border-pulse {
   animation: border-pulse 2s ease-in-out infinite;
 }
