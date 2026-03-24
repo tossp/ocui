@@ -3,8 +3,16 @@ import { describe, expect, it, vi } from 'vitest'
 import { MarkdownRenderer } from './MarkdownRenderer'
 
 vi.mock('./CodeBlock', () => ({
-  CodeBlock: ({ code, language }: { code: string; language?: string }) => (
-    <div data-testid="code-block">{`${language ?? 'text'}:${code}`}</div>
+  CodeBlock: ({ code, language, variant }: { code: string; language?: string; variant?: string }) => (
+    <div data-testid="code-block" data-variant={variant ?? 'default'}>{`${language ?? 'text'}:${code}`}</div>
+  ),
+}))
+
+vi.mock('./ui', () => ({
+  CopyButton: ({ text }: { text: string }) => (
+    <button data-testid="copy-button" aria-label="Copy to clipboard">
+      {text.slice(0, 20)}
+    </button>
   ),
 }))
 
@@ -18,12 +26,12 @@ describe('MarkdownRenderer', () => {
     expect(codeEl.tagName).toBe('CODE')
   })
 
-  it('renders inline code with compact badge styling', () => {
+  it('renders inline code with accent badge styling', () => {
     render(<MarkdownRenderer content={'Use `code` here'} />)
 
     const codeEl = screen.getByText('code')
     expect(codeEl.className).toMatch(/border/)
-    expect(codeEl.className).toMatch(/bg-bg/)
+    expect(codeEl.className).toMatch(/bg-accent-main/)
     expect(codeEl.className).toMatch(/font-mono/)
     expect(codeEl.className).toMatch(/text-accent-main-100/)
   })
@@ -51,6 +59,38 @@ describe('MarkdownRenderer', () => {
 
     const codeEl = screen.getByText('code')
     expect(codeEl.className).not.toMatch(/border/)
-    expect(codeEl.className).not.toMatch(/bg-bg/)
+    expect(codeEl.className).not.toMatch(/bg-accent/)
+  })
+
+  it('passes reasoning variant to CodeBlock', () => {
+    render(<MarkdownRenderer content={'```js\nlet a = 1\n```'} variant="reasoning" />)
+
+    const block = screen.getByTestId('code-block')
+    expect(block.dataset.variant).toBe('reasoning')
+  })
+
+  it('passes default variant to CodeBlock by default', () => {
+    render(<MarkdownRenderer content={'```js\nlet a = 1\n```'} />)
+
+    const block = screen.getByTestId('code-block')
+    expect(block.dataset.variant).toBe('default')
+  })
+
+  it('renders markdown table with copy button in default mode', () => {
+    const md = '| A | B |\n|---|---|\n| 1 | 2 |'
+    render(<MarkdownRenderer content={md} />)
+
+    // Table should be rendered
+    expect(screen.getByRole('table')).toBeInTheDocument()
+    // Copy button should exist
+    expect(screen.getByTestId('copy-button')).toBeInTheDocument()
+  })
+
+  it('renders markdown table without copy button in reasoning mode', () => {
+    const md = '| A | B |\n|---|---|\n| 1 | 2 |'
+    render(<MarkdownRenderer content={md} variant="reasoning" />)
+
+    expect(screen.getByRole('table')).toBeInTheDocument()
+    expect(screen.queryByTestId('copy-button')).not.toBeInTheDocument()
   })
 })
