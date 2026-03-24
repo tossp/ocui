@@ -50,7 +50,7 @@ export const ToolPartView = memo(function ToolPartView({
 }: ToolPartViewProps) {
   const { t } = useTranslation('message')
   const { state, tool: toolName } = part
-  const title = state.title || ''
+  const title = state.title || getInputDescription(part) || ''
 
   const duration = state.time?.start && state.time?.end ? state.time.end - state.time.start : undefined
 
@@ -466,6 +466,12 @@ function getTaskChildSessionId(part: ToolPart): string | undefined {
   if (part.tool.toLowerCase() !== 'task') return undefined
   const metadata = part.state.metadata as Record<string, unknown> | undefined
   return metadata?.sessionId as string | undefined
+}
+
+/** Extract description from tool input as title fallback (available while running) */
+function getInputDescription(part: ToolPart): string | undefined {
+  const input = part.state.input as Record<string, unknown> | undefined
+  return (input?.description as string) || undefined
 }
 
 // ============================================
