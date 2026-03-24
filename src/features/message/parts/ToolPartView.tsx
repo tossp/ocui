@@ -98,7 +98,10 @@ export const ToolPartView = memo(function ToolPartView({
     permissionRequest?.permission === 'edit' || permissionRequest?.permission === 'write' || permissionResolved
   const hideToolBodyForPermission = isEditWritePermission
   // 精简模式：ToolBody 已渲染时，InlinePermission 只显示按钮
-  const permissionContentHidden = compactInlinePermission && !isEditWritePermission && !!permissionRequest
+  // task 工具除外：task renderer 无法显示详细的工具请求内容，需要完整展示权限信息
+  const isTaskTool = toolName.toLowerCase() === 'task'
+  const permissionContentHidden =
+    compactInlinePermission && !isEditWritePermission && !isTaskTool && !!permissionRequest
   const effectiveExpanded = expanded || hasPendingInteraction || permissionResolved
   const shouldRenderBody = useDelayedRender(effectiveExpanded)
   const isReadable = isReadableTool(toolName)
