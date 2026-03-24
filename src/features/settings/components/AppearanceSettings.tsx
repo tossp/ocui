@@ -1,17 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { Button } from '../../../components/ui/Button'
-import {
-  SunIcon,
-  MoonIcon,
-  SystemIcon,
-  MaximizeIcon,
-  MinimizeIcon,
-  CheckIcon,
-  GlobeIcon,
-} from '../../../components/Icons'
-import { Toggle, SegmentedControl, SettingRow, SettingsCard } from './SettingsUI'
+import { SunIcon, MoonIcon, SystemIcon, CheckIcon } from '../../../components/Icons'
+import { Toggle, SegmentedControl, SettingRow, SettingsSection } from './SettingsUI'
 import { useTheme } from '../../../hooks'
+import { layoutStore, useLayoutStore } from '../../../store'
 
 // ============================================
 // Theme Preset Card
@@ -333,11 +326,13 @@ export function AppearanceSettings() {
     codeWordWrap,
     setCodeWordWrap,
   } = useTheme()
+  const { sidebarFolderRecents } = useLayoutStore()
 
   return (
-    <div className="space-y-4">
+    <div>
       {availablePresets.length > 0 && (
-        <SettingsCard title={t('appearance.themePresets')} description={t('appearance.themePresetsDesc')}>
+        <SettingsSection title={t('appearance.themePresets')}>
+          <p className="text-[12px] text-text-400">{t('appearance.themePresetsDesc')}</p>
           <div className="grid gap-2 sm:grid-cols-2">
             {availablePresets.map(p => (
               <PresetCard
@@ -350,86 +345,81 @@ export function AppearanceSettings() {
               />
             ))}
           </div>
-        </SettingsCard>
+        </SettingsSection>
       )}
 
-      <SettingsCard title={t('appearance.customCss')} description={t('appearance.customCssDesc')}>
+      <SettingsSection title={t('appearance.customCss')}>
+        <p className="text-[12px] text-text-400">{t('appearance.customCssDesc')}</p>
         <CustomCSSEditor value={customCSS} onChange={setCustomCSS} t={t} />
-      </SettingsCard>
+      </SettingsSection>
 
-      <SettingsCard title={t('appearance.display')} description={t('appearance.displayDesc')}>
-        <div className="space-y-4">
-          <div>
-            <div className="text-[11px] font-medium text-text-400 uppercase tracking-wider mb-1.5">
-              {t('appearance.colorMode')}
-            </div>
-            <SegmentedControl
-              value={themeMode}
-              options={[
-                { value: 'system', label: t('appearance.modeAuto'), icon: <SystemIcon size={14} /> },
-                { value: 'light', label: t('appearance.modeLight'), icon: <SunIcon size={14} /> },
-                { value: 'dark', label: t('appearance.modeDark'), icon: <MoonIcon size={14} /> },
-              ]}
-              onChange={(v, e) => setThemeWithAnimation(v, e)}
-            />
-          </div>
-
-          <div className="pt-3 border-t border-border-100/55">
-            <SettingRow
-              label={t('appearance.wideMode')}
-              description={t('appearance.wideModeDesc')}
-              icon={isWideMode ? <MinimizeIcon size={14} /> : <MaximizeIcon size={14} />}
-              onClick={toggleWideMode}
-            >
-              <Toggle enabled={isWideMode} onChange={toggleWideMode} />
-            </SettingRow>
-          </div>
-
-          <div className="pt-3 border-t border-border-100/55">
-            <div>
-              <div className="text-[11px] font-medium text-text-400 uppercase tracking-wider mb-1.5">
-                {t('appearance.diffStyle')}
-              </div>
-              <SegmentedControl
-                value={diffStyle}
-                options={[
-                  { value: 'markers', label: t('appearance.diffStyleMarkers') },
-                  { value: 'changeBars', label: t('appearance.diffStyleChangeBars') },
-                ]}
-                onChange={v => setDiffStyle(v as 'markers' | 'changeBars')}
-              />
-              <div className="text-[11px] text-text-500 mt-1">{t('appearance.diffStyleDesc')}</div>
-            </div>
-          </div>
-
-          <div className="pt-3 border-t border-border-100/55">
-            <SettingRow
-              label={t('appearance.codeWordWrap')}
-              description={t('appearance.codeWordWrapDesc')}
-              onClick={() => setCodeWordWrap(!codeWordWrap)}
-            >
-              <Toggle enabled={codeWordWrap} onChange={() => setCodeWordWrap(!codeWordWrap)} />
-            </SettingRow>
-          </div>
-
-          <div className="pt-3 border-t border-border-100/55">
-            <SettingRow
-              label={t('appearance.language')}
-              description={t('appearance.languageDesc')}
-              icon={<GlobeIcon size={14} />}
-            >
-              <select
-                value={i18n.language}
-                onChange={e => i18n.changeLanguage(e.target.value)}
-                className="px-2 py-1 text-[12px] bg-bg-200/50 border border-border-200 rounded-md text-text-100 focus:outline-none focus:border-accent-main-100/50 cursor-pointer"
-              >
-                <option value="en">{t('appearance.languages.en')}</option>
-                <option value="zh-CN">{t('appearance.languages.zh-CN')}</option>
-              </select>
-            </SettingRow>
-          </div>
+      <SettingsSection title={t('appearance.display')}>
+        <div>
+          <p className="text-[13px] text-text-100 mb-1.5">{t('appearance.colorMode')}</p>
+          <SegmentedControl
+            value={themeMode}
+            options={[
+              { value: 'system', label: t('appearance.modeAuto'), icon: <SystemIcon size={14} /> },
+              { value: 'light', label: t('appearance.modeLight'), icon: <SunIcon size={14} /> },
+              { value: 'dark', label: t('appearance.modeDark'), icon: <MoonIcon size={14} /> },
+            ]}
+            onChange={(v, e) => setThemeWithAnimation(v, e)}
+          />
         </div>
-      </SettingsCard>
+
+        <SettingRow
+          label={t('appearance.wideMode')}
+          description={t('appearance.wideModeDesc')}
+          onClick={toggleWideMode}
+        >
+          <Toggle enabled={isWideMode} onChange={toggleWideMode} />
+        </SettingRow>
+
+        <SettingRow
+          label={t('appearance.codeWordWrap')}
+          description={t('appearance.codeWordWrapDesc')}
+          onClick={() => setCodeWordWrap(!codeWordWrap)}
+        >
+          <Toggle enabled={codeWordWrap} onChange={() => setCodeWordWrap(!codeWordWrap)} />
+        </SettingRow>
+
+        <div>
+          <p className="text-[13px] text-text-100 mb-1.5">{t('appearance.diffStyle')}</p>
+          <SegmentedControl
+            value={diffStyle}
+            options={[
+              { value: 'markers', label: t('appearance.diffStyleMarkers') },
+              { value: 'changeBars', label: t('appearance.diffStyleChangeBars') },
+            ]}
+            onChange={v => setDiffStyle(v as 'markers' | 'changeBars')}
+          />
+          <p className="text-[11px] text-text-500 mt-1">{t('appearance.diffStyleDesc')}</p>
+        </div>
+
+        <SettingRow label={t('appearance.language')} description={t('appearance.languageDesc')}>
+          <select
+            value={i18n.language}
+            onChange={e => i18n.changeLanguage(e.target.value)}
+            className="px-2 py-1 text-[12px] bg-bg-200/50 border border-border-200 rounded-md text-text-100 focus:outline-none focus:border-accent-main-100/50 cursor-pointer"
+          >
+            <option value="en">{t('appearance.languages.en')}</option>
+            <option value="zh-CN">{t('appearance.languages.zh-CN')}</option>
+          </select>
+        </SettingRow>
+      </SettingsSection>
+
+      <SettingsSection title={t('appearance.sidebar')}>
+        <SettingRow
+          label={t('appearance.folderStyleRecents')}
+          description={t('appearance.folderStyleRecentsDesc')}
+          onClick={() => layoutStore.setSidebarFolderRecents(!sidebarFolderRecents)}
+        >
+          <Toggle
+            enabled={sidebarFolderRecents}
+            onChange={() => layoutStore.setSidebarFolderRecents(!sidebarFolderRecents)}
+          />
+        </SettingRow>
+      </SettingsSection>
     </div>
   )
 }

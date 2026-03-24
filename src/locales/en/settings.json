@@ -62,7 +62,7 @@
     "agentBehavior": "Agent Behavior",
     "agentBehaviorDesc": "Execution defaults for tool actions",
     "autoApprove": "Auto-Approve",
-    "autoApproveDesc": "Use local rules for always, send once to server",
+    "autoApproveDesc": "Automatically approve tool requests with once permission on the frontend",
     "sidebarRecents": "Sidebar Recents",
     "sidebarRecentsDesc": "Optional folder view for recent chats",
     "folderStyleRecents": "Folder-Style Recents",
@@ -128,7 +128,11 @@
     "languages": {
       "en": "English",
       "zh-CN": "简体中文"
-    }
+    },
+    "sidebar": "Sidebar",
+    "sidebarDesc": "Sidebar layout and recent chats",
+    "folderStyleRecents": "Folder-Style Recents",
+    "folderStyleRecentsDesc": "Group recent chats by project folder while keeping the default list available"
   },
   "notifications": {
     "systemNotifications": "System Notifications",

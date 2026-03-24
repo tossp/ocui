@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '../../../components/ui/Button'
-import { TrashIcon, WifiIcon, WifiOffIcon, SpinnerIcon, PlugIcon, StopIcon } from '../../../components/Icons'
+import { TrashIcon, WifiIcon, WifiOffIcon, SpinnerIcon, StopIcon } from '../../../components/Icons'
 import { useServerStore, useIsMobile } from '../../../hooks'
 import { serviceStore, useServiceStore } from '../../../store/serviceStore'
 import { isTauri } from '../../../utils/tauri'
@@ -129,7 +129,6 @@ export function ServiceSettings() {
           <SettingRow
             label={t('service.autoStart')}
             description={t('service.autoStartDesc')}
-            icon={<PlugIcon size={14} />}
             onClick={handleAutoStartToggle}
             className="bg-bg-100/35 border-border-200/45"
           >

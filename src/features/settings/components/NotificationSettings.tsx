@@ -339,7 +339,6 @@ export function NotificationSettings() {
                     ? t('notifications.blockedByBrowser')
                     : t('notifications.notifyWhenComplete')
                 }
-                icon={<BellIcon size={14} />}
                 onClick={() => notificationPermission !== 'denied' && setNotificationsEnabled(!notificationsEnabled)}
               >
                 <Toggle
@@ -351,7 +350,6 @@ export function NotificationSettings() {
               <SettingRow
                 label={t('notifications.testNotification')}
                 description={notificationsEnabled ? t('notifications.sendSampleDesc') : t('notifications.enableToTest')}
-                icon={<BellIcon size={14} />}
               >
                 <Button
                   size="sm"
@@ -401,7 +399,6 @@ export function NotificationSettings() {
               <SettingRow
                 label={t('notifications.currentSessionSound')}
                 description={t('notifications.currentSessionSoundDesc')}
-                icon={<BellIcon size={14} />}
                 onClick={() => soundStore.setCurrentSessionEnabled(!soundSettings.currentSessionEnabled)}
               >
                 <Toggle
