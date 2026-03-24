@@ -1,5 +1,19 @@
 # Changelog
 
+## [v0.3.3] - 2026-03-24
+
+- fix: resolve TypeScript errors in MarkdownRenderer for release (1abcdf1)
+- fix: exclude task tool from compact inline permission mode (5f39aff)
+- style: remove left accent line from TaskRenderer, restore badge status colors (1cb6044)
+- style: refine TaskRenderer visual hierarchy (263b74b)
+- fix: show tool description from input while running, not just after completion (b65d16e)
+- fix: reduce excessive right padding in expanded reasoning content (885668d)
+- fix: panel dropdown menu hover overflow — use inset padding with rounded items (02653bf)
+- fix: table copy button pinned outside scroll, mobile always-visible copy buttons (2cdef17)
+- style: unify tool output header height to h-8 (32px) (c566b1a)
+- style: unify message flow border-radius to a tighter 3-tier system (4a8a89f)
+- refactor: redesign markdown code blocks, tables, and inline code styles (11f6222)
+
 ## [v0.3.2] - 2026-03-24
 
 - fix: align fullscreen diff test mocks with typed children (fdf1a74)
