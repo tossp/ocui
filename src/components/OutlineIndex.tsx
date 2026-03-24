@@ -331,7 +331,7 @@ const DesktopFisheye = memo(function DesktopFisheye({ entries, onSelect }: Fishe
   return (
     <div
       ref={containerRef}
-      className="hidden md:flex flex-col items-end absolute right-3.5 top-1/2 -translate-y-1/2 z-[5] py-1 pr-1 select-none"
+      className="hidden md:flex flex-col items-end absolute right-2 top-1/2 -translate-y-1/2 z-[5] py-1 select-none"
       onMouseEnter={handleMouseEnter}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
@@ -525,7 +525,7 @@ const MobileFisheye = memo(function MobileFisheye({ entries, onSelect }: Fisheye
       {/* 索引条 */}
       <div
         ref={containerRef}
-        className="absolute right-0 top-1/2 -translate-y-1/2 z-[15] flex flex-col items-end pr-1.5 pl-4 py-4 select-none"
+        className="absolute right-1.5 top-1/2 -translate-y-1/2 z-[15] flex flex-col items-end pl-4 py-4 select-none"
       >
         {entries.map(entry => (
           <div
