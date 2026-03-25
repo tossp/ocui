@@ -164,8 +164,7 @@ export function Dialog({
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-0 transition-all duration-200 ease-out"
       style={{
-        backgroundColor: isVisible ? 'hsl(var(--always-black) / 0.4)' : 'hsl(var(--always-black) / 0)',
-        backdropFilter: isVisible ? 'blur(2px)' : 'blur(0px)',
+        backgroundColor: isVisible ? 'hsl(var(--always-black) / 0.15)' : 'hsl(var(--always-black) / 0)',
       }}
       onPointerDown={handleBackdropPointerDown}
       onClick={handleBackdropClick}
@@ -177,7 +176,7 @@ export function Dialog({
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         className={`
-          relative bg-bg-000/50 backdrop-blur-md border border-border-200/60 rounded-xl shadow-2xl 
+          relative glass border border-border-200/60 rounded-xl shadow-2xl 
           flex flex-col overflow-hidden
           ${isDraggingActive ? '' : 'transition-all duration-200 ease-out'}
           ${className}

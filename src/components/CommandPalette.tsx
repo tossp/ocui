@@ -194,7 +194,7 @@ export function CommandPalette({ isOpen, onClose, commands }: CommandPaletteProp
     <div
       className="fixed inset-0 z-[200] flex items-start justify-center pt-[15vh]"
       style={{
-        backgroundColor: isVisible ? 'hsl(var(--always-black) / 0.5)' : 'hsl(var(--always-black) / 0)',
+        backgroundColor: isVisible ? 'hsl(var(--always-black) / 0.2)' : 'hsl(var(--always-black) / 0)',
         transition: 'background-color 150ms ease-out',
       }}
       onPointerDown={(e: React.PointerEvent) => {
@@ -212,7 +212,7 @@ export function CommandPalette({ isOpen, onClose, commands }: CommandPaletteProp
       }}
     >
       <div
-        className="w-full max-w-[560px] bg-bg-000/50 backdrop-blur-md border border-border-200/60 rounded-xl shadow-2xl overflow-hidden flex flex-col"
+        className="w-full max-w-[560px] glass border border-border-200/60 rounded-xl shadow-2xl overflow-hidden flex flex-col"
         style={{
           maxHeight: '60vh',
           opacity: isVisible ? 1 : 0,

@@ -956,3 +956,40 @@ textarea.custom-scrollbar::-webkit-scrollbar-thumb {
   content-visibility: visible !important;
   contain-intrinsic-size: auto !important;
 }
+
+/* ============================================
+ * Frosted Glass 毛玻璃浮层系统
+ * ============================================
+ * .glass       — 通用浮层（下拉菜单、输入框、Dialog、Toast 等）
+ * .glass-alt   — bg-100 底色变体（sidebar footer、popover 等）
+ * .glass-sticky — 列表内 sticky header（极薄透明，只做分隔）
+ *
+ * 调参改这里，全局生效。组件里只写 class 名，不写具体数值。
+ */
+
+.glass {
+  --_glass-opacity: 0.5;
+  --_glass-blur: 12px;
+  background-color: hsl(var(--bg-000) / var(--_glass-opacity));
+  backdrop-filter: blur(var(--_glass-blur));
+  -webkit-backdrop-filter: blur(var(--_glass-blur));
+  border-color: hsl(var(--border-200) / 0.6);
+}
+
+/* bg-100 底色的变体（sidebar footer、popover 等用 bg-100 的场景） */
+.glass-alt {
+  --_glass-opacity: 0.5;
+  --_glass-blur: 12px;
+  background-color: hsl(var(--bg-100) / var(--_glass-opacity));
+  backdrop-filter: blur(var(--_glass-blur));
+  -webkit-backdrop-filter: blur(var(--_glass-blur));
+  border-color: hsl(var(--border-200) / 0.6);
+}
+
+.glass-sticky {
+  --_glass-opacity: 0.5;
+  --_glass-blur: 12px;
+  background-color: hsl(var(--bg-000) / var(--_glass-opacity));
+  backdrop-filter: blur(var(--_glass-blur));
+  -webkit-backdrop-filter: blur(var(--_glass-blur));
+}

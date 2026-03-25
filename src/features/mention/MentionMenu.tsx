@@ -328,7 +328,7 @@ export const MentionMenu = forwardRef<MentionMenuHandle, MentionMenuProps>(funct
     <div
       ref={menuRef}
       data-dropdown-open
-      className="absolute z-50 w-full md:max-w-[360px] flex flex-col bg-bg-000/50 backdrop-blur-md border border-border-200/60 rounded-xl shadow-xl overflow-hidden"
+      className="absolute z-50 w-full md:max-w-[360px] flex flex-col glass border border-border-200/60 rounded-xl shadow-xl overflow-hidden"
       style={{
         bottom: '100%',
         left: 0,
@@ -376,7 +376,7 @@ export const MentionMenu = forwardRef<MentionMenuHandle, MentionMenuProps>(funct
           <button
             key={`${item.type}-${item.value}`}
             className={`w-full px-3 py-2.5 md:py-2 flex items-center justify-between text-left transition-colors ${
-              index === selectedIndex ? 'bg-accent-main-100/10' : 'hover:bg-bg-100 active:bg-bg-100'
+              index === selectedIndex ? 'bg-accent-main-100/10' : 'hover:bg-bg-100/50 active:bg-bg-100/50'
             }`}
             onClick={() => {
               // 文件夹：点击进入目录浏览，而不是选中

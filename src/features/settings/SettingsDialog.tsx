@@ -176,7 +176,7 @@ export function SettingsDialog({ isOpen, onClose, initialTab = 'servers' }: Sett
       <Dialog isOpen={isOpen} onClose={onClose} title="" width="100%" showCloseButton={false} rawContent>
         <div className="flex flex-col" style={{ height: '92vh' }}>
           {/* Sticky Header + Tabs */}
-          <div className="shrink-0 bg-bg-000">
+          <div className="shrink-0">
             {/* Title bar */}
             <div className="flex items-center justify-between px-4 pt-3 pb-2">
               <div className="text-[15px] font-semibold text-text-100">{t('title')}</div>
@@ -226,7 +226,7 @@ export function SettingsDialog({ isOpen, onClose, initialTab = 'servers' }: Sett
       <div className="flex h-[min(90vh,820px)]">
         {/* Left Nav - 窄屏时收缩 */}
         <nav
-          className="w-[200px] xl:w-[236px] shrink-0 border-r border-border-100/60 bg-bg-050/45 py-4 px-2 xl:px-2.5 flex flex-col overflow-y-auto scrollbar-none"
+          className="w-[200px] xl:w-[236px] shrink-0 border-r border-border-100/60 py-4 px-2 xl:px-2.5 flex flex-col overflow-y-auto scrollbar-none"
           onKeyDown={handleTabKeyDown}
         >
           <div className="px-2.5 xl:px-3 mb-4">

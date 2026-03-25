@@ -301,17 +301,10 @@ export function ProjectDialog({ isOpen, onClose, onSelect, initialPath = '' }: P
   // ==========================================
 
   return (
-    <Dialog
-      isOpen={isOpen}
-      onClose={onClose}
-      rawContent
-      width={560}
-      showCloseButton={false}
-      className="!bg-bg-100 h-[460px]"
-    >
+    <Dialog isOpen={isOpen} onClose={onClose} rawContent width={560} showCloseButton={false} className="h-[460px]">
       {/* Header */}
       <div className="p-4 pb-2 shrink-0">
-        <div className="relative bg-bg-000 rounded-xl border border-border-200 focus-within:border-accent-main-100/50 transition-colors flex items-center px-3 py-2.5">
+        <div className="relative bg-bg-000/40 rounded-xl border border-border-200 focus-within:border-accent-main-100/50 transition-colors flex items-center px-3 py-2.5">
           <FolderIcon className="text-text-400 w-4 h-4 shrink-0 mr-2.5" />
           <input
             ref={inputRef}
@@ -399,7 +392,7 @@ export function ProjectDialog({ isOpen, onClose, onSelect, initialPath = '' }: P
         </div>
         <button
           onClick={handleConfirmCurrent}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-bg-000 hover:bg-accent-main-100/10 border border-border-200 hover:border-accent-main-100/30 text-text-200 hover:text-accent-main-100 rounded-lg transition-colors text-xs font-medium shrink-0 whitespace-nowrap"
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-bg-000/40 hover:bg-accent-main-100/10 border border-border-200 hover:border-accent-main-100/30 text-text-200 hover:text-accent-main-100 rounded-lg transition-colors text-xs font-medium shrink-0 whitespace-nowrap"
         >
           <PlusIcon className="w-3 h-3" />
           {t('projectDialog.addCurrent')}
@@ -433,7 +426,7 @@ function ListItem({ id, icon, label, isSelected, onClick, onMouseEnter, action }
         flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer transition-all duration-150
         ${
           isSelected
-            ? 'bg-bg-000 shadow-sm ring-1 ring-border-200/50 text-text-100'
+            ? 'bg-bg-000/40 shadow-sm ring-1 ring-border-200/50 text-text-100'
             : 'text-text-300 hover:bg-bg-200/50'
         }
       `}

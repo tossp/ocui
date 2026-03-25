@@ -336,7 +336,7 @@ export const ModelSelector = memo(
                       return (
                         <div
                           key={item.key}
-                          className="px-3 pt-2.5 pb-1.5 first:pt-1.5 -mx-1 text-[10px] font-semibold text-text-400/70 uppercase tracking-wider select-none sticky -top-px bg-bg-000 z-10"
+                          className="px-3 pt-2.5 pb-1.5 first:pt-1.5 -mx-1 text-[10px] font-semibold text-text-400/70 uppercase tracking-wider select-none sticky -top-px glass-sticky z-10"
                         >
                           {item.data.name}
                         </div>
@@ -763,7 +763,7 @@ export const InputToolbarModelSelector = memo(function InputToolbarModelSelector
                     return (
                       <div
                         key={item.key}
-                        className="px-3 pt-2.5 pb-1.5 first:pt-1.5 -mx-1 text-[10px] font-semibold text-text-400/70 uppercase tracking-wider select-none sticky -top-px bg-bg-000 z-10"
+                        className="px-3 pt-2.5 pb-1.5 first:pt-1.5 -mx-1 text-[10px] font-semibold text-text-400/70 uppercase tracking-wider select-none sticky -top-px glass-sticky z-10"
                       >
                         {item.data.name}
                       </div>
