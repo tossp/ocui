@@ -291,14 +291,6 @@ body {
 }
 
 /* Utility classes */
-.no-scrollbar::-webkit-scrollbar {
-  display: none !important;
-}
-
-.no-scrollbar {
-  -ms-overflow-style: none !important;
-  scrollbar-width: none !important;
-}
 
 /*
  * Fix: Tailwind .truncate 使用 overflow:hidden 会裁切 descender 字母 (g/j/p/q/y)
@@ -314,40 +306,109 @@ body {
   white-space: nowrap;
 }
 
-/* 常用工具类别名 */
-.scrollbar-none {
-  -ms-overflow-style: none !important;
-  scrollbar-width: none !important;
+/* ============================================
+ * 全局 Overlay Scrollbar
+ * ============================================
+ * 原生滚动条已由 :where() 全局隐藏（textarea 除外），
+ * 自绘 thumb 由 overlayScrollbar.ts 运行时注入。
+ *
+ * 下方旧 class 保留为兼容空壳，仅声明 overflow 方向，
+ * 不再包含任何原生滚动条样式。
+ */
+:where(:not(textarea)) {
+  scrollbar-width: none;
+}
+:where(:not(textarea))::-webkit-scrollbar {
+  display: none;
 }
 
+/* 隐藏滚动条（包括 overlay thumb 也不要）—— 旧 class 兼容 */
+.no-scrollbar,
+.scrollbar-none {
+  scrollbar-width: none !important;
+}
+.no-scrollbar::-webkit-scrollbar,
 .scrollbar-none::-webkit-scrollbar {
   display: none !important;
 }
 
-/* Custom scrollbar - 恢复显示，尽可能使用 overlay */
+/* overflow 方向空壳 */
 .custom-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: hsl(var(--border-300) / 0.5) transparent;
-  overflow-y: overlay; /* 尝试 overlay */
+  overflow-y: auto;
+}
+.panel-scrollbar {
+  overflow: auto;
+}
+.panel-scrollbar-y {
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.panel-scrollbar-x {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.code-scrollbar {
+  overflow: auto;
+}
+.tabs-scrollbar {
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
-/* Mobile: hide scrollbars entirely */
-@media (max-width: 768px) {
-  .custom-scrollbar {
-    scrollbar-width: none !important;
-  }
-  .custom-scrollbar::-webkit-scrollbar {
-    width: 0 !important;
-    height: 0 !important;
-    display: none !important;
-  }
+/* ── Overlay thumb ── */
+.os-thumb {
+  position: fixed;
+  width: 12px;
+  opacity: 0;
+  transition: opacity 200ms ease;
+  cursor: default;
+  user-select: none;
+  pointer-events: none;
+  z-index: 9999;
 }
 
-/* 兼容性回退 */
-@supports not (overflow-y: overlay) {
-  .custom-scrollbar {
-    overflow-y: auto;
-  }
+.os-thumb::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  border-radius: 9999px;
+  background-color: hsl(var(--border-300) / 0.35);
+  transition:
+    background-color 150ms ease,
+    width 120ms ease;
+}
+
+.os-thumb.os-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.os-thumb:hover::after,
+.os-thumb.os-dragging::after {
+  background-color: hsl(var(--border-300) / 0.6);
+  width: 6px;
+}
+
+/* ============================================
+ * Input Textarea + Overlay - 共享样式确保完全对齐
+ * ============================================ */
+
+/* 面板统一过渡效果 */
+.panel-transition {
+  transition-property: width, height, opacity, transform;
+  transition-duration: 200ms;
+  transition-timing-function: cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+/* 面板统一阴影（可选，用于浮动状态） */
+.panel-shadow {
+  box-shadow:
+    0 0 0 1px hsl(var(--border-200) / 0.5),
+    0 4px 12px hsl(var(--always-black) / 0.08);
 }
 
 /* ============================================
@@ -385,229 +446,10 @@ body {
   overflow: hidden;
 }
 
-/* Textarea 特殊处理 - 保证光标对齐 */
-textarea.custom-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: hsl(var(--border-300) / 0.5) transparent;
-}
-
-textarea.custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
-  background: transparent;
-}
-
-textarea.custom-scrollbar::-webkit-scrollbar-thumb {
-  background-color: hsl(var(--border-300) / 0.4);
-  border-radius: 99px;
-}
-
-.custom-scrollbar::-webkit-scrollbar {
-  width: 10px; /* 稍微宽一点以支持透明边框技巧 */
-  background: transparent;
-}
-
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background-color: hsl(var(--border-300) / 0.4);
-  border-radius: 99px;
-  border: 3px solid transparent; /* 透明边框让 thumb 变小并产生间距感 */
-  background-clip: padding-box; /* 让背景色只在 content-box 内绘制 */
-}
-
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background-color: hsl(var(--border-300) / 0.7);
-}
-
-/* ============================================
- * Panel Scrollbar - 面板统一滚动条样式
- * ============================================
- * 用于面板内容区域，支持水平和垂直滚动
- * 特点：细滚动条、悬浮时显示、不占用布局空间
- */
-.panel-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: hsl(var(--border-300) / 0.3) transparent;
-  overflow: auto;
-}
-
-/* 尝试使用 overlay 滚动条（不占用空间） */
-@supports (overflow: overlay) {
-  .panel-scrollbar {
-    overflow: overlay;
-  }
-}
-
-.panel-scrollbar::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-  background: transparent;
-}
-
-.panel-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.panel-scrollbar::-webkit-scrollbar-thumb {
-  background-color: hsl(var(--border-300) / 0.3);
-  border-radius: 99px;
-  border: 2px solid transparent;
-  background-clip: padding-box;
-}
-
-.panel-scrollbar::-webkit-scrollbar-thumb:hover {
-  background-color: hsl(var(--border-300) / 0.6);
-}
-
-.panel-scrollbar::-webkit-scrollbar-corner {
-  background: transparent;
-}
-
-/**
- * Code scrollbar - 用于代码预览区域
- * 横向滚动条极细且半透明，避免遮挡代码最后一行
- */
-.code-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: hsl(var(--border-300) / 0.25) transparent;
-  overflow: auto;
-}
-
-@supports (overflow: overlay) {
-  .code-scrollbar {
-    overflow: overlay;
-  }
-}
-
-.code-scrollbar::-webkit-scrollbar {
-  width: 6px;
-  height: 4px;
-  background: transparent;
-}
-
-.code-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.code-scrollbar::-webkit-scrollbar-thumb {
-  background-color: hsl(var(--border-300) / 0.25);
-  border-radius: 99px;
-}
-
-.code-scrollbar::-webkit-scrollbar-thumb:hover {
-  background-color: hsl(var(--border-300) / 0.5);
-}
-
-.code-scrollbar::-webkit-scrollbar-corner {
-  background: transparent;
-}
-
-/* 仅垂直滚动的变体 */
-.panel-scrollbar-y {
-  scrollbar-width: thin;
-  scrollbar-color: hsl(var(--border-300) / 0.3) transparent;
-  overflow-y: auto;
-  overflow-x: hidden;
-}
-
-@supports (overflow-y: overlay) {
-  .panel-scrollbar-y {
-    overflow-y: overlay;
-  }
-}
-
-.panel-scrollbar-y::-webkit-scrollbar {
-  width: 8px;
-  background: transparent;
-}
-
-.panel-scrollbar-y::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.panel-scrollbar-y::-webkit-scrollbar-thumb {
-  background-color: hsl(var(--border-300) / 0.3);
-  border-radius: 99px;
-  border: 2px solid transparent;
-  background-clip: padding-box;
-}
-
-.panel-scrollbar-y::-webkit-scrollbar-thumb:hover {
-  background-color: hsl(var(--border-300) / 0.6);
-}
-
-/* 仅水平滚动的变体 */
-.panel-scrollbar-x {
-  scrollbar-width: thin;
-  scrollbar-color: hsl(var(--border-300) / 0.3) transparent;
-  overflow-x: auto;
-  overflow-y: hidden;
-}
-
-@supports (overflow-x: overlay) {
-  .panel-scrollbar-x {
-    overflow-x: overlay;
-  }
-}
-
-.panel-scrollbar-x::-webkit-scrollbar {
-  height: 6px;
-  background: transparent;
-}
-
-.panel-scrollbar-x::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.panel-scrollbar-x::-webkit-scrollbar-thumb {
-  background-color: hsl(var(--border-300) / 0.3);
-  border-radius: 99px;
-}
-
-.panel-scrollbar-x::-webkit-scrollbar-thumb:hover {
-  background-color: hsl(var(--border-300) / 0.6);
-}
-
-/* Tabs 水平滚动 - 彻底隐藏滚动条 */
-.tabs-scrollbar {
-  scrollbar-width: none !important;
-  -ms-overflow-style: none !important;
-  overflow-x: auto;
-  overflow-y: hidden;
-}
-
-.tabs-scrollbar::-webkit-scrollbar {
-  display: none !important;
-  width: 0 !important;
-  height: 0 !important;
-  background: transparent;
-}
-
 /* ============================================
  * Panel Unified Styles - 面板统一样式
  * ============================================
  * 用于 RightPanel 和 BottomPanel 的统一视觉规范
- */
-
-/* 面板统一过渡效果 */
-.panel-transition {
-  transition-property: width, height, opacity, transform;
-  transition-duration: 200ms;
-  transition-timing-function: cubic-bezier(0.25, 0.1, 0.25, 1);
-}
-
-/* 面板统一阴影（可选，用于浮动状态） */
-.panel-shadow {
-  box-shadow:
-    0 0 0 1px hsl(var(--border-200) / 0.5),
-    0 4px 12px hsl(var(--always-black) / 0.08);
-}
-
-/* ============================================
- * Mobile Responsive - 移动端适配
- * ============================================
  */
 
 /* 移动端面板覆盖层 */

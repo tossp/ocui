@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import 'katex/dist/katex.min.css'
 import './index.css'
 import './i18n'
+import { initOverlayScrollbars } from './lib/overlayScrollbar'
 import App from './App.tsx'
 import { DirectoryProvider, SessionProvider } from './contexts'
 import { themeStore } from './store/themeStore'
@@ -46,6 +47,14 @@ if ('scrollRestoration' in history) {
 
 // 初始化主题系统（在 React 渲染前注入 CSS 变量，避免闪烁）
 themeStore.init()
+
+// 全局 overlay 滚动条 — 等 DOM 就绪后启动
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initOverlayScrollbars)
+} else {
+  // DOM 已就绪（defer script 或者 module）
+  requestAnimationFrame(initOverlayScrollbars)
+}
 
 // 注册 server 切换 → 清理所有 server-specific 状态 + SSE 重连
 serverStore.onServerChange(() => {
