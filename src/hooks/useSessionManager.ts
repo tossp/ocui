@@ -107,6 +107,7 @@ export function useSessionManager({ sessionId, directory, onLoadComplete, onErro
             messageStore.updateSessionMetadata(sid, {
               ...(messagesResult.ok ? { hasMoreHistory: messagesResult.messages.length >= INITIAL_MESSAGE_LIMIT } : {}),
               directory: sessionInfo?.directory ?? dir ?? '',
+              title: sessionInfo?.title,
               shareUrl: sessionInfo?.share?.url,
             })
           })
@@ -146,6 +147,7 @@ export function useSessionManager({ sessionId, directory, onLoadComplete, onErro
           messageStore.updateSessionMetadata(sid, {
             hasMoreHistory: apiMessages.length >= INITIAL_MESSAGE_LIMIT,
             directory: sessionInfo?.directory ?? dir ?? '',
+            title: sessionInfo?.title,
             loadState: 'loaded',
             shareUrl: sessionInfo?.share?.url,
           })
@@ -159,6 +161,7 @@ export function useSessionManager({ sessionId, directory, onLoadComplete, onErro
         // 设置消息到 store
         messageStore.setMessages(sid, mergedMessages, {
           directory: sessionInfo?.directory ?? dir ?? '',
+          title: sessionInfo?.title,
           hasMoreHistory: apiMessages.length >= INITIAL_MESSAGE_LIMIT,
           revertState: sessionInfo?.revert ?? null,
           shareUrl: sessionInfo?.share?.url,

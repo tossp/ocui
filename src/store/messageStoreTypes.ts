@@ -33,6 +33,8 @@ export interface SessionState {
   hasMoreHistory: boolean
   /** session 目录 */
   directory: string
+  /** session 标题 */
+  title?: string
   /** 分享链接 */
   shareUrl?: string
   /** 断线重连后是否需要重新全量拉取 */
@@ -51,6 +53,7 @@ export interface MessageStoreSnapshot {
   revertState: RevertState | null
   hasMoreHistory: boolean
   sessionDirectory: string
+  sessionTitle: string
   shareUrl: string | undefined
   canUndo: boolean
   canRedo: boolean

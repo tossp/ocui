@@ -1,13 +1,14 @@
-import { useState, useRef, useEffect, useMemo } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { PanelRightIcon, PanelBottomIcon, ChevronDownIcon, SidebarIcon } from '../../components/Icons'
 import { IconButton } from '../../components/ui'
 import { ModelSelector, type ModelSelectorHandle } from './ModelSelector'
 import { ShareDialog } from './ShareDialog'
-import { useMessageStore } from '../../store'
+import { messageStore, useMessageStore } from '../../store'
 import { useLayoutStore, layoutStore } from '../../store/layoutStore'
 import { useSessionContext } from '../../contexts/useSessionContext'
 import { updateSession } from '../../api'
+import { useDirectory } from '../../contexts/useDirectory'
 import { uiErrorHandler } from '../../utils'
 import type { ModelInfo } from '../../api'
 
@@ -29,9 +30,10 @@ export function Header({
   modelSelectorRef,
 }: HeaderProps) {
   const { t } = useTranslation('chat')
-  const { sessionId } = useMessageStore()
+  const { sessionId, sessionDirectory, sessionTitle: currentSessionTitle } = useMessageStore()
   const { rightPanelOpen, bottomPanelOpen } = useLayoutStore()
-  const { sessions, refresh } = useSessionContext()
+  const { refresh } = useSessionContext()
+  const { currentDirectory } = useDirectory()
 
   const [shareDialogOpen, setShareDialogOpen] = useState(false)
 
@@ -39,21 +41,19 @@ export function Header({
   const [editTitle, setEditTitle] = useState('')
   const titleInputRef = useRef<HTMLInputElement>(null)
 
-  // Session Data
-  const currentSession = useMemo(() => sessions.find(s => s.id === sessionId), [sessions, sessionId])
-  const sessionTitle = currentSession?.title || t('header.newChat')
+  const sessionTitle = currentSessionTitle || t('header.newChat')
 
   // 同步 document.title - 有 session 标题时显示 "标题 - OpenCode"，否则只显示 "OpenCode"
   useEffect(() => {
-    if (currentSession?.title) {
-      document.title = `${currentSession.title} - OpenCode`
+    if (currentSessionTitle) {
+      document.title = `${currentSessionTitle} - OpenCode`
     } else {
       document.title = 'OpenCode'
     }
     return () => {
       document.title = 'OpenCode'
     }
-  }, [currentSession?.title])
+  }, [currentSessionTitle])
 
   // Editing Logic
   useEffect(() => {
@@ -79,7 +79,8 @@ export function Header({
       return
     }
     try {
-      await updateSession(sessionId, { title: editTitle.trim() }, currentSession?.directory)
+      const updated = await updateSession(sessionId, { title: editTitle.trim() }, sessionDirectory || currentDirectory)
+      messageStore.updateSessionMetadata(sessionId, { title: updated.title })
       refresh()
     } catch (e) {
       uiErrorHandler('rename session', e)

@@ -23,6 +23,7 @@ function createSnapshot(): MessageStoreSnapshot {
     revertState: messageStore.getRevertState(),
     hasMoreHistory: messageStore.getHasMoreHistory(),
     sessionDirectory: messageStore.getSessionDirectory(),
+    sessionTitle: messageStore.getSessionTitle(),
     shareUrl: messageStore.getShareUrl(),
     canUndo: messageStore.canUndo(),
     canRedo: messageStore.canRedo(),

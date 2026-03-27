@@ -148,6 +148,10 @@ class MessageStore {
     return this.getCurrentSessionState()?.directory ?? ''
   }
 
+  getSessionTitle(): string {
+    return this.getCurrentSessionState()?.title ?? ''
+  }
+
   getShareUrl(): string | undefined {
     return this.getCurrentSessionState()?.shareUrl
   }
@@ -183,6 +187,7 @@ class MessageStore {
         loadState: 'idle',
         hasMoreHistory: false,
         directory: '',
+        title: undefined,
         shareUrl: undefined,
         isStale: false,
       }
@@ -219,6 +224,7 @@ class MessageStore {
     options: {
       hasMoreHistory?: boolean
       directory?: string
+      title?: string
       loadState?: SessionState['loadState']
       shareUrl?: string
     },
@@ -228,6 +234,7 @@ class MessageStore {
 
     if (options.hasMoreHistory !== undefined) state.hasMoreHistory = options.hasMoreHistory
     if (options.directory !== undefined) state.directory = options.directory
+    if (options.title !== undefined) state.title = options.title
     if (options.loadState !== undefined) state.loadState = options.loadState
     if (options.shareUrl !== undefined) state.shareUrl = options.shareUrl
 
@@ -259,6 +266,7 @@ class MessageStore {
     apiMessages: ApiMessageWithParts[],
     options?: {
       directory?: string
+      title?: string
       hasMoreHistory?: boolean
       revertState?: ApiSession['revert'] | null
       shareUrl?: string
@@ -270,6 +278,7 @@ class MessageStore {
     state.loadState = 'loaded'
     state.hasMoreHistory = options?.hasMoreHistory ?? false
     state.directory = options?.directory ?? ''
+    if (options?.title !== undefined) state.title = options.title
     state.shareUrl = options?.shareUrl
     state.isStale = false
 
