@@ -47,6 +47,7 @@ if (!semverRe.test(version)) {
 const tagName = `v${version}`
 const today = new Date().toISOString().slice(0, 10)
 const isPrerelease = version.includes('-')
+const stableTagRe = /^v\d+\.\d+\.\d+$/
 const existingChangelogPath = resolve(root, 'CHANGELOG.md')
 const lineEnding =
   existsSync(existingChangelogPath) && /\r\n/.test(readFileSync(existingChangelogPath, 'utf-8')) ? '\r\n' : '\n'
@@ -66,6 +67,30 @@ function replaceCargoPackageVersion(lockContent, packageName, nextVersion) {
     return block.replace(/^(version\s*=\s*)"[^"]*"/m, `$1"${nextVersion}"`)
   })
   return updatedBlocks.join('[[package]]')
+}
+
+function getReleaseBaseTag() {
+  if (isPrerelease) {
+    return execSync('git describe --tags --abbrev=0 2>/dev/null', {
+      encoding: 'utf-8',
+      cwd: root,
+    }).trim()
+  }
+
+  const mergedTags = execSync('git tag --merged HEAD --sort=-v:refname', {
+    encoding: 'utf-8',
+    cwd: root,
+  })
+    .split(/\r?\n/)
+    .map(tag => tag.trim())
+    .filter(Boolean)
+
+  const lastStableTag = mergedTags.find(tag => stableTagRe.test(tag) && tag !== tagName)
+  if (!lastStableTag) {
+    throw new Error('No previous stable tag found')
+  }
+
+  return lastStableTag
 }
 
 // ---------------------------------------------------------------------------
@@ -121,11 +146,9 @@ if (cargoPackageName && existsSync(cargoLockPath)) {
 // ---------------------------------------------------------------------------
 let commits = ''
 try {
-  // Get the latest tag to use as the "since" reference
-  const lastTag = execSync('git describe --tags --abbrev=0 2>/dev/null', {
-    encoding: 'utf-8',
-    cwd: root,
-  }).trim()
+  // Stable release: compare from previous stable tag.
+  // Pre-release: compare from the latest reachable tag.
+  const lastTag = getReleaseBaseTag()
 
   commits = execSync(`git log ${lastTag}..HEAD --pretty=format:"- %s (%h)" --no-merges`, {
     encoding: 'utf-8',
