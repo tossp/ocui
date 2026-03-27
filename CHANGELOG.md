@@ -1,5 +1,21 @@
 # Changelog
 
+## [v0.3.5] - 2026-03-27
+
+- fix: use previous stable tag for release changelog (b00cff7)
+- fix: load chat header title from session detail (0b8443c)
+- fix: stabilize chat history loading scroll behavior (87190c6)
+- fix: animate todo panel swap without layout jank (ca8a672)
+- feat: add frosted glass toggle in appearance settings (662070c)
+- fix: apply overlay scrollbar to textarea, hide all native scrollbars (5dce51f)
+- fix: frosted glass not rendering in Tauri production build & overlay scrollbar positioning (96e72c1)
+- feat: replace native scrollbars with global overlay scrollbar system (da09781)
+- refactor: simplify @ and / menus with cleaner layout and unified style (f5bddec)
+- refactor: redesign ModelSelector for glass aesthetic (33a9dd2)
+- refactor: unify frosted glass system with CSS utility classes (0e459f9)
+- style: introduce frosted glass effect to all floating surfaces (ae10178)
+- fix: remove extra padding from message toggles (4eb916a)
+
 ## [v0.3.4] - 2026-03-24
 
 - fix: align markdown copy buttons with header text (80e59ce)
