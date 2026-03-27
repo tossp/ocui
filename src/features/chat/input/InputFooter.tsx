@@ -1,4 +1,4 @@
-import { memo, useState, useRef, useEffect, useLayoutEffect, useSyncExternalStore } from 'react'
+import { memo, useState, useRef, useEffect, useLayoutEffect, useSyncExternalStore, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { RefObject } from 'react'
 import { CheckIcon, ClockIcon, CircleIcon, CloseIcon, FastForwardIcon } from '../../../components/Icons'
@@ -19,6 +19,8 @@ function useFullAutoMode(): FullAutoMode {
   )
 }
 
+const TODO_SWAP_DURATION_MS = 260
+
 // ============================================
 // InputFooter - disclaimer + todo progress + full auto toggle
 // ============================================
@@ -34,9 +36,11 @@ export const InputFooter = memo(function InputFooter({ sessionId, onNewChat, inp
   const todos = useTodos(sessionId ?? null)
   const stats = useTodoStats(sessionId ?? null)
   const currentTask = useCurrentTask(sessionId ?? null)
-  const [popoverOpen, setPopoverOpen] = useState(false)
+  const [panelState, setPanelState] = useState<'closed' | 'opening' | 'open' | 'closing'>('closed')
   const popoverRef = useRef<HTMLDivElement>(null)
   const loadedRef = useRef<string | null>(null)
+  const closeTimerRef = useRef<number | null>(null)
+  const openingFrameRef = useRef<number | null>(null)
   const fullAutoMode = useFullAutoMode()
 
   // 加载 session 时拉取初始 todos
@@ -53,27 +57,131 @@ export const InputFooter = memo(function InputFooter({ sessionId, onNewChat, inp
       .catch(() => {})
   }, [sessionId])
 
-  // 点击外部关闭 popover
-  useEffect(() => {
-    if (!popoverOpen) return
-    const handleClick = (e: MouseEvent) => {
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
-        setPopoverOpen(false)
-      }
+  const clearPanelTimers = useCallback(() => {
+    if (closeTimerRef.current !== null) {
+      window.clearTimeout(closeTimerRef.current)
+      closeTimerRef.current = null
     }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [popoverOpen])
+
+    if (openingFrameRef.current !== null) {
+      cancelAnimationFrame(openingFrameRef.current)
+      openingFrameRef.current = null
+    }
+  }, [])
 
   const hasTodos = stats.total > 0
-  const isAllDone = stats.completed === stats.total
+  const isAllDone = stats.total > 0 && stats.completed === stats.total
   const progress = stats.total > 0 ? stats.completed / stats.total : 0
+  const panelOpen = panelState === 'opening' || panelState === 'open'
 
   const taskLabel = currentTask
     ? currentTask.content
     : isAllDone
       ? t('inputFooter.allTasksDone')
       : t('inputFooter.remaining', { count: stats.total - stats.completed })
+
+  const openPanel = useCallback(() => {
+    if (!hasTodos) return
+
+    clearPanelTimers()
+
+    const inputContainer = inputContainerRef?.current
+    const activeElement = document.activeElement
+    if (inputContainer) {
+      inputContainer.setAttribute('data-todo-swap', 'hidden')
+      if (activeElement instanceof HTMLElement && inputContainer.contains(activeElement)) {
+        activeElement.blur()
+      }
+    }
+
+    setPanelState(current => {
+      if (current === 'open' || current === 'opening') return current
+      return 'opening'
+    })
+  }, [clearPanelTimers, hasTodos, inputContainerRef])
+
+  const closePanel = useCallback(() => {
+    clearPanelTimers()
+    inputContainerRef?.current?.removeAttribute('data-todo-swap')
+
+    setPanelState(current => {
+      if (current === 'closed' || current === 'closing') return current
+      return 'closing'
+    })
+  }, [clearPanelTimers, inputContainerRef])
+
+  const togglePanel = useCallback(() => {
+    if (panelOpen) {
+      closePanel()
+      return
+    }
+
+    openPanel()
+  }, [closePanel, openPanel, panelOpen])
+
+  // 点击外部关闭 panel
+  useEffect(() => {
+    if (panelState === 'closed') return
+
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as Node
+      if (popoverRef.current?.contains(target)) return
+      if (inputContainerRef?.current?.contains(target)) return
+      closePanel()
+    }
+
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [closePanel, inputContainerRef, panelState])
+
+  useEffect(() => {
+    if (panelState !== 'opening') return
+
+    openingFrameRef.current = requestAnimationFrame(() => {
+      openingFrameRef.current = null
+      setPanelState(current => (current === 'opening' ? 'open' : current))
+    })
+
+    return () => {
+      if (openingFrameRef.current !== null) {
+        cancelAnimationFrame(openingFrameRef.current)
+        openingFrameRef.current = null
+      }
+    }
+  }, [panelState])
+
+  useEffect(() => {
+    if (panelState !== 'closing') return
+
+    closeTimerRef.current = window.setTimeout(() => {
+      closeTimerRef.current = null
+      setPanelState(current => (current === 'closing' ? 'closed' : current))
+    }, TODO_SWAP_DURATION_MS)
+
+    return () => {
+      if (closeTimerRef.current !== null) {
+        window.clearTimeout(closeTimerRef.current)
+        closeTimerRef.current = null
+      }
+    }
+  }, [panelState])
+
+  useEffect(() => {
+    if (!hasTodos && panelState !== 'closed') {
+      closePanel()
+    }
+  }, [closePanel, hasTodos, panelState])
+
+  useEffect(() => {
+    closePanel()
+  }, [closePanel, sessionId])
+
+  useEffect(() => {
+    return () => {
+      clearPanelTimers()
+      inputContainerRef?.current?.removeAttribute('data-todo-swap')
+    }
+  }, [clearPanelTimers, inputContainerRef])
 
   return (
     <div
@@ -122,9 +230,9 @@ export const InputFooter = memo(function InputFooter({ sessionId, onNewChat, inp
       ) : (
         <>
           <button
-            onClick={() => setPopoverOpen(!popoverOpen)}
+            onClick={togglePanel}
             className={`flex items-center gap-1.5 min-w-0 hover:text-text-300 transition-colors ${
-              popoverOpen ? 'text-text-300' : ''
+              panelOpen ? 'text-text-300' : ''
             }`}
           >
             <MiniProgress size={11} progress={progress} done={isAllDone} />
@@ -143,11 +251,10 @@ export const InputFooter = memo(function InputFooter({ sessionId, onNewChat, inp
         </>
       )}
 
-      {/* Todo Popover */}
-      {popoverOpen && hasTodos && (
-        <PopoverPanel inputContainerRef={inputContainerRef}>
-          {/* 顶部区域：大进度环 + 统计 */}
-          <div className="px-4 pt-4 pb-3 bg-gradient-to-b from-bg-200/50 to-transparent">
+      {/* Todo Swap Panel */}
+      {panelState !== 'closed' && (
+        <TodoSwapPanel inputContainerRef={inputContainerRef} open={panelState === 'open'}>
+          <div className="px-5 pt-4 pb-3">
             <div className="flex items-center gap-4">
               <div className="relative">
                 <CircularProgress
@@ -171,7 +278,7 @@ export const InputFooter = memo(function InputFooter({ sessionId, onNewChat, inp
                     ? t('inputFooter.allDone')
                     : t('inputFooter.tasksCount', { done: stats.completed, total: stats.total })}
                 </div>
-                <div className="text-xs text-text-500 mt-0.5">
+                <div className="mt-0.5 text-xs text-text-500">
                   {isAllDone
                     ? t('inputFooter.greatWork')
                     : stats.inProgress > 0
@@ -182,28 +289,30 @@ export const InputFooter = memo(function InputFooter({ sessionId, onNewChat, inp
             </div>
           </div>
 
-          <div className="h-px bg-border-200/40 mx-3" />
+          <div className="mx-4 h-px bg-border-200/40" />
 
-          <div className="max-h-56 overflow-y-auto custom-scrollbar p-2">
+          <div className="max-h-64 overflow-y-auto custom-scrollbar px-3 py-2">
             {todos.map(todo => (
               <TodoRow key={todo.id} todo={todo} />
             ))}
           </div>
-        </PopoverPanel>
+        </TodoSwapPanel>
       )}
     </div>
   )
 })
 
 // ============================================
-// PopoverPanel - 宽度对齐输入框的弹出面板
+// TodoSwapPanel - 对齐输入框的独立 todo 卡片
 // ============================================
 
-function PopoverPanel({
+function TodoSwapPanel({
   inputContainerRef,
+  open,
   children,
 }: {
   inputContainerRef?: RefObject<HTMLDivElement | null>
+  open: boolean
   children: React.ReactNode
 }) {
   const [style, setStyle] = useState<React.CSSProperties>({})
@@ -211,7 +320,7 @@ function PopoverPanel({
 
   useLayoutEffect(() => {
     const container = inputContainerRef?.current
-    const footer = ref.current?.parentElement // popoverRef div
+    const footer = ref.current?.parentElement
     if (!container || !footer) return
 
     const update = () => {
@@ -220,20 +329,28 @@ function PopoverPanel({
       setStyle({
         width: cRect.width,
         left: cRect.left - fRect.left,
+        bottom: fRect.bottom - cRect.bottom,
       })
     }
     update()
 
     const observer = new ResizeObserver(update)
     observer.observe(container)
-    return () => observer.disconnect()
+    observer.observe(footer)
+    window.addEventListener('resize', update)
+
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', update)
+    }
   }, [inputContainerRef])
 
   return (
     <div
       ref={ref}
       style={style}
-      className="absolute bottom-full glass-alt border border-border-200/60 rounded-2xl shadow-2xl shadow-black/20 overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-150 z-50"
+      data-state={open ? 'open' : 'closed'}
+      className="todo-swap-panel absolute glass-alt border border-border-200/60 rounded-2xl shadow-2xl shadow-black/20 overflow-hidden z-50"
     >
       {children}
     </div>
@@ -268,11 +385,11 @@ const TodoRow = memo(function TodoRow({ todo }: { todo: TodoItem }) {
 
   return (
     <div
-      className={`flex items-center gap-2 px-3 py-1.5 text-xs ${
+      className={`flex items-center gap-2 px-2 py-1.5 text-xs ${
         isCompleted ? 'text-text-500' : isInProgress ? 'text-text-100' : 'text-text-300'
       }`}
     >
-      <span className="shrink-0 flex items-center justify-center w-[13px] h-[13px]">
+      <span className="flex h-[13px] w-[13px] shrink-0 items-center justify-center">
         {isCompleted && <CheckIcon size={13} className="text-accent-secondary-100" strokeWidth={2.5} />}
         {isInProgress && <ClockIcon size={13} className="text-accent-main-100" />}
         {isCancelled && <CloseIcon size={13} className="text-text-500" />}
@@ -280,7 +397,7 @@ const TodoRow = memo(function TodoRow({ todo }: { todo: TodoItem }) {
       </span>
       <span className={`flex-1 ${isCompleted ? 'line-through' : ''}`}>{todo.content}</span>
       {todo.priority === 'high' && !isCompleted && (
-        <span className="text-[10px] text-warning-100 bg-warning-100/10 px-1 rounded shrink-0">!</span>
+        <span className="shrink-0 rounded bg-warning-100/10 px-1 text-[10px] text-warning-100">!</span>
       )}
     </div>
   )

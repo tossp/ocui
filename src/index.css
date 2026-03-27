@@ -852,3 +852,45 @@ body {
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
 }
+
+/* ============================================
+ * Todo Swap Transition
+ * ============================================ */
+
+[data-input-box] {
+  transform-origin: center bottom;
+  transition:
+    opacity 180ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform, opacity;
+}
+
+[data-input-box][data-todo-swap='hidden'] {
+  opacity: 0;
+  transform: translateY(18px) scale(0.985);
+  pointer-events: none;
+}
+
+.todo-swap-panel {
+  transform-origin: center bottom;
+  opacity: 0;
+  transform: translateY(18px) scale(0.985);
+  transition:
+    opacity 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform, opacity;
+  pointer-events: none;
+}
+
+.todo-swap-panel[data-state='open'] {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-input-box],
+  .todo-swap-panel {
+    transition: none;
+  }
+}
