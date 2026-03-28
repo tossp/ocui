@@ -1,5 +1,15 @@
 # Changelog
 
+## [v0.3.6] - 2026-03-28
+
+- test: add chatViewport mock to InputBox and InputToolbar tests (7eb80ac)
+- fix: remove unused let binding in overlayScrollbar (ab9eaba)
+- feat: add horizontal overlay scrollbar support (ad8d21d)
+- refactor: rewrite outline index with visual config, focus-based interaction and entry windowing (18bccf9)
+- fix: align compact model selector trigger (480dd04)
+- refactor: centralize chat viewport state (8512fcb)
+- fix: improve coarse pointer support in desktop UI (4cfc8e5)
+
 ## [v0.3.5] - 2026-03-27
 
 - fix: use previous stable tag for release changelog (b00cff7)
