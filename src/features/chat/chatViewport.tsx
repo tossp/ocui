@@ -193,7 +193,7 @@ function computeChatViewport(input: ComputedViewportInput): Omit<ChatViewportVal
       sidebarBehavior: overlayPanels ? 'overlay' : 'docked',
       rightPanelBehavior: overlayPanels ? 'overlay' : 'docked',
       bottomPanelBehavior: overlayPanels ? 'overlay' : 'docked',
-      outlineInteraction: overlayPanels ? 'touch' : 'pointer',
+      outlineInteraction: overlayPanels || touchCapable ? 'touch' : 'pointer',
       enableCollapsedInputDock: overlayPanels,
     },
     layout: {

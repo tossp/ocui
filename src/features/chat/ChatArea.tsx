@@ -101,7 +101,7 @@ export const ChatArea = memo(
       const { isWideMode } = useTheme()
       const { presentation } = useChatViewport()
       const atBottomThreshold = presentation.isCompact ? 150 : AT_BOTTOM_THRESHOLD_PX
-      const messagePaddingClass = presentation.isCompact ? 'px-2' : 'px-4'
+      const messagePaddingClass = presentation.isCompact ? 'px-3' : 'px-5'
 
       // ---- Data ----
       const visibleMessageEntries = useMemo(() => buildVisibleMessageEntries(messages), [messages])
