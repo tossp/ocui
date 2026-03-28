@@ -134,7 +134,9 @@
     "sidebar": "Sidebar",
     "sidebarDesc": "Sidebar layout and recent chats",
     "folderStyleRecents": "Folder-Style Recents",
-    "folderStyleRecentsDesc": "Group recent chats by project folder while keeping the default list available"
+    "folderStyleRecentsDesc": "Group recent chats by project folder while keeping the default list available",
+    "folderStyleRecentsShowDiff": "Show Diff In Folder View",
+    "folderStyleRecentsShowDiffDesc": "Show additions, deletions, and file counts for sessions in folder-style recents"
   },
   "notifications": {
     "systemNotifications": "System Notifications",

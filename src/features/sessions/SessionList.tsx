@@ -282,6 +282,11 @@ export function SessionListItem({
   const itemRef = useRef<HTMLDivElement>(null)
   const isCompact = density === 'compact'
   const isMinimal = density === 'minimal'
+  const hasSummaryStats = Boolean(
+    showStats &&
+    session.summary &&
+    (session.summary.additions > 0 || session.summary.deletions > 0 || session.summary.files > 0),
+  )
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -442,7 +447,7 @@ export function SessionListItem({
 
         <div
           className={`flex min-w-0 flex-1 items-center gap-1.5 transition-[padding] duration-200 ${
-            showActions ? 'pr-[60px]' : 'pr-0 group-hover:pr-[60px]'
+            showActions ? 'pr-12' : 'pr-0 group-hover:pr-12'
           }`}
         >
           {/* 标题 */}
@@ -450,15 +455,25 @@ export function SessionListItem({
             {session.title || t('sessions.untitledChat')}
           </span>
 
-          {/* 时间 — 操作按钮出现时隐藏，并为按钮预留空间 */}
-          {session.time?.updated && (
-            <span
-              className={`shrink-0 text-[10px] text-text-500 transition-opacity duration-150 ${
-                actionsVisible ? 'opacity-0' : 'opacity-100 group-hover:opacity-0'
-              }`}
+          {((hasSummaryStats && session.summary) || session.time?.updated) && (
+            <div
+              className={`${actionsVisible ? 'hidden' : 'flex group-hover:hidden'} shrink-0 items-center gap-1.5 text-[10px] text-text-500`}
             >
-              {formatRelativeTime(session.time.updated)}
-            </span>
+              {hasSummaryStats && session.summary && (
+                <span className="flex shrink-0 items-center gap-1 font-mono">
+                  {session.summary.additions > 0 && (
+                    <span className="text-success-100">+{session.summary.additions}</span>
+                  )}
+                  {session.summary.deletions > 0 && (
+                    <span className="text-danger-100">-{session.summary.deletions}</span>
+                  )}
+                  {session.summary.files > 0 && <span>{session.summary.files}f</span>}
+                </span>
+              )}
+
+              {/* 时间 — 操作按钮出现时隐藏，并为按钮预留空间 */}
+              {session.time?.updated && <span className="shrink-0">{formatRelativeTime(session.time.updated)}</span>}
+            </div>
           )}
         </div>
 

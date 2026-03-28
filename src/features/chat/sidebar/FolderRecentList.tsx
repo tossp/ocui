@@ -9,6 +9,7 @@ import { useInputCapabilities } from '../../../hooks/useInputCapabilities'
 import { useIsMobile } from '../../../hooks/useIsMobile'
 import { useInView } from '../../../hooks/useInView'
 import { getDirectoryName, isSameDirectory } from '../../../utils'
+import { useLayoutStore } from '../../../store'
 import { useBusySessions } from '../../../store/activeSessionStore'
 import { useNotifications } from '../../../store/notificationStore'
 import { SessionListItem } from '../../sessions'
@@ -73,6 +74,7 @@ export function FolderRecentList({
   const { t } = useTranslation(['chat', 'common'])
   const isMobile = useIsMobile()
   const { preferTouchUi } = useInputCapabilities()
+  const { sidebarFolderRecentsShowDiff } = useLayoutStore()
   const [pendingDelete, setPendingDelete] = useState<PendingDeleteSession | null>(null)
   const allBusySessions = useBusySessions()
   const allNotifications = useNotifications()
@@ -370,6 +372,7 @@ export function FolderRecentList({
                 isExpanded={!isDragging && expandedProjectIds.includes(project.id)}
                 folderStatus={folderStatusByProjectId.get(project.id) ?? null}
                 preferTouchUi={preferTouchUi}
+                showSessionDiffStats={sidebarFolderRecentsShowDiff}
                 selectedSessionId={selectedSessionId}
                 onToggle={() => handleToggleProject(project.id)}
                 onSelectSession={onSelectSession}
@@ -425,6 +428,7 @@ interface FolderRecentSectionProps {
   isExpanded: boolean
   folderStatus: FolderStatus | null
   preferTouchUi: boolean
+  showSessionDiffStats: boolean
   selectedSessionId: string | null
   onToggle: () => void
   onSelectSession: (session: ApiSession) => void
@@ -450,6 +454,7 @@ function FolderRecentSection({
   isExpanded,
   folderStatus,
   preferTouchUi,
+  showSessionDiffStats,
   selectedSessionId,
   onToggle,
   onSelectSession,
@@ -590,7 +595,7 @@ function FolderRecentSection({
                       onDelete={() => handleDelete(session.id)}
                       preferTouchUi={preferTouchUi}
                       density="minimal"
-                      showStats={false}
+                      showStats={showSessionDiffStats}
                       showDirectory={false}
                     />
                   ))}

@@ -134,7 +134,9 @@
     "sidebar": "侧边栏",
     "sidebarDesc": "侧边栏布局和最近记录",
     "folderStyleRecents": "文件夹式最近记录",
-    "folderStyleRecentsDesc": "按项目文件夹分组最近的对话，同时保留默认列表"
+    "folderStyleRecentsDesc": "按项目文件夹分组最近的对话，同时保留默认列表",
+    "folderStyleRecentsShowDiff": "文件夹模式显示 Diff",
+    "folderStyleRecentsShowDiffDesc": "在文件夹式最近记录中显示会话的增删和文件统计"
   },
   "notifications": {
     "systemNotifications": "系统通知",

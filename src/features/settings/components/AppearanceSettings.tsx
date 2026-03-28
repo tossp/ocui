@@ -328,7 +328,7 @@ export function AppearanceSettings() {
     glassEffect,
     setGlassEffect,
   } = useTheme()
-  const { sidebarFolderRecents } = useLayoutStore()
+  const { sidebarFolderRecents, sidebarFolderRecentsShowDiff } = useLayoutStore()
 
   return (
     <div>
@@ -427,6 +427,17 @@ export function AppearanceSettings() {
           <Toggle
             enabled={sidebarFolderRecents}
             onChange={() => layoutStore.setSidebarFolderRecents(!sidebarFolderRecents)}
+          />
+        </SettingRow>
+
+        <SettingRow
+          label={t('appearance.folderStyleRecentsShowDiff')}
+          description={t('appearance.folderStyleRecentsShowDiffDesc')}
+          onClick={() => layoutStore.setSidebarFolderRecentsShowDiff(!sidebarFolderRecentsShowDiff)}
+        >
+          <Toggle
+            enabled={sidebarFolderRecentsShowDiff}
+            onChange={() => layoutStore.setSidebarFolderRecentsShowDiff(!sidebarFolderRecentsShowDiff)}
           />
         </SettingRow>
       </SettingsSection>

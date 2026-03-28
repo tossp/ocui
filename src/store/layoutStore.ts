@@ -50,6 +50,7 @@ interface LayoutState {
   // 侧边栏
   sidebarExpanded: boolean
   sidebarFolderRecents: boolean
+  sidebarFolderRecentsShowDiff: boolean
 
   // 右侧栏
   rightPanelOpen: boolean
@@ -64,6 +65,7 @@ type Subscriber = () => void
 
 const STORAGE_KEY_SIDEBAR = 'opencode-sidebar-expanded'
 const STORAGE_KEY_SIDEBAR_FOLDER_RECENTS = 'opencode-sidebar-folder-recents'
+const STORAGE_KEY_SIDEBAR_FOLDER_RECENTS_SHOW_DIFF = 'opencode-sidebar-folder-recents-show-diff'
 
 class LayoutStore {
   private state: LayoutState = {
@@ -78,6 +80,7 @@ class LayoutStore {
     },
     sidebarExpanded: true,
     sidebarFolderRecents: false,
+    sidebarFolderRecentsShowDiff: true,
     rightPanelOpen: false,
     rightPanelWidth: 450,
     bottomPanelOpen: false,
@@ -97,6 +100,11 @@ class LayoutStore {
       const savedFolderRecents = localStorage.getItem(STORAGE_KEY_SIDEBAR_FOLDER_RECENTS)
       if (savedFolderRecents !== null) {
         this.state.sidebarFolderRecents = savedFolderRecents === 'true'
+      }
+
+      const savedFolderRecentsShowDiff = localStorage.getItem(STORAGE_KEY_SIDEBAR_FOLDER_RECENTS_SHOW_DIFF)
+      if (savedFolderRecentsShowDiff !== null) {
+        this.state.sidebarFolderRecentsShowDiff = savedFolderRecentsShowDiff !== 'false'
       }
 
       // 右侧面板宽度
@@ -158,6 +166,17 @@ class LayoutStore {
     this.state.sidebarFolderRecents = enabled
     try {
       localStorage.setItem(STORAGE_KEY_SIDEBAR_FOLDER_RECENTS, String(enabled))
+    } catch {
+      // ignore
+    }
+    this.notify()
+  }
+
+  setSidebarFolderRecentsShowDiff(enabled: boolean) {
+    if (this.state.sidebarFolderRecentsShowDiff === enabled) return
+    this.state.sidebarFolderRecentsShowDiff = enabled
+    try {
+      localStorage.setItem(STORAGE_KEY_SIDEBAR_FOLDER_RECENTS_SHOW_DIFF, String(enabled))
     } catch {
       // ignore
     }
