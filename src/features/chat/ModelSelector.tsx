@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next'
 import { ChevronDownIcon, SearchIcon, ThinkingIcon, EyeIcon, CheckIcon, PinIcon } from '../../components/Icons'
 import { DropdownMenu } from '../../components/ui'
 import type { ModelInfo } from '../../api'
+import { useChatViewport } from './chatViewport'
 import {
   getModelKey,
   groupModelsByProvider,
@@ -533,6 +534,7 @@ export const InputToolbarModelSelector = memo(function InputToolbarModelSelector
   constrainToRef,
 }: InputToolbarModelSelectorProps) {
   const { t } = useTranslation('chat')
+  const { presentation } = useChatViewport()
   const [isOpen, setIsOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [highlightedIndex, setHighlightedIndex] = useState(0)
@@ -727,9 +729,11 @@ export const InputToolbarModelSelector = memo(function InputToolbarModelSelector
         title={selectedModel?.name || t('modelSelector.selectModel')}
       >
         <span className="text-xs text-text-300 truncate">{displayName}</span>
-        <span className="text-text-400 hidden md:inline shrink-0">
-          <ChevronDownIcon />
-        </span>
+        {!presentation.isCompact && (
+          <span className="text-text-400 shrink-0">
+            <ChevronDownIcon />
+          </span>
+        )}
       </button>
 
       <DropdownMenu
