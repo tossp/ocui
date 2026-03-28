@@ -1,5 +1,16 @@
 # Changelog
 
+## [v0.3.7] - 2026-03-28
+
+- fix: remove double border on attachment meta when no content preview (d29a2f4)
+- fix: hide floating actions (undo/redo/permission) during todo panel swap (a3a7231)
+- fix: apply glass effect to mobile collapsed capsule (2075818)
+- fix: fallback fetch after send to prevent missing user message on SSE drop (e2138df)
+- fix: skip overlay scrollbar on elements with no-scrollbar class (506cf24)
+- feat: child sessions displayed under parent in sidebar with toggle for always-show (97ce7d8)
+- feat: add diff toggle for folder recents (a1ed95e)
+- fix: wire compact model selector to global shortcut (d14fb42)
+
 ## [v0.3.6] - 2026-03-28
 
 - test: add chatViewport mock to InputBox and InputToolbar tests (7eb80ac)
