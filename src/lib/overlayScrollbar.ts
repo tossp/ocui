@@ -239,9 +239,6 @@ function attach(vp: HTMLElement) {
     h?.reveal()
   }
 
-  // selfEntry 在下方 entries.set 后赋值，onEnter/onLeave 只在事件触发时读取
-  let selfEntry: Entry
-
   /** 显示自身 + 内部后代 entry 的所有 thumb */
   const revealEntry = (e: Entry) => {
     if (e.v && e.vp.scrollHeight > e.vp.clientHeight + 1) {
@@ -268,17 +265,15 @@ function attach(vp: HTMLElement) {
   }
 
   const onEnter = () => {
-    revealEntry(selfEntry)
-    // 连带显示内部后代的 thumb（比如外层垂直容器 hover 时显示内层 proxy 的水平 thumb）
+    // 显示自身 + 内部后代 entry 的所有 thumb
     for (const e of entries.values()) {
-      if (e.vp !== vp && vp.contains(e.vp)) revealEntry(e)
+      if (e.vp === vp || vp.contains(e.vp)) revealEntry(e)
     }
   }
 
   const onLeave = () => {
-    fadeEntry(selfEntry)
     for (const e of entries.values()) {
-      if (e.vp !== vp && vp.contains(e.vp)) fadeEntry(e)
+      if (e.vp === vp || vp.contains(e.vp)) fadeEntry(e)
     }
   }
 
@@ -291,7 +286,6 @@ function attach(vp: HTMLElement) {
   update()
 
   const entry: Entry = { vp, parent, v, h, ro, onScroll, onEnter, onLeave }
-  selfEntry = entry
   entries.set(vp, entry)
 }
 
