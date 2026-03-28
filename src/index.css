@@ -869,7 +869,8 @@ body {
  * Todo Swap Transition
  * ============================================ */
 
-[data-input-box] {
+[data-input-box],
+[data-floating-actions] {
   transform-origin: center bottom;
   transition:
     opacity 180ms cubic-bezier(0.4, 0, 0.2, 1),
@@ -878,6 +879,13 @@ body {
 }
 
 [data-input-box][data-todo-swap='hidden'] {
+  opacity: 0;
+  transform: translateY(18px) scale(0.985);
+  pointer-events: none;
+}
+
+/* todo panel 展开时同步隐藏 FloatingActions（undo/redo/permission 等） */
+:has([data-input-box][data-todo-swap='hidden']) > [data-floating-actions] {
   opacity: 0;
   transform: translateY(18px) scale(0.985);
   pointer-events: none;
@@ -902,6 +910,7 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   [data-input-box],
+  [data-floating-actions],
   .todo-swap-panel {
     transition: none;
   }

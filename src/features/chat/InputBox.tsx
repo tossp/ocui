@@ -901,6 +901,7 @@ function InputBoxComponent({
               收起态：正常文档流，紧贴胶囊上方
               始终同一 DOM 节点，切换时 FloatingActions 不 remount，避免入场动画闪烁 */}
           <div
+            data-floating-actions
             className={
               isCollapsed
                 ? 'flex justify-center pb-2'
