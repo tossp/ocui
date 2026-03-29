@@ -62,7 +62,7 @@ vi.mock('../../../components/ui', () => ({
 }))
 
 vi.mock('../ModelSelector', () => ({
-  InputToolbarModelSelector: () => null,
+  ModelSelector: () => null,
 }))
 
 describe('InputToolbar file selection', () => {

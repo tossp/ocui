@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronDownIcon, SendIcon, StopIcon, PaperclipIcon, AgentIcon, ThinkingIcon } from '../../../components/Icons'
 import { DropdownMenu, MenuItem, IconButton, AnimatedPresence } from '../../../components/ui'
-import { InputToolbarModelSelector, type ModelSelectorHandle } from '../ModelSelector'
+import { ModelSelector, type ModelSelectorHandle } from '../ModelSelector'
 import { useChatViewport } from '../chatViewport'
 import { isTauri, isTauriMobile, extToMime } from '../../../utils/tauri'
 import type { ApiAgent } from '../../../api/client'
@@ -185,12 +185,14 @@ export function InputToolbar({
       <div className={`flex items-center min-w-0 ${isCompact ? 'gap-1' : 'gap-2'}`}>
         {/* Model Selector — 移动端显示在最左边 */}
         {isCompact && onModelChange && (
-          <InputToolbarModelSelector
+          <ModelSelector
             ref={modelSelectorRef}
             models={models}
             selectedModelKey={selectedModelKey}
             onSelect={onModelChange}
             isLoading={modelsLoading}
+            position="top"
+            trigger="toolbar"
             constrainToRef={inputContainerRef}
           />
         )}

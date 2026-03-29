@@ -1,6 +1,8 @@
 /**
- * ModelSelector - 模型选择器
- * 毛玻璃风格：无生硬分隔线，分组标签内联，列表上下渐隐遮罩
+ * ModelSelector - 统一模型选择器
+ *
+ * 单一组件同时服务 PC 端（Header）和移动端（InputToolbar）。
+ * 通过 props 控制触发按钮样式、弹出方向等差异。
  */
 
 import { useState, useRef, useEffect, useMemo, useCallback, memo, forwardRef, useImperativeHandle } from 'react'
@@ -8,7 +10,7 @@ import { useTranslation } from 'react-i18next'
 import { ChevronDownIcon, SearchIcon, ThinkingIcon, EyeIcon, CheckIcon, PinIcon } from '../../components/Icons'
 import { DropdownMenu } from '../../components/ui'
 import type { ModelInfo } from '../../api'
-import { useChatViewport } from './chatViewport'
+import { useInputCapabilities } from '../../hooks/useInputCapabilities'
 import {
   getModelKey,
   groupModelsByProvider,
@@ -19,24 +21,38 @@ import {
   toggleModelPin,
 } from '../../utils/modelUtils'
 
+// ============================================
+// Public types
+// ============================================
+
+export interface ModelSelectorHandle {
+  openMenu: () => void
+}
+
 interface ModelSelectorProps {
   models: ModelInfo[]
   selectedModelKey: string | null
   onSelect: (modelKey: string, model: ModelInfo) => void
   isLoading?: boolean
   disabled?: boolean
+  /** 弹出方向 */
+  position?: 'bottom' | 'top'
+  /** 约束菜单边界的容器 ref */
+  constrainToRef?: React.RefObject<HTMLElement | null>
+  /** 触发按钮的展示风格 */
+  trigger?: 'header' | 'toolbar'
 }
 
-export interface ModelSelectorHandle {
-  openMenu: () => void
-}
+// ============================================
+// Internal types
+// ============================================
 
 type FlatListItem =
   | { type: 'header'; data: { name: string }; key: string }
   | { type: 'item'; data: ModelInfo; key: string }
 
 // ============================================
-// 共用的分组数据 hook
+// Flat list hook（分组 + 置顶 + 最近）
 // ============================================
 
 function useFlatList(
@@ -90,7 +106,7 @@ function useFlatList(
 }
 
 // ============================================
-// 共用的列表渲染组件
+// ModelListPanel — 列表面板
 // ============================================
 
 interface ModelListPanelProps {
@@ -106,7 +122,7 @@ interface ModelListPanelProps {
   highlightedIndex: number
   selectedModelKey: string | null
   onItemClick: (model: ModelInfo) => void
-  onTogglePin?: (e: React.MouseEvent, model: ModelInfo) => void
+  onTogglePin: (e: React.MouseEvent, model: ModelInfo) => void
   onTouchStart?: (model: ModelInfo) => void
   onTouchEnd?: () => void
   ignoreMouseRef: React.RefObject<boolean>
@@ -116,8 +132,7 @@ interface ModelListPanelProps {
   searchPlaceholder: string
   noResultsText: string
   noResultsHint: string
-  /** PC 端显示 provider 列、context 列、pin 按钮 */
-  showMeta?: boolean
+  preferTouchUi: boolean
 }
 
 const ModelListPanel = memo(function ModelListPanel({
@@ -143,11 +158,11 @@ const ModelListPanel = memo(function ModelListPanel({
   searchPlaceholder,
   noResultsText,
   noResultsHint,
-  showMeta = false,
+  preferTouchUi,
 }: ModelListPanelProps) {
   return (
     <div ref={menuRef} onKeyDown={handleKeyDown} className="flex flex-col min-h-0 px-1.5 pt-1.5">
-      {/* 搜索栏 — 固定在顶部，不参与滚动 */}
+      {/* 搜索栏 */}
       <div className="shrink-0 px-0.5 pb-1.5">
         <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-bg-200/40 transition-colors focus-within:bg-bg-200/60">
           <SearchIcon className="w-3.5 h-3.5 text-text-400 flex-shrink-0" />
@@ -166,7 +181,7 @@ const ModelListPanel = memo(function ModelListPanel({
         </div>
       </div>
 
-      {/* 列表 — 中间唯一滚动区域 */}
+      {/* 列表 */}
       <div ref={listRef} className={`overflow-y-auto custom-scrollbar flex-1 min-h-0 ${maxListHeight}`}>
         {flatList.length === 0 ? (
           <div className="px-4 py-10 text-center">
@@ -215,13 +230,8 @@ const ModelListPanel = memo(function ModelListPanel({
                     ${isHL && !isSelected ? 'bg-bg-200/40 text-text-100' : ''}
                   `}
                 >
-                  {/* Left: Name + capabilities */}
+                  {/* Left: name + capability icons */}
                   <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
-                    {pinned && (
-                      <span className="text-accent-main-100/50 shrink-0">
-                        <PinIcon size={11} />
-                      </span>
-                    )}
                     <span className={`truncate font-medium ${isSelected ? 'text-accent-main-100' : 'text-text-100'}`}>
                       {model.name}
                     </span>
@@ -233,41 +243,45 @@ const ModelListPanel = memo(function ModelListPanel({
                     </div>
                   </div>
 
-                  {/* Right: Meta */}
-                  {showMeta ? (
-                    <div className="flex items-center gap-3 text-xs font-mono flex-shrink-0">
-                      <span className="text-text-500 max-w-[100px] truncate text-right">{model.providerName}</span>
-                      <span className="text-text-500 w-[4ch] text-right">{formatContext(model.contextLimit)}</span>
-                      {onTogglePin && (
+                  {/* Right: provider + context + trailing icon (check / pin, mutually exclusive) */}
+                  <div className="flex items-center gap-2 text-xs font-mono flex-shrink-0">
+                    <span className="text-text-500 max-w-[100px] truncate text-right">{model.providerName}</span>
+                    {model.contextLimit > 0 && (
+                      <span className="text-text-500 w-[4ch] text-right hidden sm:inline">
+                        {formatContext(model.contextLimit)}
+                      </span>
+                    )}
+                    {/*
+                     * 末尾图标位：选中 / 已钉住 / hover pin 共享同一个固定宽度位置
+                     * 优先级：选中对勾 > 已钉住图标 > hover 时渐现的 pin 按钮
+                     */}
+                    <span className="w-5 flex items-center justify-center flex-shrink-0">
+                      {isSelected ? (
+                        <span className="text-accent-secondary-100">
+                          <CheckIcon />
+                        </span>
+                      ) : preferTouchUi ? (
+                        // 触摸设备：已钉住时显示钉子图标（长按切换）
+                        pinned ? (
+                          <span className="text-accent-main-100/60">
+                            <PinIcon size={12} />
+                          </span>
+                        ) : null
+                      ) : (
+                        // 鼠标设备：已钉住常驻，未钉住 hover 渐现
                         <button
                           onClick={e => onTogglePin(e, model)}
-                          className={`flex-shrink-0 p-0.5 rounded transition-all duration-150 ${
+                          className={`p-0.5 rounded transition-all duration-150 ${
                             pinned
                               ? 'text-accent-main-100 opacity-80 hover:opacity-100'
                               : 'text-text-500 opacity-0 group-hover:opacity-40 hover:!opacity-100'
                           }`}
                         >
-                          <PinIcon size={13} />
+                          <PinIcon size={12} />
                         </button>
                       )}
-                      {isSelected && (
-                        <span className="text-accent-secondary-100 flex-shrink-0">
-                          <CheckIcon />
-                        </span>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      {isSelected && (
-                        <span className="text-accent-secondary-100">
-                          <CheckIcon />
-                        </span>
-                      )}
-                      {!isSelected && (
-                        <span className="text-xs text-text-500 truncate max-w-[80px]">{model.providerName}</span>
-                      )}
-                    </div>
-                  )}
+                    </span>
+                  </div>
                 </div>
               )
             })}
@@ -278,16 +292,33 @@ const ModelListPanel = memo(function ModelListPanel({
   )
 })
 
+function formatContext(limit: number): string {
+  if (!limit) return ''
+  const k = Math.round(limit / 1000)
+  if (k >= 1000) return `${(k / 1000).toFixed(0)}M`
+  return `${k}k`
+}
+
 // ============================================
-// PC 端 ModelSelector
+// ModelSelector — 统一组件
 // ============================================
 
 export const ModelSelector = memo(
   forwardRef<ModelSelectorHandle, ModelSelectorProps>(function ModelSelector(
-    { models, selectedModelKey, onSelect, isLoading = false, disabled = false },
+    {
+      models,
+      selectedModelKey,
+      onSelect,
+      isLoading = false,
+      disabled = false,
+      position = 'bottom',
+      constrainToRef,
+      trigger = 'header',
+    },
     ref,
   ) {
     const { t } = useTranslation('chat')
+    const { preferTouchUi } = useInputCapabilities()
     const [isOpen, setIsOpen] = useState(false)
     const [searchQuery, setSearchQuery] = useState('')
     const [highlightedIndex, setHighlightedIndex] = useState(0)
@@ -300,6 +331,10 @@ export const ModelSelector = memo(
     const menuRef = useRef<HTMLDivElement>(null)
     const ignoreMouseRef = useRef(false)
     const lastMousePosRef = useRef({ x: 0, y: 0 })
+
+    const idPrefix = trigger === 'header' ? 'ms-item' : 'ms-tb-item'
+
+    // ---- Derived data ----
 
     const filteredModels = useMemo(() => {
       if (!searchQuery.trim()) return models
@@ -326,7 +361,11 @@ export const ModelSelector = memo(
     }, [models, selectedModelKey])
 
     const displayName =
-      selectedModel?.name || (isLoading ? t('modelSelector.selectModel') : t('modelSelector.selectModel'))
+      trigger === 'header'
+        ? selectedModel?.name || t('modelSelector.selectModel')
+        : selectedModel?.name || (isLoading ? '...' : t('modelSelector.model'))
+
+    // ---- Open / Close ----
 
     const openMenu = useCallback(() => {
       if (disabled || isLoading) return
@@ -350,10 +389,12 @@ export const ModelSelector = memo(
     const closeMenu = useCallback(() => {
       setIsOpen(false)
       setSearchQuery('')
-      triggerRef.current?.focus()
-    }, [])
+      if (trigger === 'header') triggerRef.current?.focus()
+    }, [trigger])
 
     useImperativeHandle(ref, () => ({ openMenu }), [openMenu])
+
+    // ---- Select / Pin ----
 
     const handleSelect = useCallback(
       (model: ModelInfo) => {
@@ -372,243 +413,8 @@ export const ModelSelector = memo(
       setRefreshTrigger(c => c + 1)
     }, [])
 
-    useEffect(() => {
-      if (isOpen) setTimeout(() => searchInputRef.current?.focus(), 50)
-    }, [isOpen])
+    // ---- Long press to pin (touch devices) ----
 
-    useEffect(() => {
-      if (!isOpen) return
-      const handleClickOutside = (e: MouseEvent) => {
-        const target = e.target as Node
-        if (
-          containerRef.current &&
-          !containerRef.current.contains(target) &&
-          menuRef.current &&
-          !menuRef.current.contains(target)
-        ) {
-          closeMenu()
-        }
-      }
-      document.addEventListener('mousedown', handleClickOutside)
-      return () => document.removeEventListener('mousedown', handleClickOutside)
-    }, [isOpen, closeMenu])
-
-    useEffect(() => {
-      if (!isOpen) return
-      const handleEsc = (e: KeyboardEvent) => {
-        if (e.key === 'Escape') {
-          e.preventDefault()
-          e.stopPropagation()
-          closeMenu()
-        }
-      }
-      document.addEventListener('keydown', handleEsc, { capture: true })
-      return () => document.removeEventListener('keydown', handleEsc, { capture: true })
-    }, [isOpen, closeMenu])
-
-    useEffect(() => {
-      if (!isOpen) return
-      requestAnimationFrame(() => {
-        const realIndex = itemIndices[highlightedIndex]
-        document.getElementById(`list-item-${realIndex}`)?.scrollIntoView({ block: 'nearest' })
-      })
-    }, [isOpen, highlightedIndex, itemIndices])
-
-    const handleKeyDown = useCallback(
-      (e: React.KeyboardEvent) => {
-        e.stopPropagation()
-        switch (e.key) {
-          case 'ArrowDown':
-            e.preventDefault()
-            setHighlightedIndex(prev => {
-              const next = Math.min(prev + 1, itemIndices.length - 1)
-              document.getElementById(`list-item-${itemIndices[next]}`)?.scrollIntoView({ block: 'nearest' })
-              return next
-            })
-            break
-          case 'ArrowUp':
-            e.preventDefault()
-            setHighlightedIndex(prev => {
-              const next = Math.max(prev - 1, 0)
-              document.getElementById(`list-item-${itemIndices[next]}`)?.scrollIntoView({ block: 'nearest' })
-              return next
-            })
-            break
-          case 'Enter': {
-            e.preventDefault()
-            const globalIndex = itemIndices[highlightedIndex]
-            const item = flatList[globalIndex]
-            if (item && item.type === 'item') handleSelect(item.data)
-            break
-          }
-          case 'Escape':
-            e.preventDefault()
-            closeMenu()
-            break
-        }
-      },
-      [itemIndices, flatList, highlightedIndex, handleSelect, closeMenu],
-    )
-
-    return (
-      <div ref={containerRef} className="relative font-sans" data-dropdown-open={isOpen || undefined}>
-        <button
-          ref={triggerRef}
-          onClick={() => (isOpen ? closeMenu() : openMenu())}
-          disabled={disabled || isLoading}
-          className="group flex items-center gap-2 px-2 py-1.5 text-text-200 rounded-lg hover:bg-bg-200 hover:text-text-100 transition-all duration-150 active:scale-95 cursor-pointer text-sm"
-          title={displayName}
-        >
-          <span className="font-medium truncate max-w-[240px]">{displayName}</span>
-          <div className={`opacity-50 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}>
-            <ChevronDownIcon size={10} />
-          </div>
-        </button>
-
-        <DropdownMenu
-          triggerRef={triggerRef}
-          isOpen={isOpen}
-          position="bottom"
-          align="left"
-          width="460px"
-          minWidth="280px"
-          maxWidth="min(460px, calc(100vw - 24px))"
-          mobileFullWidth
-          className="!p-0 overflow-hidden flex flex-col max-h-[min(600px,70vh)]"
-        >
-          <ModelListPanel
-            menuRef={menuRef}
-            searchInputRef={searchInputRef}
-            listRef={listRef}
-            searchQuery={searchQuery}
-            setSearchQuery={setSearchQuery}
-            setHighlightedIndex={setHighlightedIndex}
-            handleKeyDown={handleKeyDown}
-            flatList={flatList}
-            itemIndices={itemIndices}
-            highlightedIndex={highlightedIndex}
-            selectedModelKey={selectedModelKey}
-            onItemClick={handleSelect}
-            onTogglePin={handleTogglePin}
-            ignoreMouseRef={ignoreMouseRef}
-            lastMousePosRef={lastMousePosRef}
-            idPrefix="list-item"
-            maxListHeight="max-h-[min(500px,60vh)]"
-            searchPlaceholder={t('modelSelector.searchModels')}
-            noResultsText={t('modelSelector.noModelsFound')}
-            noResultsHint={t('modelSelector.tryDifferentKeyword')}
-            showMeta
-          />
-        </DropdownMenu>
-      </div>
-    )
-  }),
-)
-
-function formatContext(limit: number): string {
-  if (!limit) return ''
-  const k = Math.round(limit / 1000)
-  if (k >= 1000) return `${(k / 1000).toFixed(0)}M`
-  return `${k}k`
-}
-
-// ============================================
-// 移动端 InputToolbarModelSelector
-// ============================================
-
-interface InputToolbarModelSelectorProps {
-  models: ModelInfo[]
-  selectedModelKey: string | null
-  onSelect: (modelKey: string, model: ModelInfo) => void
-  isLoading?: boolean
-  disabled?: boolean
-  constrainToRef?: React.RefObject<HTMLElement | null>
-}
-
-export const InputToolbarModelSelector = memo(
-  forwardRef<ModelSelectorHandle, InputToolbarModelSelectorProps>(function InputToolbarModelSelector(
-    { models, selectedModelKey, onSelect, isLoading = false, disabled = false, constrainToRef },
-    ref,
-  ) {
-    const { t } = useTranslation('chat')
-    const { presentation } = useChatViewport()
-    const [isOpen, setIsOpen] = useState(false)
-    const [searchQuery, setSearchQuery] = useState('')
-    const [highlightedIndex, setHighlightedIndex] = useState(0)
-    const [refreshTrigger, setRefreshTrigger] = useState(0)
-
-    const containerRef = useRef<HTMLDivElement>(null)
-    const triggerRef = useRef<HTMLButtonElement>(null)
-    const searchInputRef = useRef<HTMLInputElement>(null)
-    const listRef = useRef<HTMLDivElement>(null)
-    const menuRef = useRef<HTMLDivElement>(null)
-    const ignoreMouseRef = useRef(false)
-    const lastMousePosRef = useRef({ x: 0, y: 0 })
-
-    const filteredModels = useMemo(() => {
-      if (!searchQuery.trim()) return models
-      const query = searchQuery.toLowerCase()
-      const normalize = (value: unknown) => (typeof value === 'string' ? value : '').toLowerCase()
-      return models.filter(
-        m =>
-          normalize(m.name).includes(query) ||
-          normalize(m.id).includes(query) ||
-          normalize(m.family).includes(query) ||
-          normalize(m.providerName).includes(query),
-      )
-    }, [models, searchQuery])
-
-    const flatList = useFlatList(models, filteredModels, searchQuery, refreshTrigger, t)
-
-    const itemIndices = useMemo(() => {
-      return flatList.map((item, index) => (item.type === 'item' ? index : -1)).filter(i => i !== -1)
-    }, [flatList])
-
-    const selectedModel = useMemo(() => {
-      if (!selectedModelKey) return null
-      return models.find(m => getModelKey(m) === selectedModelKey) ?? null
-    }, [models, selectedModelKey])
-
-    const displayName = selectedModel?.name || (isLoading ? '...' : t('modelSelector.model'))
-
-    const openMenu = useCallback(() => {
-      if (disabled || isLoading) return
-      let targetIndex = 0
-      if (selectedModelKey) {
-        const index = flatList.findIndex(item => item.type === 'item' && getModelKey(item.data) === selectedModelKey)
-        if (index !== -1) {
-          const interactiveIndex = itemIndices.indexOf(index)
-          if (interactiveIndex !== -1) targetIndex = interactiveIndex
-        }
-      }
-      setHighlightedIndex(targetIndex)
-      setIsOpen(true)
-      setSearchQuery('')
-      ignoreMouseRef.current = true
-      setTimeout(() => {
-        ignoreMouseRef.current = false
-      }, 300)
-    }, [disabled, isLoading, selectedModelKey, flatList, itemIndices])
-
-    const closeMenu = useCallback(() => {
-      setIsOpen(false)
-      setSearchQuery('')
-    }, [])
-
-    useImperativeHandle(ref, () => ({ openMenu }), [openMenu])
-
-    const handleSelect = useCallback(
-      (model: ModelInfo) => {
-        const key = getModelKey(model)
-        recordModelUsage(model)
-        onSelect(key, model)
-        closeMenu()
-        setRefreshTrigger(c => c + 1)
-      },
-      [onSelect, closeMenu],
-    )
-
-    // 长按置顶
     const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const longPressFiredRef = useRef(false)
 
@@ -640,6 +446,8 @@ export const InputToolbarModelSelector = memo(
       [handleSelect],
     )
 
+    // ---- Side effects ----
+
     useEffect(() => {
       if (isOpen) setTimeout(() => searchInputRef.current?.focus(), 50)
     }, [isOpen])
@@ -678,9 +486,11 @@ export const InputToolbarModelSelector = memo(
       if (!isOpen) return
       requestAnimationFrame(() => {
         const realIndex = itemIndices[highlightedIndex]
-        document.getElementById(`itms-item-${realIndex}`)?.scrollIntoView({ block: 'nearest' })
+        document.getElementById(`${idPrefix}-${realIndex}`)?.scrollIntoView({ block: 'nearest' })
       })
-    }, [isOpen, highlightedIndex, itemIndices])
+    }, [isOpen, highlightedIndex, itemIndices, idPrefix])
+
+    // ---- Keyboard navigation ----
 
     const handleKeyDown = useCallback(
       (e: React.KeyboardEvent) => {
@@ -690,7 +500,7 @@ export const InputToolbarModelSelector = memo(
             e.preventDefault()
             setHighlightedIndex(prev => {
               const next = Math.min(prev + 1, itemIndices.length - 1)
-              document.getElementById(`itms-item-${itemIndices[next]}`)?.scrollIntoView({ block: 'nearest' })
+              document.getElementById(`${idPrefix}-${itemIndices[next]}`)?.scrollIntoView({ block: 'nearest' })
               return next
             })
             break
@@ -698,7 +508,7 @@ export const InputToolbarModelSelector = memo(
             e.preventDefault()
             setHighlightedIndex(prev => {
               const next = Math.max(prev - 1, 0)
-              document.getElementById(`itms-item-${itemIndices[next]}`)?.scrollIntoView({ block: 'nearest' })
+              document.getElementById(`${idPrefix}-${itemIndices[next]}`)?.scrollIntoView({ block: 'nearest' })
               return next
             })
             break
@@ -715,37 +525,63 @@ export const InputToolbarModelSelector = memo(
             break
         }
       },
-      [itemIndices, flatList, highlightedIndex, handleSelect, closeMenu],
+      [itemIndices, flatList, highlightedIndex, handleSelect, closeMenu, idPrefix],
     )
 
-    return (
-      <div ref={containerRef} className="relative font-sans min-w-0 overflow-hidden">
+    // ---- Trigger button ----
+
+    const triggerButton =
+      trigger === 'header' ? (
         <button
           ref={triggerRef}
           onClick={() => (isOpen ? closeMenu() : openMenu())}
           disabled={disabled || isLoading}
-          className="flex items-center gap-1.5 px-2 py-1.5 text-sm rounded-lg transition-all duration-150 hover:bg-bg-200 active:scale-95 cursor-pointer min-w-0 overflow-hidden w-full"
+          className="group flex items-center gap-2 px-2 py-1.5 text-text-200 rounded-lg hover:bg-bg-200 hover:text-text-100 transition-all duration-150 active:scale-95 cursor-pointer text-sm"
+          title={displayName}
+        >
+          <span className="font-medium truncate max-w-[240px]">{displayName}</span>
+          <div className={`opacity-50 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}>
+            <ChevronDownIcon size={10} />
+          </div>
+        </button>
+      ) : (
+        <button
+          ref={triggerRef}
+          onClick={() => (isOpen ? closeMenu() : openMenu())}
+          disabled={disabled || isLoading}
+          className="flex items-center px-2 py-1.5 text-sm rounded-lg transition-all duration-150 hover:bg-bg-200 active:scale-95 cursor-pointer min-w-0 overflow-hidden w-full"
           title={selectedModel?.name || t('modelSelector.selectModel')}
         >
           <span className="text-xs text-text-300 truncate">{displayName}</span>
-          {!presentation.isCompact && (
-            <span className="text-text-400 shrink-0">
-              <ChevronDownIcon />
-            </span>
-          )}
         </button>
+      )
+
+    // ---- Dropdown config ----
+
+    const dropdownMaxH = position === 'top' ? 'max-h-[min(360px,45vh)]' : 'max-h-[min(600px,70vh)]'
+    const listMaxH = position === 'top' ? 'max-h-[min(320px,40vh)]' : 'max-h-[min(500px,60vh)]'
+
+    // ---- Render ----
+
+    return (
+      <div
+        ref={containerRef}
+        className={`relative font-sans ${trigger === 'toolbar' ? 'min-w-0 overflow-hidden' : ''}`}
+        data-dropdown-open={isOpen || undefined}
+      >
+        {triggerButton}
 
         <DropdownMenu
           triggerRef={triggerRef}
           isOpen={isOpen}
-          position="top"
+          position={position}
           align="left"
           width="460px"
           minWidth="280px"
           maxWidth="min(460px, calc(100vw - 24px))"
           mobileFullWidth
           constrainToRef={constrainToRef}
-          className="!p-0 overflow-hidden flex flex-col max-h-[min(360px,45vh)]"
+          className={`!p-0 overflow-hidden flex flex-col ${dropdownMaxH}`}
         >
           <ModelListPanel
             menuRef={menuRef}
@@ -760,15 +596,17 @@ export const InputToolbarModelSelector = memo(
             highlightedIndex={highlightedIndex}
             selectedModelKey={selectedModelKey}
             onItemClick={handleItemClick}
+            onTogglePin={handleTogglePin}
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
             ignoreMouseRef={ignoreMouseRef}
             lastMousePosRef={lastMousePosRef}
-            idPrefix="itms-item"
-            maxListHeight="max-h-[min(320px,40vh)]"
+            idPrefix={idPrefix}
+            maxListHeight={listMaxH}
             searchPlaceholder={t('modelSelector.searchModels')}
             noResultsText={t('modelSelector.noModelsFound')}
             noResultsHint={t('modelSelector.tryDifferentKeyword')}
+            preferTouchUi={preferTouchUi}
           />
         </DropdownMenu>
       </div>

@@ -8,6 +8,10 @@ vi.mock('../../components/ui', () => ({
     isOpen ? <div>{children}</div> : null,
 }))
 
+vi.mock('../../hooks/useInputCapabilities', () => ({
+  useInputCapabilities: () => ({ preferTouchUi: false }),
+}))
+
 vi.mock('../../utils/modelUtils', () => ({
   getModelKey: (model: ModelInfo) => `${model.providerId}:${model.id}`,
   groupModelsByProvider: (models: ModelInfo[]) => [
