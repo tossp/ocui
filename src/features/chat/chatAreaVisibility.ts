@@ -88,6 +88,10 @@ export interface VisibleMessageEntry {
   sourceIds: string[]
 }
 
+export function getVisibleMessageForkTargetId(entry: VisibleMessageEntry): string {
+  return entry.sourceIds[entry.sourceIds.length - 1] || entry.message.info.id
+}
+
 export function buildVisibleMessageEntries(messages: Message[]): VisibleMessageEntry[] {
   // 防御性去重：保证输入无重复 ID
   const seenIds = new Set<string>()

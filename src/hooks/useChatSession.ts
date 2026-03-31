@@ -44,7 +44,7 @@ import {
   type Attachment,
   type ModelInfo,
 } from '../api'
-import { getMessageText, type Message as UIMessage } from '../types/message'
+import { getMessageText, type AssistantMessageInfo, type Message as UIMessage } from '../types/message'
 import { clipboardErrorHandler, copyTextToClipboard, createErrorHandler, isSameDirectory } from '../utils'
 import { serverStorage } from '../utils/perServerStorage'
 import { UNDO_SCROLL_DELAY_MS, STORAGE_KEY_SELECTED_AGENT } from '../constants'
@@ -477,16 +477,39 @@ export function useChatSession({ chatAreaRef, currentModel, refetchModels }: Use
   }, [routeSessionId, resetPermissions, resetPendingRequests])
 
   const handleForkMessage = useCallback(
-    async (message: UIMessage) => {
-      if (message.info.role !== 'user') return
+    async (message: UIMessage, forkMessageId?: string) => {
+      const targetMessageId = forkMessageId || message.info.id
 
       try {
+        if (message.info.role === 'assistant') {
+          const assistantInfo = message.info as AssistantMessageInfo
+          // 后端 fork 语义：messageID 指定的消息**不包含**在新 session 里。
+          // 要保留这条 assistant 回复，需要传它之后的下一条用户消息 ID；
+          // 如果它已经是最末尾，不传 messageID，fork 整个 session。
+          const idx = messages.findIndex(m => m.info.id === targetMessageId)
+          let forkAtMessageId: string | undefined
+          if (idx >= 0) {
+            for (let i = idx + 1; i < messages.length; i++) {
+              if (messages[i].info.role === 'user') {
+                forkAtMessageId = messages[i].info.id
+                break
+              }
+            }
+          }
+          const forkedSession = await forkSession(assistantInfo.sessionID, forkAtMessageId, effectiveDirectory)
+          setRestoredContent(null)
+          navigateToSession(forkedSession.id, forkedSession.directory)
+          return
+        }
+
+        if (message.info.role !== 'user') return
+
         const userInfo = message.info as unknown as ApiUserMessage
         const content = extractUserMessageContent({
           info: message.info as ApiMessageWithParts['info'],
           parts: message.parts as unknown as ApiMessageWithParts['parts'],
         })
-        const forkedSession = await forkSession(userInfo.sessionID, userInfo.id, effectiveDirectory)
+        const forkedSession = await forkSession(userInfo.sessionID, targetMessageId, effectiveDirectory)
 
         setRestoredContent({
           sessionId: forkedSession.id,
@@ -505,7 +528,7 @@ export function useChatSession({ chatAreaRef, currentModel, refetchModels }: Use
         handleError('fork session', error)
       }
     },
-    [effectiveDirectory, navigateToSession],
+    [effectiveDirectory, messages, navigateToSession],
   )
 
   // Abort handler

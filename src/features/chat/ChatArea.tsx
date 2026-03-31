@@ -26,7 +26,7 @@ import { messageStore } from '../../store'
 import { useTheme } from '../../hooks/useTheme'
 import type { Message } from '../../types/message'
 import { RetryStatusInline, type RetryStatusInlineData } from './RetryStatusInline'
-import { buildVisibleMessageEntries } from './chatAreaVisibility'
+import { buildVisibleMessageEntries, getVisibleMessageForkTargetId } from './chatAreaVisibility'
 import { AT_BOTTOM_THRESHOLD_PX } from '../../constants'
 import { useChatViewport } from './chatViewport'
 
@@ -42,7 +42,7 @@ interface ChatAreaProps {
   hasMoreHistory?: boolean
   onLoadMore?: () => void | Promise<void>
   onUndo?: (userMessageId: string) => void
-  onFork?: (message: Message) => void | Promise<void>
+  onFork?: (message: Message, forkMessageId?: string) => void | Promise<void>
   canUndo?: boolean
   registerMessage?: (id: string, element: HTMLElement | null) => void
   retryStatus?: RetryStatusInlineData | null
@@ -106,6 +106,11 @@ export const ChatArea = memo(
       // ---- Data ----
       const visibleMessageEntries = useMemo(() => buildVisibleMessageEntries(messages), [messages])
       const visibleMessages = useMemo(() => visibleMessageEntries.map(e => e.message), [visibleMessageEntries])
+      const forkTargetIdMap = useMemo(
+        () =>
+          new Map(visibleMessageEntries.map(entry => [entry.message.info.id, getVisibleMessageForkTargetId(entry)])),
+        [visibleMessageEntries],
+      )
 
       const turnDurationMap = useMemo(() => {
         const map = new Map<string, number>()
@@ -397,6 +402,7 @@ export const ChatArea = memo(
                         turnDuration={turnDurationMap.get(msg.info.id)}
                         onUndo={onUndo}
                         onFork={onFork}
+                        forkMessageId={forkTargetIdMap.get(msg.info.id)}
                         canUndo={canUndo}
                         onEnsureParts={id => {
                           if (!sessionId) return
@@ -421,6 +427,7 @@ export const ChatArea = memo(
           messagePaddingClass,
           sessionId,
           turnDurationMap,
+          forkTargetIdMap,
           allowStreamingLayoutAnimation,
         ],
       )

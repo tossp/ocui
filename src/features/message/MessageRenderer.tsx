@@ -47,7 +47,8 @@ interface MessageRendererProps {
   /** 回合总时长（毫秒），仅在回合最后一条 assistant 消息上有值 */
   turnDuration?: number
   onUndo?: (userMessageId: string) => void
-  onFork?: (message: Message) => Promise<void> | void
+  onFork?: (message: Message, forkMessageId?: string) => Promise<void> | void
+  forkMessageId?: string
   canUndo?: boolean
   onEnsureParts?: (messageId: string) => void
 }
@@ -58,6 +59,7 @@ export const MessageRenderer = memo(function MessageRenderer({
   turnDuration,
   onUndo,
   onFork,
+  forkMessageId,
   canUndo,
   onEnsureParts,
 }: MessageRendererProps) {
@@ -65,7 +67,15 @@ export const MessageRenderer = memo(function MessageRenderer({
   const isUser = info.role === 'user'
 
   if (isUser) {
-    return <UserMessageView message={message} onUndo={onUndo} onFork={onFork} canUndo={canUndo} />
+    return (
+      <UserMessageView
+        message={message}
+        onUndo={onUndo}
+        onFork={onFork}
+        forkMessageId={forkMessageId}
+        canUndo={canUndo}
+      />
+    )
   }
 
   return (
@@ -73,6 +83,8 @@ export const MessageRenderer = memo(function MessageRenderer({
       message={message}
       allowStreamingLayoutAnimation={allowStreamingLayoutAnimation}
       turnDuration={turnDuration}
+      onFork={onFork}
+      forkMessageId={forkMessageId}
       onEnsureParts={onEnsureParts}
     />
   )
@@ -189,6 +201,45 @@ const CollapsibleUserText = memo(function CollapsibleUserText({
   )
 })
 
+interface ForkActionButtonProps {
+  message: Message
+  onFork?: (message: Message, forkMessageId?: string) => Promise<void> | void
+  forkMessageId?: string
+}
+
+const ForkActionButton = memo(function ForkActionButton({ message, onFork, forkMessageId }: ForkActionButtonProps) {
+  const { t } = useTranslation('message')
+  const [isForking, setIsForking] = useState(false)
+
+  const handleFork = useCallback(async () => {
+    if (!onFork || isForking) return
+
+    setIsForking(true)
+
+    try {
+      await onFork(message, forkMessageId)
+    } catch {
+      // 业务错误由上层统一处理
+    } finally {
+      setIsForking(false)
+    }
+  }, [forkMessageId, isForking, message, onFork])
+
+  if (!onFork) return null
+
+  return (
+    <button
+      onClick={() => void handleFork()}
+      disabled={isForking}
+      className="p-1.5 rounded-md transition-colors duration-150 text-text-400 hover:text-text-200 disabled:cursor-default disabled:text-text-500"
+      title={isForking ? t('forkingFromHere') : t('forkFromHere')}
+      aria-label={isForking ? t('forkingFromHere') : t('forkFromHere')}
+    >
+      {isForking ? <SpinnerIcon className="animate-spin" /> : <SplitIcon />}
+    </button>
+  )
+})
+
 // ============================================
 // User Message View
 // ============================================
@@ -196,15 +247,21 @@ const CollapsibleUserText = memo(function CollapsibleUserText({
 interface UserMessageViewProps {
   message: Message
   onUndo?: (userMessageId: string) => void
-  onFork?: (message: Message) => Promise<void> | void
+  onFork?: (message: Message, forkMessageId?: string) => Promise<void> | void
+  forkMessageId?: string
   canUndo?: boolean
 }
 
-const UserMessageView = memo(function UserMessageView({ message, onUndo, onFork, canUndo }: UserMessageViewProps) {
+const UserMessageView = memo(function UserMessageView({
+  message,
+  onUndo,
+  onFork,
+  forkMessageId,
+  canUndo,
+}: UserMessageViewProps) {
   const { t } = useTranslation('message')
   const { parts, info } = message
   const [showSystemContext, setShowSystemContext] = useState(false)
-  const [isForking, setIsForking] = useState(false)
   const shouldRenderSystemContext = useDelayedRender(showSystemContext)
   const { collapseUserMessages } = useTheme()
 
@@ -218,20 +275,6 @@ const UserMessageView = memo(function UserMessageView({ message, onUndo, onFork,
 
   const hasSystemContext = syntheticParts.length > 0
   const messageText = textParts.map(p => p.text).join('')
-
-  const handleFork = useCallback(async () => {
-    if (!onFork || isForking) return
-
-    setIsForking(true)
-
-    try {
-      await onFork(message)
-    } catch {
-      // 业务错误由上层统一处理
-    } finally {
-      setIsForking(false)
-    }
-  }, [isForking, message, onFork])
 
   return (
     <div ref={wrapperRef} className="flex flex-col items-end group">
@@ -298,17 +341,7 @@ const UserMessageView = memo(function UserMessageView({ message, onUndo, onFork,
               <UndoIcon />
             </button>
           )}
-          {onFork && (
-            <button
-              onClick={() => void handleFork()}
-              disabled={isForking}
-              className="p-1.5 rounded-md transition-colors duration-150 text-text-400 hover:text-text-200 disabled:cursor-default disabled:text-text-500"
-              title={isForking ? t('forkingFromHere') : t('forkFromHere')}
-              aria-label={isForking ? t('forkingFromHere') : t('forkFromHere')}
-            >
-              {isForking ? <SpinnerIcon className="animate-spin" /> : <SplitIcon />}
-            </button>
-          )}
+          <ForkActionButton message={message} onFork={onFork} forkMessageId={forkMessageId} />
           {/* Copy button */}
           {messageText && <CopyButton text={messageText} position="static" />}
         </div>
@@ -325,11 +358,15 @@ const AssistantMessageView = memo(function AssistantMessageView({
   message,
   allowStreamingLayoutAnimation = true,
   turnDuration,
+  onFork,
+  forkMessageId,
   onEnsureParts,
 }: {
   message: Message
   allowStreamingLayoutAnimation?: boolean
   turnDuration?: number
+  onFork?: (message: Message, forkMessageId?: string) => Promise<void> | void
+  forkMessageId?: string
   onEnsureParts?: (messageId: string) => void
 }) {
   const { parts, isStreaming, info } = message
@@ -466,10 +503,10 @@ const AssistantMessageView = memo(function AssistantMessageView({
         </div>
       )}
 
-      {/* Copy button */}
-      {fullText.trim() && (
-        <div className="md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 [@media(any-pointer:coarse)]:opacity-100 transition-opacity">
-          <CopyButton text={fullText} position="static" />
+      {(onFork || fullText.trim()) && (
+        <div className="flex items-center gap-1 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 [@media(any-pointer:coarse)]:opacity-100 transition-opacity">
+          <ForkActionButton message={message} onFork={onFork} forkMessageId={forkMessageId} />
+          {fullText.trim() && <CopyButton text={fullText} position="static" />}
         </div>
       )}
     </div>

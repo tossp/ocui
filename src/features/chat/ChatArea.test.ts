@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildVisibleMessageEntries } from './chatAreaVisibility'
+import { buildVisibleMessageEntries, getVisibleMessageForkTargetId } from './chatAreaVisibility'
 import type { Message, Part, ToolPart, ReasoningPart } from '../../types/message'
 
 function createAssistantMessage(id: string, parts: Part[]): Message {
@@ -75,5 +75,15 @@ describe('buildVisibleMessageEntries', () => {
 
     expect(entries).toHaveLength(1)
     expect(entries[0].sourceIds).toEqual(['assistant-1', 'assistant-2'])
+  })
+
+  it('uses the latest merged assistant message as fork target', () => {
+    const first = createAssistantMessage('assistant-1', [createToolPart('tool-1', 'assistant-1')])
+    const second = createAssistantMessage('assistant-2', [createToolPart('tool-2', 'assistant-2')])
+
+    const entries = buildVisibleMessageEntries([first, second])
+
+    expect(entries).toHaveLength(1)
+    expect(getVisibleMessageForkTargetId(entries[0])).toBe('assistant-2')
   })
 })
