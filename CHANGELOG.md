@@ -1,5 +1,16 @@
 # Changelog
 
+## [v0.3.8] - 2026-03-31
+
+- feat: add fullscreen button to file preview and changes diff preview (9e4ca2d)
+- feat: enable fork from assistant messages to preserve AI replies (f2a0079)
+- refactor: unify floating component shadows to a consistent two-tier system (shadow-sm / shadow-lg) (1cf526e)
+- chore: upgrade dependencies (vite 8, i18next 26, lucide-react 1.x, etc.) (41498bf)
+- fix: adjust ModelSelector padding so scrollbar doesn't overlap list content (e7d6e4f)
+- refactor: unify ModelSelector into a single component for both PC and mobile (5b81638)
+- fix: sync session title to messageStore on SSE update for real-time header refresh (b74bb6a)
+- fix: align mobile header toggle spacing (1052826)
+
 ## [v0.3.7] - 2026-03-28
 
 - fix: remove double border on attachment meta when no content preview (d29a2f4)
