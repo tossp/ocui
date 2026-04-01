@@ -869,13 +869,17 @@ body {
  * Todo Swap Transition
  * ============================================ */
 
-[data-input-box],
-[data-floating-actions] {
+[data-input-box] {
   transform-origin: center bottom;
   transition:
     opacity 180ms cubic-bezier(0.4, 0, 0.2, 1),
     transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
   will-change: transform, opacity;
+}
+
+/* Floating actions contain backdrop-blur chips; avoid transform layers here so blur survives in WebView/Tauri. */
+[data-floating-actions] {
+  transition: opacity 180ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 [data-input-box][data-todo-swap='hidden'] {
@@ -887,7 +891,6 @@ body {
 /* todo panel 展开时同步隐藏 FloatingActions（undo/redo/permission 等） */
 :has([data-input-box][data-todo-swap='hidden']) > [data-floating-actions] {
   opacity: 0;
-  transform: translateY(18px) scale(0.985);
   pointer-events: none;
 }
 

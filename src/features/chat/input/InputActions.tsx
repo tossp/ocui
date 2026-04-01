@@ -11,8 +11,8 @@ import type { CollapsedDialogInfo } from '../InputBox'
 
 export function PresenceItem({ show, children }: { show: boolean; children: ReactNode }) {
   const { shouldRender, ref } = usePresence<HTMLDivElement>(show, {
-    from: { opacity: 0, transform: 'translateY(8px) scale(0.95)' },
-    to: { opacity: 1, transform: 'translateY(0px) scale(1)' },
+    from: { opacity: 0 },
+    to: { opacity: 1 },
     duration: 0.15,
   })
   if (!shouldRender) return null
