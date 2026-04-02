@@ -13,7 +13,14 @@ import { useViewportHeight } from './hooks/useViewportHeight'
 import { useCloseServiceDialog } from './hooks/useCloseServiceDialog'
 import type { KeybindingHandlers } from './hooks/useKeybindings'
 import { keybindingStore } from './store/keybindingStore'
-import { layoutStore, paneLayoutStore, useLayoutStore, usePaneController, usePaneLayout } from './store'
+import {
+  layoutStore,
+  paneLayoutStore,
+  useLayoutStore,
+  usePaneController,
+  usePaneControllers,
+  usePaneLayout,
+} from './store'
 import { ChatViewportProvider, CHAT_SURFACE_MIN_WIDTH, useChatViewportController } from './features/chat/chatViewport'
 import { uiErrorHandler, isSameDirectory } from './utils'
 import { initNotificationSound } from './utils/notificationSoundBridge'
@@ -40,7 +47,7 @@ function App() {
     navigateHome: navigateRouteHome,
     replaceSession,
   } = router
-  const { currentDirectory, savedDirectories, sidebarExpanded, setSidebarExpanded } = useDirectory()
+  const { currentDirectory, sidebarExpanded, setSidebarExpanded } = useDirectory()
   const { rightPanelOpen, rightPanelWidth } = useLayoutStore()
   const { surfaceRef, value: chatViewport } = useChatViewportController({
     sidebarExpanded,
@@ -49,6 +56,7 @@ function App() {
   })
   const paneLayout = usePaneLayout()
   const focusedController = usePaneController(paneLayout.focusedPaneId)
+  const paneControllers = usePaneControllers()
   const syncingFromRouteRef = useRef(false)
   const focusedRouteDirectory =
     paneLayout.focusedSessionId === routeSessionId
@@ -71,11 +79,12 @@ function App() {
       directories.push(directory)
     }
 
-    savedDirectories.forEach(directory => pushDirectory(directory.path))
+    pushDirectory(routeDirectory)
     pushDirectory(currentDirectory)
+    paneControllers.forEach(controller => pushDirectory(controller.effectiveDirectory))
 
     return directories
-  }, [savedDirectories, currentDirectory])
+  }, [routeDirectory, currentDirectory, paneControllers])
 
   // 全局唯一 SSE 连接。所有 pane 通过 consumer 机制接收自己的 session 事件。
   useGlobalEvents(activeDirectories)

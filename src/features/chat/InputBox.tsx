@@ -40,7 +40,7 @@ export interface CollapsedDialogInfo {
 }
 
 export interface InputBoxProps {
-  paneId?: string
+  paneId: string
   onSend: (
     text: string,
     attachments: Attachment[],

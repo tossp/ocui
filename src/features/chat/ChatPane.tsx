@@ -1,16 +1,9 @@
 /**
- * ChatPane — A fully independent chat session instance for split-pane mode.
+ * ChatPane — The single chat surface primitive.
  *
- * This is the split-pane equivalent of what App.tsx renders for single-pane mode.
- * Each ChatPane owns its own useChatSession, model selection, permission handling,
- * inline tool request context, outline index, cancel hint — everything.
- *
- * Key difference from App.tsx:
- *   - Passes consumerId/sessionId/skipGlobalSync to useChatSession
- *   - Uses PaneHeader instead of global Header
- *   - Forces compact viewport via its own ChatViewportProvider
- *   - No sidebar, no right panel, no bottom panel (those are global)
- *   - Navigation is pane-local (changes the pane's sessionId, not the URL hash)
+ * Single-pane and split-pane both render ChatPane. The only difference is displayMode:
+ * single mode uses the full header and app viewport, split mode uses PaneHeader and a
+ * compact viewport wrapper.
  */
 
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react'
@@ -198,7 +191,7 @@ export function ChatPane({
   }, [])
 
   // ============================================
-  // Chat Session (multi-instance mode)
+  // Chat Session
   // ============================================
   const {
     messages,
@@ -376,12 +369,7 @@ export function ChatPane({
   }, [paneId])
 
   const handleToggleFullAuto = useCallback(() => {
-    const mode = autoApproveStore.getPaneFullAutoMode(paneId)
-    if (mode === 'off') {
-      autoApproveStore.setPaneFullAutoMode(paneId, 'session')
-      return
-    }
-    autoApproveStore.setPaneFullAutoMode(paneId, 'off')
+    autoApproveStore.cyclePaneFullAutoMode(paneId)
   }, [paneId])
 
   const openModelSelector = useCallback(() => {

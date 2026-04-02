@@ -86,7 +86,7 @@ function dispatchToConsumers(sessionId: string, invoke: (cb: SessionEventCallbac
 }
 
 /** 检查是否有任何消费者关心此 sessionId */
-export function hasConsumerForSession(sessionId: string): boolean {
+function hasConsumerForSession(sessionId: string): boolean {
   for (const consumer of sessionConsumers.values()) {
     if (!consumer.sessionId) continue
     if (consumer.sessionId === sessionId) return true
@@ -204,12 +204,12 @@ async function fetchActiveScopeData(directories?: string[]) {
  *   2. pub/sub 消费者注册表（其他 pane）
  */
 function belongsToCurrentSession(sessionId: string): boolean {
-  const currentSessionId = paneLayoutStore.getFocusedSessionId()
+  const focusedSessionId = paneLayoutStore.getFocusedSessionId()
 
-  // 检查全局 current session
-  if (currentSessionId) {
-    if (sessionId === currentSessionId) return true
-    if (childSessionStore.belongsToSession(sessionId, currentSessionId)) return true
+  // 检查当前 focused pane 的 session family
+  if (focusedSessionId) {
+    if (sessionId === focusedSessionId) return true
+    if (childSessionStore.belongsToSession(sessionId, focusedSessionId)) return true
   }
 
   // 检查 pub/sub 消费者注册表（多 pane 模式下各 pane 注册的 session）

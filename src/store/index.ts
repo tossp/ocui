@@ -23,7 +23,7 @@ export { layoutStore, useLayoutStore } from './layoutStore'
 export { paneLayoutStore, usePaneLayout } from './paneLayoutStore'
 export type { PaneNode, PaneLeaf, PaneSplit, PaneLayoutSnapshot } from './paneLayoutStore'
 
-export { paneControllerStore, usePaneController } from './paneControllerStore'
+export { paneControllerStore, usePaneController, usePaneControllers } from './paneControllerStore'
 export type { PaneControllerState } from './paneControllerStore'
 
 export { autoApproveStore } from './autoApproveStore'

@@ -12,10 +12,10 @@ import type { TodoItem } from '../../../types/api/event'
 // Full Auto 状态 hook
 // ============================================
 
-function useFullAutoMode(paneId?: string): FullAutoMode {
+function useFullAutoMode(paneId: string): FullAutoMode {
   return useSyncExternalStore(
     cb => autoApproveStore.onFullAutoChange(cb),
-    () => (paneId ? autoApproveStore.getPaneFullAutoMode(paneId) : autoApproveStore.fullAutoMode),
+    () => autoApproveStore.getPaneFullAutoMode(paneId),
   )
 }
 
@@ -26,7 +26,7 @@ const TODO_SWAP_DURATION_MS = 260
 // ============================================
 
 interface InputFooterProps {
-  paneId?: string
+  paneId: string
   sessionId?: string | null
   onNewChat?: () => void
   inputContainerRef?: RefObject<HTMLDivElement | null>
@@ -194,23 +194,9 @@ export const InputFooter = memo(function InputFooter({
       className="relative flex h-full w-full items-center justify-center gap-2 text-[11px] leading-none text-text-500"
       ref={popoverRef}
     >
-      {/* Full Auto 三态切换: off → session → global → off */}
+      {/* Full Auto 三态切换: off -> session -> global -> off */}
       <button
-        onClick={() => {
-          if (paneId) {
-            if (fullAutoMode === 'off') {
-              autoApproveStore.setPaneFullAutoMode(paneId, 'session')
-            } else {
-              autoApproveStore.setPaneFullAutoMode(paneId, 'off')
-            }
-          } else if (fullAutoMode === 'off') {
-            autoApproveStore.setFullAutoMode('session')
-          } else if (fullAutoMode === 'session') {
-            autoApproveStore.setFullAutoMode('global')
-          } else {
-            autoApproveStore.setFullAutoMode('off')
-          }
-        }}
+        onClick={() => autoApproveStore.cyclePaneFullAutoMode(paneId)}
         className="shrink-0 flex items-center justify-center hover:text-text-300 transition-colors"
         title={
           fullAutoMode === 'off'
