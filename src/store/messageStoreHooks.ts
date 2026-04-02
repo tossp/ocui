@@ -139,12 +139,18 @@ export function useSessionState(sessionId: string | null): SessionStateSnapshot 
     if (!state) return null
 
     // 构建 snapshot 并缓存
-    const snapshot = {
+    const snapshot: SessionStateSnapshot = {
       messages: state.messages,
       isStreaming: state.isStreaming,
       loadState: state.loadState,
       revertState: state.revertState,
-      canUndo: state.messages.some(m => m.info.role === 'user' && !state.isStreaming),
+      canUndo: !state.isStreaming && state.messages.some(m => m.info.role === 'user'),
+      canRedo: !state.isStreaming && (state.revertState?.history.length ?? 0) > 0,
+      redoSteps: state.revertState?.history.length ?? 0,
+      revertedContent: state.revertState?.history?.[0] ?? null,
+      hasMoreHistory: state.hasMoreHistory,
+      directory: state.directory,
+      title: state.title ?? null,
     }
 
     sessionSnapshots.set(sessionId, snapshot)

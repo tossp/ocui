@@ -25,6 +25,8 @@ import { INITIAL_MESSAGE_LIMIT, HISTORY_LOAD_BATCH_SIZE } from '../constants'
 interface UseSessionManagerOptions {
   sessionId: string | null
   directory?: string // 当前项目目录
+  /** 为 true 时不调用 messageStore.setCurrentSession()，避免多实例争抢全局指针 */
+  skipGlobalSync?: boolean
   onLoadComplete?: () => void
   onError?: (error: Error) => void
 }
@@ -52,7 +54,13 @@ function mergeWithLocalStreamingMessages(
   })
 }
 
-export function useSessionManager({ sessionId, directory, onLoadComplete, onError }: UseSessionManagerOptions) {
+export function useSessionManager({
+  sessionId,
+  directory,
+  skipGlobalSync,
+  onLoadComplete,
+  onError,
+}: UseSessionManagerOptions) {
   const loadSequenceRef = useRef<Map<string, number>>(new Map())
   /** 每个 session 当前已请求的消息 limit（cursor），loadMore 时递增 */
   const cursorRef = useRef<Map<string, number>>(new Map())
@@ -347,9 +355,12 @@ export function useSessionManager({ sessionId, directory, onLoadComplete, onErro
 
   // 同步 sessionId 到 store。
   // 若本地已有 loaded 缓存，则直接复用；否则再拉取后端。
+  // skipGlobalSync 为 true 时不更新全局 currentSessionId（多 pane 模式用）
   useEffect(() => {
-    // 先更新 currentSessionId
-    messageStore.setCurrentSession(sessionId)
+    if (!skipGlobalSync) {
+      // 更新 currentSessionId（单 session 模式的正常行为）
+      messageStore.setCurrentSession(sessionId)
+    }
 
     if (sessionId) {
       const cached = messageStore.getSessionState(sessionId)

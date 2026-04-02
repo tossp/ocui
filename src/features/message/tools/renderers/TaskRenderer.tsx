@@ -4,6 +4,7 @@ import { ContentBlock } from '../../../../components'
 import { ChevronRightIcon, ExternalLinkIcon, StopIcon } from '../../../../components/Icons'
 import { useDelayedRender, useResponsiveMaxHeight } from '../../../../hooks'
 import { useSessionState, messageStore, childSessionStore } from '../../../../store'
+import { useSessionNavigation } from '../../../../contexts/SessionNavigationContext'
 import { abortSession, getSessionMessages } from '../../../../api'
 import { sessionErrorHandler } from '../../../../utils'
 import { formatToolName } from '../../../../utils/formatUtils'
@@ -161,6 +162,7 @@ const TaskHeader = memo(function TaskHeader({
   onStop,
 }: TaskHeaderProps) {
   const { t } = useTranslation('message')
+  const { navigateToSession } = useSessionNavigation()
   const handleOpenSession = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation()
@@ -171,10 +173,9 @@ const TaskHeader = memo(function TaskHeader({
       const parentState = parentSessionId ? messageStore.getSessionState(parentSessionId) : null
       const directory = parentState?.directory || ''
 
-      const hash = directory ? `#/session/${sessionId}?dir=${directory}` : `#/session/${sessionId}`
-      window.location.hash = hash
+      navigateToSession(sessionId, directory || undefined)
     },
-    [sessionId],
+    [sessionId, navigateToSession],
   )
 
   const isRunning = status === 'running' || status === 'pending'

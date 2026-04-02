@@ -570,24 +570,26 @@ class MessageStore {
     return null
   }
 
-  canUndo(): boolean {
-    const state = this.getCurrentSessionState()
+  canUndo(sessionId?: string): boolean {
+    const state = sessionId ? this.sessions.get(sessionId) : this.getCurrentSessionState()
     if (!state || state.isStreaming) return false
     return state.messages.some(m => m.info.role === 'user')
   }
 
-  canRedo(): boolean {
-    const state = this.getCurrentSessionState()
+  canRedo(sessionId?: string): boolean {
+    const state = sessionId ? this.sessions.get(sessionId) : this.getCurrentSessionState()
     if (!state || state.isStreaming) return false
     return (state.revertState?.history.length ?? 0) > 0
   }
 
-  getRedoSteps(): number {
-    return this.getCurrentSessionState()?.revertState?.history.length ?? 0
+  getRedoSteps(sessionId?: string): number {
+    const state = sessionId ? this.sessions.get(sessionId) : this.getCurrentSessionState()
+    return state?.revertState?.history.length ?? 0
   }
 
-  getCurrentRevertedContent(): RevertHistoryItem | null {
-    const revertState = this.getRevertState()
+  getCurrentRevertedContent(sessionId?: string): RevertHistoryItem | null {
+    const state = sessionId ? this.sessions.get(sessionId) : this.getCurrentSessionState()
+    const revertState = state?.revertState ?? null
     if (!revertState || revertState.history.length === 0) return null
     return revertState.history[0]
   }
