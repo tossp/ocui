@@ -690,7 +690,13 @@ function App() {
         {/* Sidebar */}
         <Sidebar
           isOpen={sidebarExpanded}
-          selectedSessionId={routeSessionId}
+          selectedSessionId={
+            paneLayout.isSplit
+              ? paneLayout.focusedPaneId
+                ? (paneLayoutStore.findLeaf(paneLayout.focusedPaneId)?.sessionId ?? null)
+                : null
+              : routeSessionId
+          }
           onSelectSession={paneLayout.isSplit ? handleSelectSessionForSplit : handleSelectSession}
           onNewSession={paneLayout.isSplit ? handleNewSessionForSplit : handleNewSession}
           onOpen={() => setSidebarExpanded(true)}
