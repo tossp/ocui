@@ -6,7 +6,7 @@
  * compact viewport wrapper.
  */
 
-import { useRef, useEffect, useState, useCallback, useMemo } from 'react'
+import { memo, useRef, useEffect, useState, useCallback, useMemo } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 
 import { ChatArea, Header, InputBox, PermissionDialog, QuestionDialog, type ChatAreaHandle } from '.'
@@ -88,7 +88,7 @@ const PANE_VIEWPORT: ChatViewportValue = {
   },
 }
 
-export function ChatPane({
+export const ChatPane = memo(function ChatPane({
   paneId,
   sessionId,
   isFocused,
@@ -698,4 +698,4 @@ export function ChatPane({
   }
 
   return content
-}
+})

@@ -149,6 +149,8 @@ function App() {
     paneLayoutStore.enterSplitMode(paneLayout.focusedSessionId)
   }, [paneLayout.focusedSessionId])
 
+  const handleOpenSidebar = useCallback(() => setSidebarExpanded(true), [setSidebarExpanded])
+
   const renderPaneLeaf = useCallback(
     (paneId: string, paneSessionId: string | null) => (
       <ChatPane
@@ -158,7 +160,7 @@ function App() {
         isFocused={paneLayout.focusedPaneId === paneId}
         paneCount={paneLayout.paneCount}
         displayMode={paneLayout.isSplit ? 'split' : 'single'}
-        onOpenSidebar={() => setSidebarExpanded(true)}
+        onOpenSidebar={handleOpenSidebar}
         showSidebarButton={chatViewport.interaction.sidebarBehavior === 'overlay'}
         onSplitPane={handleEnterSplitMode}
         navigatePaneToSession={navigatePaneToSession}
@@ -169,7 +171,7 @@ function App() {
       paneLayout.focusedPaneId,
       paneLayout.paneCount,
       paneLayout.isSplit,
-      setSidebarExpanded,
+      handleOpenSidebar,
       handleEnterSplitMode,
       navigatePaneToSession,
       navigatePaneHome,
@@ -391,7 +393,7 @@ function App() {
           selectedSessionId={paneLayout.focusedSessionId}
           onSelectSession={handleSelectSession}
           onNewSession={handleNewSession}
-          onOpen={() => setSidebarExpanded(true)}
+          onOpen={handleOpenSidebar}
           onClose={() => setSidebarExpanded(false)}
           contextLimit={focusedController?.contextLimit}
           onOpenSettings={openSettings}
