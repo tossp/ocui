@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.4.1] - 2026-04-03
+
+- fix: disable split-pane entry points on small touch screens (3c1a607)
+
 ## [v0.4.0] - 2026-04-03
 
 - fix: align request dialogs with the input dock width (59b5962)
