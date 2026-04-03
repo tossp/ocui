@@ -16,7 +16,7 @@ import { PaneHeader } from './PaneHeader'
 import { useChatSession, useModels, useModelSelection } from '../../hooks'
 import { useCancelHint } from '../../hooks/useCancelHint'
 import { InlineToolRequestContext, type InlineToolRequestContextValue } from './InlineToolRequestContext'
-import { ChatViewportProvider, type ChatViewportValue } from './chatViewport'
+import { ChatViewportProvider, useChatViewportMaybe, type ChatViewportValue } from './chatViewport'
 import { SessionNavigationContext } from '../../contexts/SessionNavigationContext'
 import { paneLayoutStore } from '../../store/paneLayoutStore'
 import { autoApproveStore } from '../../store/autoApproveStore'
@@ -106,6 +106,11 @@ export const ChatPane = memo(function ChatPane({
 }: ChatPaneProps) {
   const { t } = useTranslation(['chat', 'common'])
   const showCompactShell = displayMode === 'split' && !isPaneFullscreen
+
+  // Read the outer (App-level) viewport BEFORE this component's own Provider shadows it.
+  // When fullscreen we pass this through so children keep the real desktop viewport;
+  // in normal split mode we use the static PANE_VIEWPORT instead.
+  const outerViewport = useChatViewportMaybe()
 
   // ============================================
   // Refs
@@ -702,9 +707,9 @@ export const ChatPane = memo(function ChatPane({
     </SessionNavigationContext.Provider>
   )
 
-  if (showCompactShell) {
-    return <ChatViewportProvider value={PANE_VIEWPORT}>{content}</ChatViewportProvider>
-  }
+  // Always wrap with ChatViewportProvider to keep the React tree structure stable
+  // across fullscreen toggles. Only the value changes — compact pane vs full viewport.
+  const viewportValue = showCompactShell ? PANE_VIEWPORT : (outerViewport ?? PANE_VIEWPORT)
 
-  return content
+  return <ChatViewportProvider value={viewportValue}>{content}</ChatViewportProvider>
 })

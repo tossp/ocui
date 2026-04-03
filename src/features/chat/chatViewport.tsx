@@ -244,6 +244,11 @@ export function useChatViewport() {
   return value
 }
 
+/** Read the outer viewport context without throwing — returns null outside a provider. */
+export function useChatViewportMaybe(): ChatViewportValue | null {
+  return useContext(ChatViewportContext)
+}
+
 export function useChatViewportController({
   sidebarExpanded,
   rightPanelOpen,
