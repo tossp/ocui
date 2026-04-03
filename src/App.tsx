@@ -165,11 +165,11 @@ function App() {
         sessionId={paneSessionId}
         isFocused={paneLayout.focusedPaneId === paneId}
         paneCount={paneLayout.paneCount}
-        displayMode={paneLayout.isSplit && !paneLayout.fullscreenPaneId ? 'split' : 'single'}
+        displayMode={paneLayout.isSplit && paneLayout.fullscreenPaneId !== paneId ? 'split' : 'single'}
         isPaneFullscreen={paneLayout.fullscreenPaneId === paneId}
         onOpenSidebar={handleOpenSidebar}
         showSidebarButton={chatViewport.interaction.sidebarBehavior === 'overlay'}
-        onSplitPane={handleEnterSplitMode}
+        onSplitPane={paneLayout.fullscreenPaneId ? undefined : handleEnterSplitMode}
         onTogglePaneFullscreen={paneLayout.isSplit ? handleToggleFocusedPaneFullscreen : undefined}
         navigatePaneToSession={navigatePaneToSession}
         navigatePaneHome={navigatePaneHome}
@@ -187,8 +187,6 @@ function App() {
       navigatePaneHome,
     ],
   )
-
-  const fullscreenLeaf = paneLayout.fullscreenPaneId ? paneLayoutStore.findLeaf(paneLayout.fullscreenPaneId) : null
 
   const focusedDirectory = focusedRouteDirectory || ''
 
@@ -422,12 +420,14 @@ function App() {
                 chatViewport.interaction.sidebarBehavior === 'overlay' ? undefined : `${CHAT_SURFACE_MIN_WIDTH}px`,
             }}
           >
-            <div className={paneLayout.isSplit && !fullscreenLeaf ? 'flex-1 min-h-0 p-2' : 'flex-1 min-h-0'}>
-              {fullscreenLeaf ? (
-                renderPaneLeaf(fullscreenLeaf.id, fullscreenLeaf.sessionId)
-              ) : (
-                <SplitContainer node={paneLayout.root} renderLeaf={renderPaneLeaf} />
-              )}
+            <div
+              className={paneLayout.isSplit && !paneLayout.fullscreenPaneId ? 'flex-1 min-h-0 p-2' : 'flex-1 min-h-0'}
+            >
+              <SplitContainer
+                node={paneLayout.root}
+                renderLeaf={renderPaneLeaf}
+                fullscreenPaneId={paneLayout.fullscreenPaneId}
+              />
             </div>
 
             <BottomPanel directory={focusedDirectory} />

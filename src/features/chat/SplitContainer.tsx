@@ -12,11 +12,23 @@
  * - Pane wrappers use `contain: layout style` to isolate internal reflow,
  *   but do NOT use `overflow: hidden` so that ring / box-shadow borders
  *   on child ChatPane components remain visible.
+ *
+ * Fullscreen mode:
+ * - When `fullscreenPaneId` is set, the tree is still rendered to preserve
+ *   React state and DOM, but non-fullscreen leaves get `content-visibility: hidden`
+ *   and the fullscreen leaf is pulled out of flow via absolute positioning to
+ *   cover the entire container. This avoids costly unmount/remount cycles.
  */
 
 import { useCallback, useRef } from 'react'
 import type { PaneNode, PaneSplit } from '../../store/paneLayoutStore'
 import { paneLayoutStore } from '../../store/paneLayoutStore'
+
+/** Check whether a subtree contains a given leaf id */
+function containsLeaf(node: PaneNode, leafId: string): boolean {
+  if (node.type === 'leaf') return node.id === leafId
+  return containsLeaf(node.first, leafId) || containsLeaf(node.second, leafId)
+}
 
 /** Visual gap between panes in px */
 const SPLIT_GAP = 6
@@ -29,14 +41,16 @@ const MAX_RATIO = 0.9
 interface SplitContainerProps {
   node: PaneNode
   renderLeaf: (paneId: string, sessionId: string | null) => React.ReactNode
+  /** When set, the matching leaf is shown fullscreen and siblings are hidden. */
+  fullscreenPaneId?: string | null
 }
 
-export function SplitContainer({ node, renderLeaf }: SplitContainerProps) {
+export function SplitContainer({ node, renderLeaf, fullscreenPaneId }: SplitContainerProps) {
   if (node.type === 'leaf') {
     return <>{renderLeaf(node.id, node.sessionId)}</>
   }
 
-  return <SplitNode split={node} renderLeaf={renderLeaf} />
+  return <SplitNode split={node} renderLeaf={renderLeaf} fullscreenPaneId={fullscreenPaneId} />
 }
 
 // ============================================
@@ -46,6 +60,7 @@ export function SplitContainer({ node, renderLeaf }: SplitContainerProps) {
 interface SplitNodeProps {
   split: PaneSplit
   renderLeaf: (paneId: string, sessionId: string | null) => React.ReactNode
+  fullscreenPaneId?: string | null
 }
 
 /** Build a CSS grid-template value like "49.5fr 6px 50.5fr" */
@@ -54,9 +69,10 @@ function buildGridTemplate(ratio: number): string {
   return `${(r * 100).toFixed(4)}fr ${SPLIT_GAP}px ${((1 - r) * 100).toFixed(4)}fr`
 }
 
-function SplitNode({ split, renderLeaf }: SplitNodeProps) {
+function SplitNode({ split, renderLeaf, fullscreenPaneId }: SplitNodeProps) {
   const isHorizontal = split.direction === 'horizontal'
   const containerRef = useRef<HTMLDivElement>(null)
+  const isFullscreen = !!fullscreenPaneId
 
   const handleDrag = useCallback(
     (e: React.PointerEvent) => {
@@ -126,6 +142,33 @@ function SplitNode({ split, renderLeaf }: SplitNodeProps) {
 
   const hitSize = SPLIT_GAP + HIT_EXTEND * 2
   const negMargin = -(hitSize + SPLIT_GAP) / 2
+
+  // ---- Fullscreen: bypass grid, use absolute overlay ----
+  if (isFullscreen) {
+    const firstHasFs = containsLeaf(split.first, fullscreenPaneId!)
+    const secondHasFs = containsLeaf(split.second, fullscreenPaneId!)
+
+    const fsStyle: React.CSSProperties = { position: 'absolute', inset: 0, zIndex: 1 }
+    const hiddenStyle: React.CSSProperties = {
+      position: 'absolute',
+      width: 0,
+      height: 0,
+      overflow: 'hidden',
+      contentVisibility: 'hidden',
+    }
+
+    return (
+      <div ref={containerRef} className="relative w-full h-full">
+        {/* The branch containing the fullscreen pane gets absolute positioning to fill the container */}
+        <div className="min-w-0 min-h-0" style={firstHasFs ? fsStyle : hiddenStyle}>
+          <SplitContainer node={split.first} renderLeaf={renderLeaf} fullscreenPaneId={fullscreenPaneId} />
+        </div>
+        <div className="min-w-0 min-h-0" style={secondHasFs ? fsStyle : hiddenStyle}>
+          <SplitContainer node={split.second} renderLeaf={renderLeaf} fullscreenPaneId={fullscreenPaneId} />
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div
