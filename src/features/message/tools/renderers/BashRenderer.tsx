@@ -102,11 +102,13 @@ function ClickToCopyCommand({ command }: { command: string }) {
 
   return (
     <div
-      className="flex items-start gap-1.5 cursor-pointer group/cmd"
+      className="cursor-pointer group/cmd whitespace-pre-wrap break-all"
       onClick={handleClick}
       title={copied ? 'Copied!' : 'Click to copy'}
     >
-      <span className="text-accent-main-100 shrink-0 select-none font-semibold">{copied ? '✓' : '$'}</span>
+      <span className="inline-block w-[1ch] text-center text-accent-main-100 select-none font-semibold">
+        {copied ? '✓' : '$'}
+      </span>{' '}
       <HighlightedCommand command={command} />
     </div>
   )
@@ -117,18 +119,26 @@ function ClickToCopyCommand({ command }: { command: string }) {
 // ============================================
 
 function HighlightedCommand({ command }: { command: string }) {
-  const { output: highlighted } = useSyntaxHighlight(command, { lang: 'bash' })
+  const { output: tokens } = useSyntaxHighlight(command, { lang: 'bash', mode: 'tokens' })
 
-  if (highlighted) {
+  if (tokens) {
     return (
-      <span
-        className="whitespace-pre-wrap break-all [&>pre]:!bg-transparent [&>pre]:!p-0 [&>pre]:!m-0 [&>pre]:!whitespace-pre-wrap [&_code]:!bg-transparent [&_code]:!p-0 [&_code]:!whitespace-pre-wrap"
-        dangerouslySetInnerHTML={{ __html: highlighted }}
-      />
+      <span className="text-text-100 whitespace-pre-wrap break-all [overflow-wrap:anywhere]">
+        {tokens.map((line, lineIndex) => (
+          <span key={lineIndex}>
+            {line.map((token, tokenIndex) => (
+              <span key={tokenIndex} style={token.color ? { color: token.color } : undefined}>
+                {token.content}
+              </span>
+            ))}
+            {lineIndex < tokens.length - 1 ? '\n' : null}
+          </span>
+        ))}
+      </span>
     )
   }
 
-  return <span className="text-text-100 whitespace-pre-wrap break-all">{command}</span>
+  return <span className="text-text-100 whitespace-pre-wrap break-all [overflow-wrap:anywhere]">{command}</span>
 }
 
 // ============================================
