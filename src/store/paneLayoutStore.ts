@@ -390,6 +390,38 @@ function createPaneLayoutStore() {
       _fullscreenPaneId = null
       _refreshSnapshot()
     },
+
+    /**
+     * Focus the next leaf pane (wraps around).
+     */
+    focusNextPane() {
+      const leaves = allLeaves(_root)
+      if (leaves.length <= 1) return
+      const idx = leaves.findIndex(l => l.id === _focusedPaneId)
+      const next = leaves[(idx + 1) % leaves.length]
+      this.focusPane(next.id)
+    },
+
+    /**
+     * Focus the previous leaf pane (wraps around).
+     */
+    focusPrevPane() {
+      const leaves = allLeaves(_root)
+      if (leaves.length <= 1) return
+      const idx = leaves.findIndex(l => l.id === _focusedPaneId)
+      const prev = leaves[(idx - 1 + leaves.length) % leaves.length]
+      this.focusPane(prev.id)
+    },
+
+    /**
+     * Focus a pane by its visible index (0-based).
+     */
+    focusPaneByIndex(index: number) {
+      const leaves = allLeaves(_root)
+      if (index >= 0 && index < leaves.length) {
+        this.focusPane(leaves[index].id)
+      }
+    },
   }
 }
 

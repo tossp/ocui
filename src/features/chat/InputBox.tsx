@@ -965,6 +965,7 @@ function InputBoxComponent({
                 <div
                   ref={inputContainerRef}
                   data-input-box
+                  data-pane-id={paneId}
                   onPointerDown={handleContainerPointerDown}
                   onDragEnter={handleDragEnter}
                   onDragOver={handleDragOver}

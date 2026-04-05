@@ -514,7 +514,7 @@ export function SidePanel({
                         handleSelectProject(project.id)
                       }
                     }}
-                    className={`group w-full flex items-center gap-2 px-2 py-1.5 transition-colors cursor-pointer ${
+                    className={`group w-full flex items-center gap-2 px-2 py-1.5 transition-colors cursor-default ${
                       isActive ? 'bg-bg-200/60 text-text-100' : 'text-text-300 hover:text-text-100 hover:bg-bg-200/50'
                     }`}
                     title={project.worktree}

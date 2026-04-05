@@ -54,7 +54,7 @@ export function NotificationItem({ entry, resolvedSession, onSelect }: Notificat
   return (
     <div
       onClick={handleClick}
-      className={`group relative flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-all duration-200 border border-transparent hover:bg-bg-200/50 ${entry.read ? 'opacity-50' : ''}`}
+      className={`group relative flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-default transition-all duration-200 border border-transparent hover:bg-bg-200/50 ${entry.read ? 'opacity-50' : ''}`}
     >
       {/* Status icon — matches toast style */}
       <div className={`shrink-0 flex items-center justify-center w-6 h-6 rounded-md ${config.bgAccent}`}>

@@ -310,7 +310,7 @@ const FileTreeItem = memo(function FileTreeItem({
         onDragStart={handleDragStart}
         onClick={() => onClick(node)}
         className={`
-          w-full flex items-center gap-1 px-2 py-0.5 text-left
+          w-full flex items-center gap-1 px-2 py-0.5 text-left cursor-default
           hover:bg-bg-200/50 transition-colors text-[12px]
           text-text-300
           ${node.ignored ? 'opacity-50' : ''}

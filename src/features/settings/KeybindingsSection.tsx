@@ -29,6 +29,12 @@ const ACTION_TRANSLATION_KEYS: Record<KeybindingAction, { label: string; descrip
   cancelMessage: { label: 'cancelMessage', description: 'cancelMessageDesc' },
   copyLastResponse: { label: 'copyLastResponse', description: 'copyLastResponseDesc' },
   toggleFullAuto: { label: 'toggleFullAuto', description: 'toggleFullAutoDesc' },
+  focusNextPane: { label: 'focusNextPane', description: 'focusNextPaneDesc' },
+  focusPrevPane: { label: 'focusPrevPane', description: 'focusPrevPaneDesc' },
+  splitRight: { label: 'splitRight', description: 'splitRightDesc' },
+  splitDown: { label: 'splitDown', description: 'splitDownDesc' },
+  closePane: { label: 'closePane', description: 'closePaneDesc' },
+  togglePaneFullscreen: { label: 'togglePaneFullscreen', description: 'togglePaneFullscreenDesc' },
 }
 
 // ============================================
@@ -200,6 +206,7 @@ function KeybindingRow({ config, onEdit, onReset, isKeyUsed, t }: KeybindingRowP
 const CATEGORY_ORDER: KeybindingConfig['category'][] = [
   'general',
   'session',
+  'pane',
   'terminal',
   'model',
   'message',
@@ -209,6 +216,7 @@ const CATEGORY_ORDER: KeybindingConfig['category'][] = [
 const CATEGORY_LABELS: Record<KeybindingConfig['category'], string> = {
   general: 'keybindings.categories.general',
   session: 'keybindings.categories.session',
+  pane: 'keybindings.categories.pane',
   terminal: 'keybindings.categories.terminal',
   model: 'keybindings.categories.model',
   message: 'keybindings.categories.message',

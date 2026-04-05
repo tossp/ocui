@@ -253,8 +253,55 @@ function App() {
       cancelMessage: () => focusedController?.cancelMessage(),
       copyLastResponse: () => focusedController?.copyLastResponse(),
       toggleFullAuto: () => focusedController?.toggleFullAuto(),
+      // Pane
+      focusNextPane: () => {
+        paneLayoutStore.focusNextPane()
+        requestAnimationFrame(() => {
+          const pid = paneLayoutStore.getFocusedPaneId()
+          if (pid) {
+            const input = document.querySelector<HTMLTextAreaElement>(`[data-pane-id="${pid}"] textarea`)
+            input?.focus()
+          }
+        })
+      },
+      focusPrevPane: () => {
+        paneLayoutStore.focusPrevPane()
+        requestAnimationFrame(() => {
+          const pid = paneLayoutStore.getFocusedPaneId()
+          if (pid) {
+            const input = document.querySelector<HTMLTextAreaElement>(`[data-pane-id="${pid}"] textarea`)
+            input?.focus()
+          }
+        })
+      },
+      splitRight: () => {
+        const pid = paneLayout.focusedPaneId ?? paneLayoutStore.getFocusedPaneId()
+        if (pid && splitPaneEnabled) paneLayoutStore.splitPane(pid, 'horizontal')
+      },
+      splitDown: () => {
+        const pid = paneLayout.focusedPaneId ?? paneLayoutStore.getFocusedPaneId()
+        if (pid && splitPaneEnabled) paneLayoutStore.splitPane(pid, 'vertical')
+      },
+      closePane: () => {
+        const pid = paneLayout.focusedPaneId ?? paneLayoutStore.getFocusedPaneId()
+        if (pid && paneLayout.isSplit) paneLayoutStore.closePane(pid)
+      },
+      togglePaneFullscreen: () => {
+        if (paneLayout.isSplit) handleToggleFocusedPaneFullscreen()
+      },
     }),
-    [openSettings, openProject, sidebarExpanded, setSidebarExpanded, focusedController, handleNewTerminal],
+    [
+      openSettings,
+      openProject,
+      sidebarExpanded,
+      setSidebarExpanded,
+      focusedController,
+      handleNewTerminal,
+      paneLayout.focusedPaneId,
+      paneLayout.isSplit,
+      splitPaneEnabled,
+      handleToggleFocusedPaneFullscreen,
+    ],
   )
 
   useGlobalKeybindings(keybindingHandlers)
@@ -398,8 +445,82 @@ function App() {
         action: () => focusedController?.cancelMessage(),
         when: () => !!focusedController?.isStreaming,
       },
+      // Pane
+      {
+        id: 'focusNextPane',
+        label: t('commands:focusNextPane'),
+        description: t('commands:focusNextPaneDesc'),
+        category: t('commands:categories.pane'),
+        shortcut: getShortcut('focusNextPane'),
+        action: () => paneLayoutStore.focusNextPane(),
+      },
+      {
+        id: 'focusPrevPane',
+        label: t('commands:focusPrevPane'),
+        description: t('commands:focusPrevPaneDesc'),
+        category: t('commands:categories.pane'),
+        shortcut: getShortcut('focusPrevPane'),
+        action: () => paneLayoutStore.focusPrevPane(),
+      },
+      {
+        id: 'splitRight',
+        label: t('commands:splitRight'),
+        description: t('commands:splitRightDesc'),
+        category: t('commands:categories.pane'),
+        shortcut: getShortcut('splitRight'),
+        action: () => {
+          const pid = paneLayout.focusedPaneId ?? paneLayoutStore.getFocusedPaneId()
+          if (pid && splitPaneEnabled) paneLayoutStore.splitPane(pid, 'horizontal')
+        },
+      },
+      {
+        id: 'splitDown',
+        label: t('commands:splitDown'),
+        description: t('commands:splitDownDesc'),
+        category: t('commands:categories.pane'),
+        shortcut: getShortcut('splitDown'),
+        action: () => {
+          const pid = paneLayout.focusedPaneId ?? paneLayoutStore.getFocusedPaneId()
+          if (pid && splitPaneEnabled) paneLayoutStore.splitPane(pid, 'vertical')
+        },
+      },
+      {
+        id: 'closePane',
+        label: t('commands:closePane'),
+        description: t('commands:closePaneDesc'),
+        category: t('commands:categories.pane'),
+        shortcut: getShortcut('closePane'),
+        action: () => {
+          const pid = paneLayout.focusedPaneId ?? paneLayoutStore.getFocusedPaneId()
+          if (pid && paneLayout.isSplit) paneLayoutStore.closePane(pid)
+        },
+        when: () => paneLayout.isSplit,
+      },
+      {
+        id: 'togglePaneFullscreen',
+        label: t('commands:togglePaneFullscreen'),
+        description: t('commands:togglePaneFullscreenDesc'),
+        category: t('commands:categories.pane'),
+        shortcut: getShortcut('togglePaneFullscreen'),
+        action: () => {
+          if (paneLayout.isSplit) handleToggleFocusedPaneFullscreen()
+        },
+        when: () => paneLayout.isSplit,
+      },
     ]
-  }, [t, openSettings, openProject, sidebarExpanded, setSidebarExpanded, focusedController, handleNewTerminal])
+  }, [
+    t,
+    openSettings,
+    openProject,
+    sidebarExpanded,
+    setSidebarExpanded,
+    focusedController,
+    handleNewTerminal,
+    paneLayout.focusedPaneId,
+    paneLayout.isSplit,
+    splitPaneEnabled,
+    handleToggleFocusedPaneFullscreen,
+  ])
 
   const { showCloseDialog, handleCloseDialogConfirm, handleCloseDialogCancel } = useCloseServiceDialog()
 

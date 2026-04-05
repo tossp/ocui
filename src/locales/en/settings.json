@@ -221,6 +221,7 @@
     "categories": {
       "general": "General",
       "session": "Session",
+      "pane": "Pane",
       "terminal": "Terminal",
       "model": "Model",
       "message": "Message",

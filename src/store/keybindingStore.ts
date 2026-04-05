@@ -30,6 +30,13 @@ export type KeybindingAction =
   | 'copyLastResponse'
   // Permission
   | 'toggleFullAuto'
+  // Pane
+  | 'focusNextPane'
+  | 'focusPrevPane'
+  | 'splitRight'
+  | 'splitDown'
+  | 'closePane'
+  | 'togglePaneFullscreen'
 
 /**
  * 快捷键配置
@@ -40,7 +47,7 @@ export interface KeybindingConfig {
   description: string
   defaultKey: string // 默认快捷键
   currentKey: string // 当前快捷键（用户可修改）
-  category: 'general' | 'session' | 'terminal' | 'model' | 'message' | 'permission'
+  category: 'general' | 'session' | 'terminal' | 'model' | 'message' | 'permission' | 'pane'
 }
 
 /**
@@ -222,6 +229,56 @@ const DEFAULT_KEYBINDINGS: KeybindingConfig[] = [
     defaultKey: 'Alt+Y',
     currentKey: 'Alt+Y',
     category: 'permission',
+  },
+
+  // Pane
+  {
+    action: 'focusNextPane',
+    label: 'Focus Next Pane',
+    description: 'Move focus to the next pane',
+    defaultKey: 'Alt+ArrowRight',
+    currentKey: 'Alt+ArrowRight',
+    category: 'pane',
+  },
+  {
+    action: 'focusPrevPane',
+    label: 'Focus Previous Pane',
+    description: 'Move focus to the previous pane',
+    defaultKey: 'Alt+ArrowLeft',
+    currentKey: 'Alt+ArrowLeft',
+    category: 'pane',
+  },
+  {
+    action: 'splitRight',
+    label: 'Split Right',
+    description: 'Split current pane to the right',
+    defaultKey: 'Alt+Shift+ArrowRight',
+    currentKey: 'Alt+Shift+ArrowRight',
+    category: 'pane',
+  },
+  {
+    action: 'splitDown',
+    label: 'Split Down',
+    description: 'Split current pane downward',
+    defaultKey: 'Alt+Shift+ArrowDown',
+    currentKey: 'Alt+Shift+ArrowDown',
+    category: 'pane',
+  },
+  {
+    action: 'closePane',
+    label: 'Close Pane',
+    description: 'Close the focused pane',
+    defaultKey: 'Alt+Shift+Backspace',
+    currentKey: 'Alt+Shift+Backspace',
+    category: 'pane',
+  },
+  {
+    action: 'togglePaneFullscreen',
+    label: 'Toggle Pane Fullscreen',
+    description: 'Fullscreen or restore the focused pane',
+    defaultKey: 'Alt+Enter',
+    currentKey: 'Alt+Enter',
+    category: 'pane',
   },
 ]
 

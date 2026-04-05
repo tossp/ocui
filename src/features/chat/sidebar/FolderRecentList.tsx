@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ApiSession } from '../../../api'
-import { FolderIcon, FolderOpenIcon, SpinnerIcon } from '../../../components/Icons'
+import { FolderIcon, FolderOpenIcon, GripVerticalIcon, SpinnerIcon } from '../../../components/Icons'
 import { ExpandableSection } from '../../../components/ui'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
 import { useDelayedRender, useSessions } from '../../../hooks'
@@ -137,70 +137,94 @@ export function FolderRecentList({
   )
 
   // ============================================
-  // 桌面端拖拽 (HTML5 Drag & Drop)
+  // 桌面端拖拽 (pointer 事件驱动)
   // ============================================
-  const startDrag = useCallback(
-    (projectId: string) => {
-      draggedIdRef.current = projectId
-      setDraggedId(projectId)
-      // 延迟一帧再收起文件夹，避免 dragstart 期间 DOM 变化导致浏览器取消拖拽
-      requestAnimationFrame(() => {
-        savedExpandedRef.current = expandedProjectIds
-        onExpandedProjectIdsChange([])
-      })
-    },
-    [expandedProjectIds, onExpandedProjectIdsChange],
-  )
 
-  const handleDragOver = useCallback((e: React.DragEvent, projectId: string) => {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-    const currentDragged = draggedIdRef.current
-    if (!currentDragged || projectId === currentDragged) {
-      setDropTarget({ id: '', position: null })
-      return
-    }
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    const midY = rect.top + rect.height / 2
-    const position: DropPosition = e.clientY < midY ? 'above' : 'below'
-    setDropTarget({ id: projectId, position })
-  }, [])
+  /** pointer 拖拽起始坐标，用于判断移动阈值 */
+  const pointerStartPos = useRef({ x: 0, y: 0 })
+  /** 是否已越过拖拽阈值 */
+  const pointerDragActive = useRef(false)
 
-  const handleDragLeave = useCallback(() => {
-    setDropTarget({ id: '', position: null })
-  }, [])
+  const startPointerDrag = useCallback(
+    (projectId: string, e: React.PointerEvent) => {
+      const project = projects.find(p => p.id === projectId)
+      if (!project?.canReorder) return
 
-  const finishDrag = useCallback(
-    (targetProjectId: string) => {
-      const currentDragged = draggedIdRef.current
-      if (currentDragged && currentDragged !== targetProjectId) {
-        const draggedProject = projects.find(p => p.id === currentDragged)
-        const targetProject = projects.find(p => p.id === targetProjectId)
-        if (draggedProject?.canReorder && targetProject?.canReorder) {
-          onReorderProject(draggedProject.worktree, targetProject.worktree)
+      e.preventDefault()
+      pointerStartPos.current = { x: e.clientX, y: e.clientY }
+      pointerDragActive.current = false
+
+      const onMove = (moveEvent: PointerEvent) => {
+        const dx = moveEvent.clientX - pointerStartPos.current.x
+        const dy = moveEvent.clientY - pointerStartPos.current.y
+        const distance = Math.sqrt(dx * dx + dy * dy)
+
+        // 移动阈值 6px，超过才进入拖拽模式
+        if (!pointerDragActive.current) {
+          if (distance < 6) return
+          pointerDragActive.current = true
+          draggedIdRef.current = projectId
+          setDraggedId(projectId)
+          savedExpandedRef.current = expandedProjectIds
+          onExpandedProjectIdsChange([])
+          document.body.style.cursor = 'grabbing'
+          document.body.style.userSelect = 'none'
         }
-      }
-      // 恢复展开状态
-      if (savedExpandedRef.current) {
-        onExpandedProjectIdsChange(savedExpandedRef.current)
-        savedExpandedRef.current = null
-      }
-      draggedIdRef.current = null
-      setDraggedId(null)
-      setDropTarget({ id: '', position: null })
-    },
-    [projects, onReorderProject, onExpandedProjectIdsChange],
-  )
 
-  const cancelDrag = useCallback(() => {
-    if (savedExpandedRef.current) {
-      onExpandedProjectIdsChange(savedExpandedRef.current)
-      savedExpandedRef.current = null
-    }
-    draggedIdRef.current = null
-    setDraggedId(null)
-    setDropTarget({ id: '', position: null })
-  }, [onExpandedProjectIdsChange])
+        // 查找 pointer 下方的文件夹
+        const pointerY = moveEvent.clientY
+        let foundTarget: { id: string; position: DropPosition } = { id: '', position: null }
+
+        for (const [id, el] of folderRefs.current.entries()) {
+          if (id === projectId) continue
+          const rect = el.getBoundingClientRect()
+          if (pointerY >= rect.top && pointerY <= rect.bottom) {
+            const midY = rect.top + rect.height / 2
+            foundTarget = { id, position: pointerY < midY ? 'above' : 'below' }
+            break
+          }
+        }
+        setDropTarget(foundTarget)
+      }
+
+      const onUp = () => {
+        document.removeEventListener('pointermove', onMove)
+        document.removeEventListener('pointerup', onUp)
+        document.removeEventListener('pointercancel', onUp)
+        document.body.style.cursor = ''
+        document.body.style.userSelect = ''
+
+        if (pointerDragActive.current) {
+          // 完成拖拽
+          setDropTarget(prev => {
+            const currentDragged = draggedIdRef.current
+            if (currentDragged && prev.id && prev.id !== currentDragged) {
+              const draggedProj = projects.find(p => p.id === currentDragged)
+              const targetProj = projects.find(p => p.id === prev.id)
+              if (draggedProj?.canReorder && targetProj?.canReorder) {
+                onReorderProject(draggedProj.worktree, targetProj.worktree)
+              }
+            }
+            return { id: '', position: null }
+          })
+
+          // 恢复展开状态
+          if (savedExpandedRef.current) {
+            onExpandedProjectIdsChange(savedExpandedRef.current)
+            savedExpandedRef.current = null
+          }
+          draggedIdRef.current = null
+          setDraggedId(null)
+        }
+        pointerDragActive.current = false
+      }
+
+      document.addEventListener('pointermove', onMove)
+      document.addEventListener('pointerup', onUp)
+      document.addEventListener('pointercancel', onUp)
+    },
+    [projects, expandedProjectIds, onExpandedProjectIdsChange, onReorderProject],
+  )
 
   // ============================================
   // 移动端触摸拖拽
@@ -398,15 +422,11 @@ export function FolderRecentList({
                 expandedChildSessionIds={expandedChildSessionIds}
                 inlineChildSessions={inlineChildSessions}
                 onSelectChildSession={onSelectChildSession}
-                // 桌面拖拽
-                draggable={!!project.canReorder && !isMobile}
+                // 桌面拖拽 (pointer 驱动)
+                canDrag={!!project.canReorder && !isMobile}
                 isDragged={activeDragId === project.id}
                 dropPosition={dropTarget.id === project.id && activeDragId !== project.id ? dropTarget.position : null}
-                onDragStart={() => startDrag(project.id)}
-                onDragOver={e => handleDragOver(e, project.id)}
-                onDragLeave={handleDragLeave}
-                onDrop={() => finishDrag(project.id)}
-                onDragEnd={cancelDrag}
+                onHandlePointerDown={e => startPointerDrag(project.id, e)}
                 // 移动端拖拽
                 isTouchDragging={touchDragId === project.id}
                 onTouchDragStart={e => handleTouchStart(project.id, e)}
@@ -458,15 +478,11 @@ interface FolderRecentSectionProps {
   expandedChildSessionIds?: Set<string>
   inlineChildSessions?: Map<string, ApiSession[]>
   onSelectChildSession?: (session: ApiSession) => void
-  // 桌面拖拽
-  draggable: boolean
+  // 桌面拖拽 (pointer 驱动)
+  canDrag: boolean
   isDragged: boolean
   dropPosition: DropPosition
-  onDragStart: () => void
-  onDragOver: (e: React.DragEvent) => void
-  onDragLeave: () => void
-  onDrop: () => void
-  onDragEnd: () => void
+  onHandlePointerDown: (e: React.PointerEvent) => void
   // 移动端拖拽
   isTouchDragging: boolean
   onTouchDragStart: (e: React.TouchEvent) => void
@@ -488,14 +504,10 @@ function FolderRecentSection({
   expandedChildSessionIds,
   inlineChildSessions,
   onSelectChildSession,
-  draggable,
+  canDrag,
   isDragged,
   dropPosition,
-  onDragStart,
-  onDragOver,
-  onDragLeave,
-  onDrop,
-  onDragEnd,
+  onHandlePointerDown,
   isTouchDragging,
   onTouchDragStart,
   registerRef,
@@ -548,21 +560,8 @@ function FolderRecentSection({
     <div ref={inViewRef}>
       <div
         ref={registerRef}
-        draggable={draggable}
-        onDragStart={e => {
-          e.dataTransfer.effectAllowed = 'move'
-          e.dataTransfer.setData('text/plain', project.id)
-          onDragStart()
-        }}
-        onDragOver={onDragOver}
-        onDragLeave={onDragLeave}
-        onDrop={e => {
-          e.preventDefault()
-          onDrop()
-        }}
-        onDragEnd={onDragEnd}
         onTouchStart={onTouchDragStart}
-        className={`relative transition-all duration-150 ${isBeingDragged ? 'opacity-30 scale-95' : ''}`}
+        className={`relative transition-all duration-150 group/folder ${isBeingDragged ? 'opacity-30 scale-95' : ''}`}
       >
         {/* 拖拽指示线 — 上方 */}
         <div
@@ -572,30 +571,40 @@ function FolderRecentSection({
         />
 
         {/* 文件夹行 */}
-        <button
-          onClick={() => {
-            onSelectProject()
-            onToggle()
-          }}
-          className={`flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left transition-colors duration-150 hover:bg-bg-200/40 ${
-            draggable || project.canReorder ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
-          }`}
-          title={project.worktree}
-        >
-          <FolderDisplayIcon size={15} className="shrink-0 text-text-400" />
-          <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-text-300">{projectName}</span>
-          {folderStatus && (
+        <div className="flex w-full items-center rounded-md hover:bg-bg-200/40 transition-colors duration-150">
+          {/* 拖拽把手 */}
+          {canDrag && (
             <span
-              className="relative shrink-0 flex items-center justify-center w-3 h-3"
-              title={folderStatus.count ? `${folderStatus.label} (${folderStatus.count})` : folderStatus.label}
+              onPointerDown={onHandlePointerDown}
+              className="flex items-center justify-center w-5 shrink-0 cursor-grab active:cursor-grabbing text-text-500 opacity-0 hover:opacity-100 group-hover/folder:opacity-60 transition-opacity touch-none"
+              title={t('sidebar.dragToReorder', { defaultValue: 'Drag to reorder' })}
             >
-              <span className={`absolute w-1.5 h-1.5 rounded-full ${folderStatus.dot}`} />
-              {folderStatus.pulse && (
-                <span className={`absolute w-1.5 h-1.5 rounded-full ${folderStatus.dot} animate-ping opacity-50`} />
-              )}
+              <GripVerticalIcon size={12} />
             </span>
           )}
-        </button>
+          <button
+            onClick={() => {
+              onSelectProject()
+              onToggle()
+            }}
+            className={`flex flex-1 min-w-0 items-center gap-1.5 ${canDrag ? 'pl-0' : 'pl-2'} pr-2 py-1.5 text-left cursor-default`}
+            title={project.worktree}
+          >
+            <FolderDisplayIcon size={15} className="shrink-0 text-text-400" />
+            <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-text-300">{projectName}</span>
+            {folderStatus && (
+              <span
+                className="relative shrink-0 flex items-center justify-center w-3 h-3"
+                title={folderStatus.count ? `${folderStatus.label} (${folderStatus.count})` : folderStatus.label}
+              >
+                <span className={`absolute w-1.5 h-1.5 rounded-full ${folderStatus.dot}`} />
+                {folderStatus.pulse && (
+                  <span className={`absolute w-1.5 h-1.5 rounded-full ${folderStatus.dot} animate-ping opacity-50`} />
+                )}
+              </span>
+            )}
+          </button>
+        </div>
 
         {/* 拖拽指示线 — 下方 */}
         <div

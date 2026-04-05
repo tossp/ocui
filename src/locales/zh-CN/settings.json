@@ -221,6 +221,7 @@
     "categories": {
       "general": "通用",
       "session": "会话",
+      "pane": "窗格",
       "terminal": "终端",
       "model": "模型",
       "message": "消息",
