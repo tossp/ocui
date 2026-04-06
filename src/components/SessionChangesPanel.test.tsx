@@ -35,6 +35,12 @@ vi.mock('./DiffViewer', () => ({
 describe('SessionChangesPanel', () => {
   beforeEach(() => {
     vi.useFakeTimers()
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb =>
+      window.setTimeout(() => cb(performance.now()), 16),
+    )
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(id => {
+      clearTimeout(id)
+    })
     getCurrentProject.mockResolvedValue({
       id: 'project-1',
       worktree: '/repo',
@@ -117,12 +123,13 @@ describe('SessionChangesPanel', () => {
       await Promise.resolve()
     })
 
-    expect(getVcsDiff).toHaveBeenCalledWith('git', '/repo')
-    expect(screen.getByText('1 file')).toBeInTheDocument()
+    expect(getSessionDiff).toHaveBeenCalledWith('session-1', '/repo')
+    expect(screen.getByText('2 files')).toBeInTheDocument()
     expect(screen.getAllByText('+1').length).toBeGreaterThan(0)
     expect(screen.getAllByText('-1').length).toBeGreaterThan(0)
     expect(screen.getByTestId('diff-viewer')).toBeInTheDocument()
-    expect(screen.getAllByText('git.ts').length).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: /Change mode: Session changes/ })).toBeInTheDocument()
+    expect(screen.getAllByText('app.ts').length).toBeGreaterThan(0)
   })
 
   it('switches to current turn changes on demand', async () => {
@@ -134,9 +141,17 @@ describe('SessionChangesPanel', () => {
       await Promise.resolve()
     })
 
-    fireEvent.change(screen.getByRole('combobox', { name: 'Change mode' }), { target: { value: 'turn' } })
+    fireEvent.click(screen.getByRole('button', { name: /Change mode:/ }))
 
     await act(async () => {
+      vi.advanceTimersByTime(48)
+      await Promise.resolve()
+    })
+
+    fireEvent.click(screen.getByText('Last turn changes'))
+
+    await act(async () => {
+      vi.advanceTimersByTime(240)
       await Promise.resolve()
       await Promise.resolve()
     })
@@ -155,9 +170,17 @@ describe('SessionChangesPanel', () => {
       await Promise.resolve()
     })
 
-    fireEvent.change(screen.getByRole('combobox', { name: 'Change mode' }), { target: { value: 'branch' } })
+    fireEvent.click(screen.getByRole('button', { name: /Change mode:/ }))
 
     await act(async () => {
+      vi.advanceTimersByTime(48)
+      await Promise.resolve()
+    })
+
+    fireEvent.click(screen.getByText('Branch changes'))
+
+    await act(async () => {
+      vi.advanceTimersByTime(240)
       await Promise.resolve()
       await Promise.resolve()
     })
@@ -189,6 +212,6 @@ describe('SessionChangesPanel', () => {
     })
 
     expect(initGitProject).toHaveBeenCalledWith('/repo')
-    expect(getVcsDiff).toHaveBeenCalledWith('git', '/repo')
+    expect(getSessionDiff).toHaveBeenCalledWith('session-1', '/repo')
   })
 })

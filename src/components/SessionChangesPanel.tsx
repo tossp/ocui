@@ -6,7 +6,7 @@
 
 import { memo, useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { RetryIcon, ChevronRightIcon, MaximizeIcon } from './Icons'
+import { RetryIcon, ChevronRightIcon, MaximizeIcon, ClockIcon, GitBranchIcon, GitDiffIcon, LayersIcon } from './Icons'
 import { getMaterialIconUrl } from '../utils/materialIcons'
 import { DiffViewer, type ViewMode } from './DiffViewer'
 import { FullscreenViewer, ViewModeSwitch } from './FullscreenViewer'
@@ -18,12 +18,21 @@ import { detectLanguage } from '../utils/languageUtils'
 import { sessionErrorHandler } from '../utils'
 import { PreviewTabsBar, type PreviewTabsBarItem } from './PreviewTabsBar'
 import { useVerticalSplitResize } from '../hooks/useVerticalSplitResize'
+import { DropdownMenu } from './ui'
 
 // 常量
 const MIN_LIST_HEIGHT = 80
 const MIN_PREVIEW_HEIGHT = 120
 
 type ChangeMode = 'git' | 'branch' | 'session' | 'turn'
+
+function getDefaultChangeMode(options: ChangeMode[]) {
+  if (options.includes('session')) return 'session'
+  if (options.includes('turn')) return 'turn'
+  if (options.includes('git')) return 'git'
+  if (options.includes('branch')) return 'branch'
+  return options[0] ?? 'session'
+}
 
 function reconcileDiffPreviewState(diffs: FileDiff[], openFiles: string[], activeFile: string | null) {
   const availableFiles = new Set(diffs.map(diff => diff.file))
@@ -79,7 +88,8 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
   const [error, setError] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<ViewMode>('unified')
   const [listMode, setListMode] = useState<'flat' | 'tree'>('tree')
-  const [changeMode, setChangeMode] = useState<ChangeMode>('git')
+  const [changeMode, setChangeMode] = useState<ChangeMode>('session')
+  const [changeMenuOpen, setChangeMenuOpen] = useState(false)
 
   // 选中的文件（显示在预览区）
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
@@ -92,19 +102,44 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
   const diffRequestIdRef = useRef({ git: 0, branch: 0, session: 0, turn: 0 })
   const openDiffFilesRef = useRef<string[]>([])
   const selectedFileRef = useRef<string | null>(null)
+  const changeMenuTriggerRef = useRef<HTMLButtonElement>(null)
+  const changeMenuRef = useRef<HTMLDivElement>(null)
 
   const isAnyResizing = isPanelResizing || isResizing
   const changeOptions = useMemo<ChangeMode[]>(() => {
     const options: ChangeMode[] = []
-    if (project?.vcs) options.push('git')
+    if (project?.vcs) options.push('session', 'turn', 'git')
     if (project?.vcs && vcsInfo?.branch && vcsInfo?.default_branch && vcsInfo.branch !== vcsInfo.default_branch) {
       options.push('branch')
     }
-    if (project?.vcs) {
-      options.push('session', 'turn')
-    }
     return options
   }, [project?.vcs, vcsInfo?.branch, vcsInfo?.default_branch])
+  const preferredChangeMode = useMemo(() => getDefaultChangeMode(changeOptions), [changeOptions])
+  const changeModeMeta = useMemo(
+    () => ({
+      git: {
+        label: t('sessionChanges.gitScope'),
+        description: t('sessionChanges.gitScopeHint'),
+        icon: <GitDiffIcon size={12} />,
+      },
+      branch: {
+        label: t('sessionChanges.branchScope'),
+        description: t('sessionChanges.branchScopeHint', { branch: vcsInfo?.default_branch ?? 'main' }),
+        icon: <GitBranchIcon size={12} />,
+      },
+      session: {
+        label: t('sessionChanges.sessionScope'),
+        description: t('sessionChanges.sessionScopeHint'),
+        icon: <LayersIcon size={12} />,
+      },
+      turn: {
+        label: t('sessionChanges.turnScope'),
+        description: t('sessionChanges.turnScopeHint'),
+        icon: <ClockIcon size={12} />,
+      },
+    }),
+    [t, vcsInfo?.default_branch],
+  )
   const diffs = useMemo(
     () =>
       changeMode === 'git'
@@ -125,6 +160,31 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
   useEffect(() => {
     selectedFileRef.current = selectedFile
   }, [selectedFile])
+
+  useEffect(() => {
+    if (!changeMenuOpen) return
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node
+      if (changeMenuRef.current?.contains(target) || changeMenuTriggerRef.current?.contains(target)) {
+        return
+      }
+      setChangeMenuOpen(false)
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setChangeMenuOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [changeMenuOpen])
 
   const loadProjectState = useCallback(async () => {
     if (!sessionId) return null
@@ -218,7 +278,8 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
     setOpenDiffFiles([])
     setSelectedFile(null)
     setExpandedDirs(new Set())
-    setChangeMode('git')
+    setChangeMode('session')
+    setChangeMenuOpen(false)
     resetSplitHeight()
 
     void loadProjectState()
@@ -227,8 +288,8 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
   useEffect(() => {
     if (changeOptions.length === 0) return
     if (changeOptions.includes(changeMode)) return
-    setChangeMode(changeOptions[0])
-  }, [changeMode, changeOptions])
+    setChangeMode(preferredChangeMode)
+  }, [changeMode, changeOptions, preferredChangeMode])
 
   useEffect(() => {
     if (!project?.vcs) return
@@ -271,7 +332,8 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
       setTurnDiffs([])
       setLoadedModes({ git: false, branch: false, session: false, turn: false })
       setLoadingModes({ git: false, branch: false, session: false, turn: false })
-      setChangeMode('git')
+      setChangeMode('session')
+      setChangeMenuOpen(false)
       void loadProjectState()
     } catch (err) {
       sessionErrorHandler('init git project', err)
@@ -399,12 +461,7 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
           ? t('sessionChanges.noChanges')
           : t('sessionChanges.noTurnChanges')
 
-  const modeLabel = (mode: ChangeMode) => {
-    if (mode === 'git') return t('sessionChanges.gitScope')
-    if (mode === 'branch') return t('sessionChanges.branchScope')
-    if (mode === 'session') return t('sessionChanges.sessionScope')
-    return t('sessionChanges.turnScope')
-  }
+  const activeChangeModeMeta = changeModeMeta[changeMode]
 
   return (
     <div ref={containerRef} className="flex flex-col h-full">
@@ -421,8 +478,8 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
         }
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-3 py-1.5 border-b border-border-100 bg-bg-100/30 shrink-0">
-          <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 border-b border-border-100 bg-bg-100/30 shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
             <span className="text-[10px] text-text-400 uppercase tracking-wider font-bold">
               {t('sessionChanges.fileCount', { count: diffs.length })}
             </span>
@@ -432,19 +489,63 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
             </div>
           </div>
 
-          <div className="flex items-center gap-1">
-            <select
-              value={changeMode}
-              onChange={event => setChangeMode(event.target.value as ChangeMode)}
-              aria-label={t('sessionChanges.mode')}
-              className="h-6 rounded border border-border-200/50 bg-bg-200/50 px-2 text-[10px] text-text-200 outline-none hover:border-border-200 mr-1"
+          <div className="ml-auto flex items-center gap-1 flex-wrap justify-end">
+            <button
+              ref={changeMenuTriggerRef}
+              type="button"
+              onClick={() => setChangeMenuOpen(open => !open)}
+              aria-label={`${t('sessionChanges.mode')}: ${activeChangeModeMeta.label}`}
+              aria-haspopup="menu"
+              aria-expanded={changeMenuOpen}
+              title={activeChangeModeMeta.label}
+              className={`
+                flex items-center rounded p-1 transition-colors
+                ${changeMenuOpen ? 'bg-bg-200 text-text-100' : 'text-text-400 hover:text-text-100 hover:bg-bg-200'}
+              `}
             >
-              {changeOptions.map(mode => (
-                <option key={mode} value={mode}>
-                  {modeLabel(mode)}
-                </option>
-              ))}
-            </select>
+              <span className="shrink-0">{activeChangeModeMeta.icon}</span>
+            </button>
+
+            <DropdownMenu
+              triggerRef={changeMenuTriggerRef}
+              isOpen={changeMenuOpen}
+              position="bottom"
+              align="right"
+              minWidth="170px"
+              maxWidth="min(220px, calc(100vw - 24px))"
+              className="!p-1"
+            >
+              <div ref={changeMenuRef} role="menu" aria-label={t('sessionChanges.mode')} className="space-y-0.5">
+                {changeOptions.map(mode => {
+                  const meta = changeModeMeta[mode]
+                  const isSelected = mode === changeMode
+
+                  return (
+                    <button
+                      key={mode}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={isSelected}
+                      title={meta.description}
+                      onClick={() => {
+                        setChangeMode(mode)
+                        setChangeMenuOpen(false)
+                      }}
+                      className={`
+                        group flex w-full items-center rounded-md px-2 py-1.5 text-left text-xs transition-colors
+                        ${
+                          isSelected
+                            ? 'bg-bg-200/70 text-text-100 font-medium'
+                            : 'text-text-200 hover:bg-bg-200/60 hover:text-text-100'
+                        }
+                      `}
+                    >
+                      <span className="min-w-0 flex-1 truncate">{meta.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </DropdownMenu>
 
             {/* List Mode Toggle */}
             <div className="flex items-center bg-bg-200/50 rounded overflow-hidden border border-border-200/50 mr-1">
