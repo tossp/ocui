@@ -3,7 +3,7 @@
 // 基于 OpenAPI: /config, /project, /provider 相关接口
 // ============================================
 
-import { get, patch } from './http'
+import { get, patch, post } from './http'
 import { formatPathForApi } from '../utils/directoryUtils'
 import type { ProvidersResponse, ModelInfo, ApiProject, ApiPath } from './types'
 
@@ -97,6 +97,13 @@ export async function getCurrentProject(directory?: string): Promise<ApiProject>
  */
 export async function getProjects(directory?: string): Promise<ApiProject[]> {
   return get<ApiProject[]>('/project', { directory: formatPathForApi(directory) })
+}
+
+/**
+ * POST /project/git/init - 初始化 Git 仓库
+ */
+export async function initGitProject(directory?: string): Promise<ApiProject> {
+  return post<ApiProject>('/project/git/init', { directory: formatPathForApi(directory) })
 }
 
 /**

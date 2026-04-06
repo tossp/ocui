@@ -10,8 +10,9 @@ import { RetryIcon, ChevronRightIcon, MaximizeIcon } from './Icons'
 import { getMaterialIconUrl } from '../utils/materialIcons'
 import { DiffViewer, type ViewMode } from './DiffViewer'
 import { FullscreenViewer, ViewModeSwitch } from './FullscreenViewer'
-import { getSessionDiff } from '../api/session'
-import type { FileDiff } from '../api/types'
+import { getCurrentProject, initGitProject } from '../api/client'
+import { getLastTurnDiff, getSessionDiff } from '../api/session'
+import type { ApiProject, FileDiff } from '../api/types'
 import { detectLanguage } from '../utils/languageUtils'
 import { sessionErrorHandler } from '../utils'
 import { PreviewTabsBar, type PreviewTabsBarItem } from './PreviewTabsBar'
@@ -36,11 +37,13 @@ function reconcileDiffPreviewState(diffs: FileDiff[], openFiles: string[], activ
 
 interface SessionChangesPanelProps {
   sessionId: string
+  directory?: string
   isResizing?: boolean
 }
 
 export const SessionChangesPanel = memo(function SessionChangesPanel({
   sessionId,
+  directory,
   isResizing: isPanelResizing = false,
 }: SessionChangesPanelProps) {
   const { t } = useTranslation(['components', 'common'])
@@ -60,11 +63,17 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
     minSecondaryHeight: MIN_PREVIEW_HEIGHT,
   })
 
-  const [loading, setLoading] = useState(false)
-  const [diffs, setDiffs] = useState<FileDiff[]>([])
+  const [project, setProject] = useState<ApiProject | null>(null)
+  const [projectLoading, setProjectLoading] = useState(false)
+  const [initializingGit, setInitializingGit] = useState(false)
+  const [loadingScopes, setLoadingScopes] = useState({ session: false, turn: false })
+  const [loadedScopes, setLoadedScopes] = useState({ session: false, turn: false })
+  const [sessionDiffs, setSessionDiffs] = useState<FileDiff[]>([])
+  const [turnDiffs, setTurnDiffs] = useState<FileDiff[]>([])
   const [error, setError] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<ViewMode>('unified')
   const [listMode, setListMode] = useState<'flat' | 'tree'>('tree')
+  const [changeScope, setChangeScope] = useState<'session' | 'turn'>('session')
 
   // 选中的文件（显示在预览区）
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
@@ -73,11 +82,17 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
   // 展开的目录
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set())
 
-  const requestIdRef = useRef(0)
+  const projectRequestIdRef = useRef(0)
+  const diffRequestIdRef = useRef({ session: 0, turn: 0 })
   const openDiffFilesRef = useRef<string[]>([])
   const selectedFileRef = useRef<string | null>(null)
 
   const isAnyResizing = isPanelResizing || isResizing
+  const diffs = useMemo(
+    () => (changeScope === 'session' ? sessionDiffs : turnDiffs),
+    [changeScope, sessionDiffs, turnDiffs],
+  )
+  const loading = projectLoading || initializingGit || loadingScopes[changeScope]
 
   useEffect(() => {
     openDiffFilesRef.current = openDiffFiles
@@ -87,71 +102,128 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
     selectedFileRef.current = selectedFile
   }, [selectedFile])
 
-  // 加载数据
-  useEffect(() => {
-    if (!sessionId) return
+  const loadProjectState = useCallback(async () => {
+    if (!sessionId) return null
 
-    let cancelled = false
-    const requestId = ++requestIdRef.current
-    const timer = window.setTimeout(() => {
-      setLoading(true)
+    const requestId = ++projectRequestIdRef.current
+    setProjectLoading(true)
+    setError(null)
+
+    try {
+      const nextProject = await getCurrentProject(directory)
+      if (requestId !== projectRequestIdRef.current) return null
+      setProject(nextProject)
+      return nextProject
+    } catch (err) {
+      if (requestId !== projectRequestIdRef.current) return null
+      sessionErrorHandler('load current project', err)
+      setProject(null)
+      setError(t('sessionChanges.failedToLoad'))
+      return null
+    } finally {
+      if (requestId === projectRequestIdRef.current) {
+        setProjectLoading(false)
+      }
+    }
+  }, [directory, sessionId, t])
+
+  const loadDiffScope = useCallback(
+    async (scope: 'session' | 'turn', options?: { force?: boolean; project?: ApiProject | null }) => {
+      const currentProject = options?.project ?? project
+      if (!sessionId || !currentProject?.vcs) return
+      if (!options?.force && loadedScopes[scope]) return
+
+      const requestId = ++diffRequestIdRef.current[scope]
+      setLoadingScopes(prev => ({ ...prev, [scope]: true }))
       setError(null)
 
-      getSessionDiff(sessionId)
-        .then(data => {
-          if (cancelled || requestId !== requestIdRef.current) return
+      try {
+        const data =
+          scope === 'session' ? await getSessionDiff(sessionId, directory) : await getLastTurnDiff(sessionId, directory)
 
-          setDiffs(data)
-          setExpandedDirs(prev => (prev.size === 0 ? collectExpandedDirPaths(buildChangesTree(data)) : prev))
-          const { nextOpenFiles, nextActiveFile } = reconcileDiffPreviewState(
-            data,
-            openDiffFilesRef.current,
-            selectedFileRef.current,
-          )
-          setOpenDiffFiles(nextOpenFiles)
-          setSelectedFile(nextActiveFile)
-        })
-        .catch(err => {
-          if (cancelled || requestId !== requestIdRef.current) return
-          sessionErrorHandler('load session diff', err)
-          setError(t('sessionChanges.failedToLoad'))
-        })
-        .finally(() => {
-          if (!cancelled && requestId === requestIdRef.current) {
-            setLoading(false)
-          }
-        })
-    }, 0)
+        if (requestId !== diffRequestIdRef.current[scope]) return
 
-    return () => {
-      cancelled = true
-      clearTimeout(timer)
+        if (scope === 'session') {
+          setSessionDiffs(data)
+        } else {
+          setTurnDiffs(data)
+        }
+
+        setLoadedScopes(prev => ({ ...prev, [scope]: true }))
+      } catch (err) {
+        if (requestId !== diffRequestIdRef.current[scope]) return
+        sessionErrorHandler(scope === 'session' ? 'load session diff' : 'load turn diff', err)
+        setError(t('sessionChanges.failedToLoad'))
+      } finally {
+        if (requestId === diffRequestIdRef.current[scope]) {
+          setLoadingScopes(prev => ({ ...prev, [scope]: false }))
+        }
+      }
+    },
+    [directory, loadedScopes, project, sessionId, t],
+  )
+
+  useEffect(() => {
+    setProject(null)
+    setSessionDiffs([])
+    setTurnDiffs([])
+    setLoadedScopes({ session: false, turn: false })
+    setLoadingScopes({ session: false, turn: false })
+    setError(null)
+    setOpenDiffFiles([])
+    setSelectedFile(null)
+    setExpandedDirs(new Set())
+    setChangeScope('session')
+    resetSplitHeight()
+
+    void loadProjectState()
+  }, [directory, sessionId, loadProjectState, resetSplitHeight])
+
+  useEffect(() => {
+    if (!project?.vcs) return
+    void loadDiffScope(changeScope)
+  }, [changeScope, loadDiffScope, project?.vcs])
+
+  useEffect(() => {
+    setExpandedDirs(collectExpandedDirPaths(buildChangesTree(diffs)))
+    const { nextOpenFiles, nextActiveFile } = reconcileDiffPreviewState(
+      diffs,
+      openDiffFilesRef.current,
+      selectedFileRef.current,
+    )
+    setOpenDiffFiles(nextOpenFiles)
+    setSelectedFile(nextActiveFile)
+    if (diffs.length === 0) {
+      resetSplitHeight()
     }
-  }, [sessionId, t])
+  }, [diffs, resetSplitHeight])
 
   // 刷新
-  const handleRefresh = useCallback(() => {
-    if (sessionId) {
-      setLoading(true)
-      setError(null)
-      getSessionDiff(sessionId)
-        .then(data => {
-          setDiffs(data)
-          const { nextOpenFiles, nextActiveFile } = reconcileDiffPreviewState(
-            data,
-            openDiffFilesRef.current,
-            selectedFileRef.current,
-          )
-          setOpenDiffFiles(nextOpenFiles)
-          setSelectedFile(nextActiveFile)
-        })
-        .catch(err => {
-          sessionErrorHandler('load session diff', err)
-          setError(t('sessionChanges.failedToLoad'))
-        })
-        .finally(() => setLoading(false))
+  const handleRefresh = useCallback(async () => {
+    const nextProject = await loadProjectState()
+    if (!nextProject?.vcs) return
+    await loadDiffScope(changeScope, { force: true, project: nextProject })
+  }, [changeScope, loadDiffScope, loadProjectState])
+
+  const handleInitGit = useCallback(async () => {
+    setInitializingGit(true)
+    setError(null)
+
+    try {
+      const nextProject = await initGitProject(directory)
+      setProject(nextProject)
+      setSessionDiffs([])
+      setTurnDiffs([])
+      setLoadedScopes({ session: false, turn: false })
+      setLoadingScopes({ session: false, turn: false })
+      setChangeScope('session')
+    } catch (err) {
+      sessionErrorHandler('init git project', err)
+      setError(t('sessionChanges.failedToInitGit'))
+    } finally {
+      setInitializingGit(false)
     }
-  }, [sessionId, t])
+  }, [directory, t])
 
   // 选中文件
   const handleSelectFile = useCallback((file: string) => {
@@ -222,18 +294,35 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
         .filter((diff): diff is FileDiff => Boolean(diff)),
     [diffs, openDiffFiles],
   )
-  const showPreview = selectedDiff !== null
+  const showPreview = !loading && selectedDiff !== null && !(error && diffs.length === 0)
 
-  if (loading) {
+  if (projectLoading && !project) {
     return <div className="p-4 text-center text-text-400 text-xs">{t('sessionChanges.loadingChanges')}</div>
   }
 
-  if (error) {
+  if (!project && error) {
     return <div className="p-4 text-center text-danger-100 text-xs">{error}</div>
   }
 
-  if (diffs.length === 0) {
-    return <div className="p-4 text-center text-text-400 text-xs">{t('sessionChanges.noChanges')}</div>
+  if (!project?.vcs) {
+    return (
+      <div className="h-full flex items-center justify-center p-4">
+        <div className="max-w-xs text-center space-y-3">
+          <div className="space-y-1">
+            <div className="text-sm font-medium text-text-200">{t('sessionChanges.noGit')}</div>
+            <div className="text-xs text-text-400">{t('sessionChanges.noGitHint')}</div>
+          </div>
+          <button
+            onClick={handleInitGit}
+            disabled={initializingGit}
+            className="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium bg-accent-main-100 text-white hover:bg-accent-main-90 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+          >
+            {initializingGit ? t('sessionChanges.initializingGit') : t('sessionChanges.initGit')}
+          </button>
+          {error && <div className="text-xs text-danger-100">{error}</div>}
+        </div>
+      </div>
+    )
   }
 
   // 总统计
@@ -272,6 +361,27 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
           </div>
 
           <div className="flex items-center gap-1">
+            <div className="flex items-center bg-bg-200/50 rounded overflow-hidden border border-border-200/50 mr-1">
+              <button
+                onClick={() => setChangeScope('session')}
+                className={`px-2 py-0.5 text-[10px] transition-colors ${
+                  changeScope === 'session' ? 'bg-bg-000 text-text-100 shadow-sm' : 'text-text-400 hover:text-text-200'
+                }`}
+                title={t('sessionChanges.sessionScope')}
+              >
+                {t('sessionChanges.sessionScope')}
+              </button>
+              <button
+                onClick={() => setChangeScope('turn')}
+                className={`px-2 py-0.5 text-[10px] transition-colors ${
+                  changeScope === 'turn' ? 'bg-bg-000 text-text-100 shadow-sm' : 'text-text-400 hover:text-text-200'
+                }`}
+                title={t('sessionChanges.turnScope')}
+              >
+                {t('sessionChanges.turnScope')}
+              </button>
+            </div>
+
             {/* List Mode Toggle */}
             <div className="flex items-center bg-bg-200/50 rounded overflow-hidden border border-border-200/50 mr-1">
               <button
@@ -328,56 +438,66 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
 
         {/* File List */}
         <div className="flex-1 overflow-auto panel-scrollbar-y">
-          <div className="py-0.5">
-            {listMode === 'tree'
-              ? // Tree view
-                changesTree.map(node => (
-                  <ChangesTreeItem
-                    key={node.path}
-                    node={node}
-                    depth={0}
-                    expandedDirs={expandedDirs}
-                    onSelectFile={handleSelectFile}
-                    onToggleDir={handleToggleDir}
-                  />
-                ))
-              : // Flat list view
-                diffs.map(diff => {
-                  const fileStatus = getFileStatus(diff)
+          {loading ? (
+            <div className="p-4 text-center text-text-400 text-xs">{t('sessionChanges.loadingChanges')}</div>
+          ) : error && diffs.length === 0 ? (
+            <div className="p-4 text-center text-danger-100 text-xs">{error}</div>
+          ) : diffs.length === 0 ? (
+            <div className="p-4 text-center text-text-400 text-xs">
+              {changeScope === 'session' ? t('sessionChanges.noChanges') : t('sessionChanges.noTurnChanges')}
+            </div>
+          ) : (
+            <div className="py-0.5">
+              {listMode === 'tree'
+                ? // Tree view
+                  changesTree.map(node => (
+                    <ChangesTreeItem
+                      key={node.path}
+                      node={node}
+                      depth={0}
+                      expandedDirs={expandedDirs}
+                      onSelectFile={handleSelectFile}
+                      onToggleDir={handleToggleDir}
+                    />
+                  ))
+                : // Flat list view
+                  diffs.map(diff => {
+                    const fileStatus = getFileStatus(diff)
 
-                  return (
-                    <button
-                      key={diff.file}
-                      onClick={() => handleSelectFile(diff.file)}
-                      className={`
+                    return (
+                      <button
+                        key={diff.file}
+                        onClick={() => handleSelectFile(diff.file)}
+                        className={`
                        w-full min-w-0 flex items-center gap-2 px-3 py-1 text-left
                        hover:bg-bg-200/50 transition-colors text-[12px]
                        text-text-300
                      `}
-                    >
-                      <img
-                        src={getMaterialIconUrl(diff.file, 'file')}
-                        alt=""
-                        width={16}
-                        height={16}
-                        className="shrink-0"
-                        loading="lazy"
-                        decoding="async"
-                        onError={e => {
-                          e.currentTarget.style.visibility = 'hidden'
-                        }}
-                      />
-                      <span className={`flex-1 min-w-0 font-mono truncate ${FILE_STATUS_COLOR[fileStatus]}`}>
-                        {diff.file}
-                      </span>
-                      <div className="flex items-center gap-2 text-[10px] font-mono shrink-0">
-                        {diff.additions > 0 && <span className="text-success-100">+{diff.additions}</span>}
-                        {diff.deletions > 0 && <span className="text-danger-100">-{diff.deletions}</span>}
-                      </div>
-                    </button>
-                  )
-                })}
-          </div>
+                      >
+                        <img
+                          src={getMaterialIconUrl(diff.file, 'file')}
+                          alt=""
+                          width={16}
+                          height={16}
+                          className="shrink-0"
+                          loading="lazy"
+                          decoding="async"
+                          onError={e => {
+                            e.currentTarget.style.visibility = 'hidden'
+                          }}
+                        />
+                        <span className={`flex-1 min-w-0 font-mono truncate ${FILE_STATUS_COLOR[fileStatus]}`}>
+                          {diff.file}
+                        </span>
+                        <div className="flex items-center gap-2 text-[10px] font-mono shrink-0">
+                          {diff.additions > 0 && <span className="text-success-100">+{diff.additions}</span>}
+                          {diff.deletions > 0 && <span className="text-danger-100">-{diff.deletions}</span>}
+                        </div>
+                      </button>
+                    )
+                  })}
+            </div>
+          )}
         </div>
       </div>
 

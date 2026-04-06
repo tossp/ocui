@@ -4,6 +4,7 @@
 // ============================================
 
 import type { TimeInfo, TokenUsage, ModelRef, PathInfo, ErrorInfo, TextRange } from './common'
+import type { FileDiff } from './file'
 
 // ============================================
 // Message Types
@@ -15,6 +16,7 @@ import type { TimeInfo, TokenUsage, ModelRef, PathInfo, ErrorInfo, TextRange } f
 export interface MessageSummary {
   title?: string
   body?: string
+  diffs?: FileDiff[]
 }
 
 /**

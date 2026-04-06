@@ -5,7 +5,8 @@
 
 import { get, post, patch, del } from './http'
 import { formatPathForApi } from '../utils/directoryUtils'
-import type { ApiSession, SessionListParams, FileDiff } from './types'
+import { getSessionMessages } from './message'
+import type { ApiSession, SessionListParams, FileDiff, ApiMessageWithParts, ApiUserMessage } from './types'
 import type { SessionStatusMap } from '../types/api/session'
 
 // ... existing code ...
@@ -30,6 +31,28 @@ export async function getSessionDiff(sessionId: string, directory?: string, mess
     params.messageID = messageId
   }
   return get<FileDiff[]>(`/session/${sessionId}/diff`, params)
+}
+
+function isUserMessage(message: ApiMessageWithParts): message is ApiMessageWithParts & { info: ApiUserMessage } {
+  return message.info.role === 'user'
+}
+
+/**
+ * 获取当前可见用户消息对应的本轮 diff
+ */
+export async function getLastTurnDiff(sessionId: string, directory?: string): Promise<FileDiff[]> {
+  const [session, messages] = await Promise.all([
+    getSession(sessionId, directory),
+    getSessionMessages(sessionId, undefined, directory),
+  ])
+
+  const userMessages = messages.filter(isUserMessage)
+  const revertMessageId = session.revert?.messageID
+  const visibleUserMessages = revertMessageId
+    ? userMessages.filter(message => message.info.id < revertMessageId)
+    : userMessages
+
+  return visibleUserMessages.at(-1)?.info.summary?.diffs ?? []
 }
 
 // ============================================
