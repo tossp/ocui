@@ -1,5 +1,16 @@
 # Changelog
 
+## [v0.4.5] - 2026-04-06
+
+- fix: refine changes menu spacing (ad48921)
+- feat: sync file explorer status with change modes (b655d50)
+- fix: align undo state with visible messages (752cae6)
+- fix: clear command drafts after dispatch (4851435)
+- fix: show history compacted messages (cc7d980)
+- fix: simplify changes panel mode switch (ceb721b)
+- feat: add git and branch review modes (71a8c0d)
+- feat: add git setup and current-turn session changes (769f3ab)
+
 ## [v0.4.4] - 2026-04-06
 
 - fix: keep edit mode checkboxes compact on mobile (3d7c342)
