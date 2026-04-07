@@ -1,5 +1,12 @@
 # Changelog
 
+## [v0.4.6] - 2026-04-07
+
+- fix: keep active child sessions visible across projects (9d8a725)
+- fix: polish folder recents load more control (cbb1d59)
+- fix: fade changes stats as one line (f05f8af)
+- fix: compact changes panel header (231904f)
+
 ## [v0.4.5] - 2026-04-06
 
 - fix: refine changes menu spacing (ad48921)
