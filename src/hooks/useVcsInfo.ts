@@ -18,30 +18,37 @@ export interface UseVcsInfoResult {
 
 export function useVcsInfo(directory?: string): UseVcsInfoResult {
   const [vcsInfo, setVcsInfo] = useState<VcsInfo | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(Boolean(directory))
   const [error, setError] = useState<string | null>(null)
   const mountedRef = useRef(true)
+  const requestIdRef = useRef(0)
 
   const fetchVcs = useCallback(async () => {
+    const requestId = ++requestIdRef.current
+
     if (!directory) {
-      setVcsInfo(null)
+      if (mountedRef.current && requestId === requestIdRef.current) {
+        setVcsInfo(null)
+        setError(null)
+        setIsLoading(false)
+      }
       return
     }
 
     setIsLoading(true)
     try {
       const info = await getVcsInfo(directory)
-      if (mountedRef.current) {
+      if (mountedRef.current && requestId === requestIdRef.current) {
         setVcsInfo(info)
         setError(null)
       }
     } catch (e) {
-      if (mountedRef.current) {
+      if (mountedRef.current && requestId === requestIdRef.current) {
         setError(e instanceof Error ? e.message : 'Failed to fetch VCS info')
         setVcsInfo(null)
       }
     } finally {
-      if (mountedRef.current) {
+      if (mountedRef.current && requestId === requestIdRef.current) {
         setIsLoading(false)
       }
     }
@@ -50,11 +57,14 @@ export function useVcsInfo(directory?: string): UseVcsInfoResult {
   // 初始加载 + 目录变化时重新获取
   useEffect(() => {
     mountedRef.current = true
-    fetchVcs()
+    setVcsInfo(null)
+    setError(null)
+    setIsLoading(Boolean(directory))
+    void fetchVcs()
     return () => {
       mountedRef.current = false
     }
-  }, [fetchVcs])
+  }, [directory, fetchVcs])
 
   // 轮询
   useEffect(() => {

@@ -17,10 +17,13 @@ import {
   AlertCircleIcon,
   ExternalLinkIcon,
 } from './Icons'
+import { getCurrentProject } from '../api/client'
+import { disposeInstance } from '../api/global'
+import { listPtySessions, removePtySession } from '../api/pty'
 import { listWorktrees, createWorktree, removeWorktree, resetWorktree } from '../api/worktree'
 import { subscribeToEvents } from '../api/events'
-import { useDirectory, useVcsInfo } from '../hooks'
-import { normalizeToForwardSlash } from '../utils'
+import { useDirectory, useVcsInfo, requestGitWorkspaceCatalogRefresh } from '../hooks'
+import { isSameDirectory, normalizeToForwardSlash } from '../utils'
 import { ConfirmDialog } from './ui/ConfirmDialog'
 
 // ============================================
@@ -33,9 +36,10 @@ interface WorktreePanelProps {
 
 export const WorktreePanel = memo(function WorktreePanel({ isResizing: _isResizing }: WorktreePanelProps) {
   const { t } = useTranslation(['components', 'common'])
-  const { currentDirectory, addDirectory } = useDirectory()
+  const { currentDirectory, addDirectory, setCurrentDirectory } = useDirectory()
   const { vcsInfo, refresh: refreshVcs } = useVcsInfo(currentDirectory)
   const [worktrees, setWorktrees] = useState<string[]>([])
+  const [rootDirectory, setRootDirectory] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
@@ -49,24 +53,39 @@ export const WorktreePanel = memo(function WorktreePanel({ isResizing: _isResizi
     directory: null,
   })
 
+  const resolveRootDirectory = useCallback(async (directory?: string) => {
+    if (!directory) return null
+    const project = await getCurrentProject(directory)
+    if (project.vcs !== 'git' || !project.worktree) return null
+    return normalizeToForwardSlash(project.worktree)
+  }, [])
+
   // 加载 worktree 列表
   const loadWorktrees = useCallback(async () => {
     if (!currentDirectory) {
       setWorktrees([])
+      setRootDirectory(null)
       setLoading(false)
       return
     }
 
     try {
+      setLoading(true)
       setError(null)
-      const list = await listWorktrees(currentDirectory)
+      const baseDirectory = await resolveRootDirectory(currentDirectory)
+      setRootDirectory(baseDirectory)
+      if (!baseDirectory) {
+        setWorktrees([])
+        return
+      }
+      const list = await listWorktrees(baseDirectory)
       setWorktrees(list)
     } catch (e) {
       setError(e instanceof Error ? e.message : t('worktreePanel.failedToLoad'))
     } finally {
       setLoading(false)
     }
-  }, [currentDirectory, t])
+  }, [currentDirectory, resolveRootDirectory, t])
 
   useEffect(() => {
     loadWorktrees()
@@ -88,6 +107,28 @@ export const WorktreePanel = memo(function WorktreePanel({ isResizing: _isResizi
     })
   }, [loadWorktrees, refreshVcs, t])
 
+  const releaseWorktreeResources = useCallback(async (directory: string) => {
+    try {
+      const ptySessions = await listPtySessions(directory)
+      await Promise.allSettled(ptySessions.map(pty => removePtySession(pty.id, directory)))
+    } catch {
+      // ignore cleanup failure here, let remove/reset report the real error
+    }
+
+    try {
+      await disposeInstance(directory)
+    } catch {
+      // ignore cleanup failure here, let remove/reset report the real error
+    }
+  }, [])
+
+  const requireRootDirectory = useCallback(() => {
+    if (!rootDirectory) {
+      throw new Error(t('worktreePanel.failedToLoad'))
+    }
+    return rootDirectory
+  }, [rootDirectory, t])
+
   // 在 worktree 目录下开启新 session
   const handleOpenSession = useCallback(
     (worktreeDir: string) => {
@@ -107,9 +148,11 @@ export const WorktreePanel = memo(function WorktreePanel({ isResizing: _isResizi
 
       setActionLoading('create')
       try {
-        const wt = await createWorktree({ name: name.trim() }, currentDirectory)
+        const baseDirectory = requireRootDirectory()
+        const wt = await createWorktree({ name: name.trim() }, baseDirectory)
         setShowCreateForm(false)
         await loadWorktrees()
+        requestGitWorkspaceCatalogRefresh()
         if (autoOpen && wt.directory) {
           handleOpenSession(wt.directory)
         }
@@ -119,7 +162,7 @@ export const WorktreePanel = memo(function WorktreePanel({ isResizing: _isResizi
         setActionLoading(null)
       }
     },
-    [currentDirectory, loadWorktrees, handleOpenSession, t],
+    [currentDirectory, handleOpenSession, loadWorktrees, requireRootDirectory, t],
   )
 
   // 删除 worktree
@@ -129,8 +172,17 @@ export const WorktreePanel = memo(function WorktreePanel({ isResizing: _isResizi
 
       setActionLoading(`delete-${directory}`)
       try {
-        await removeWorktree({ directory }, currentDirectory)
+        const baseDirectory = requireRootDirectory()
+        const isCurrentDirectory = isSameDirectory(currentDirectory, directory)
+
+        if (isCurrentDirectory && !isSameDirectory(currentDirectory, baseDirectory)) {
+          setCurrentDirectory(baseDirectory)
+        }
+
+        await releaseWorktreeResources(directory)
+        await removeWorktree({ directory }, baseDirectory)
         await loadWorktrees()
+        requestGitWorkspaceCatalogRefresh()
       } catch (e) {
         setError(e instanceof Error ? e.message : t('worktreePanel.failedToRemove'))
       } finally {
@@ -138,7 +190,7 @@ export const WorktreePanel = memo(function WorktreePanel({ isResizing: _isResizi
         setDeleteConfirm({ isOpen: false, directory: null })
       }
     },
-    [currentDirectory, loadWorktrees, t],
+    [currentDirectory, loadWorktrees, releaseWorktreeResources, requireRootDirectory, setCurrentDirectory, t],
   )
 
   // 重置 worktree
@@ -148,8 +200,11 @@ export const WorktreePanel = memo(function WorktreePanel({ isResizing: _isResizi
 
       setActionLoading(`reset-${directory}`)
       try {
-        await resetWorktree({ directory }, currentDirectory)
+        const baseDirectory = requireRootDirectory()
+        await releaseWorktreeResources(directory)
+        await resetWorktree({ directory }, baseDirectory)
         await loadWorktrees()
+        requestGitWorkspaceCatalogRefresh()
       } catch (e) {
         setError(e instanceof Error ? e.message : t('worktreePanel.failedToReset'))
       } finally {
@@ -157,7 +212,7 @@ export const WorktreePanel = memo(function WorktreePanel({ isResizing: _isResizi
         setResetConfirm({ isOpen: false, directory: null })
       }
     },
-    [currentDirectory, loadWorktrees, t],
+    [currentDirectory, loadWorktrees, releaseWorktreeResources, requireRootDirectory, t],
   )
 
   // 从 worktree path 中提取显示名
