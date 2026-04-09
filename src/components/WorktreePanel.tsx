@@ -3,7 +3,7 @@
 // 显示 VCS 分支信息 + Worktree 管理
 // ============================================
 
-import { memo, useState, useEffect, useCallback } from 'react'
+import { memo, useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   GitWorktreeIcon,
@@ -23,7 +23,7 @@ import { listPtySessions, removePtySession } from '../api/pty'
 import { listWorktrees, createWorktree, removeWorktree, resetWorktree } from '../api/worktree'
 import { subscribeToEvents } from '../api/events'
 import { useDirectory, useVcsInfo, requestGitWorkspaceCatalogRefresh } from '../hooks'
-import { isSameDirectory, normalizeToForwardSlash } from '../utils'
+import { getDirectoryName, isSameDirectory, normalizeToForwardSlash } from '../utils'
 import { ConfirmDialog } from './ui/ConfirmDialog'
 
 // ============================================
@@ -44,6 +44,7 @@ export const WorktreePanel = memo(function WorktreePanel({ isResizing: _isResizi
   const [error, setError] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [showCreateForm, setShowCreateForm] = useState(false)
+  const loadRequestIdRef = useRef(0)
   const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; directory: string | null }>({
     isOpen: false,
     directory: null,
@@ -62,7 +63,10 @@ export const WorktreePanel = memo(function WorktreePanel({ isResizing: _isResizi
 
   // 加载 worktree 列表
   const loadWorktrees = useCallback(async () => {
+    const requestId = ++loadRequestIdRef.current
+
     if (!currentDirectory) {
+      setError(null)
       setWorktrees([])
       setRootDirectory(null)
       setLoading(false)
@@ -73,17 +77,25 @@ export const WorktreePanel = memo(function WorktreePanel({ isResizing: _isResizi
       setLoading(true)
       setError(null)
       const baseDirectory = await resolveRootDirectory(currentDirectory)
+      if (requestId !== loadRequestIdRef.current) return
+
       setRootDirectory(baseDirectory)
       if (!baseDirectory) {
         setWorktrees([])
         return
       }
+
       const list = await listWorktrees(baseDirectory)
+      if (requestId !== loadRequestIdRef.current) return
+
       setWorktrees(list)
     } catch (e) {
+      if (requestId !== loadRequestIdRef.current) return
       setError(e instanceof Error ? e.message : t('worktreePanel.failedToLoad'))
     } finally {
-      setLoading(false)
+      if (requestId === loadRequestIdRef.current) {
+        setLoading(false)
+      }
     }
   }, [currentDirectory, resolveRootDirectory, t])
 
@@ -128,6 +140,8 @@ export const WorktreePanel = memo(function WorktreePanel({ isResizing: _isResizi
     }
     return rootDirectory
   }, [rootDirectory, t])
+
+  const canManageWorktrees = !!rootDirectory && !loading
 
   // 在 worktree 目录下开启新 session
   const handleOpenSession = useCallback(
@@ -215,12 +229,6 @@ export const WorktreePanel = memo(function WorktreePanel({ isResizing: _isResizi
     [currentDirectory, loadWorktrees, releaseWorktreeResources, requireRootDirectory, t],
   )
 
-  // 从 worktree path 中提取显示名
-  const getWorktreeName = useCallback((wtPath: string) => {
-    const parts = wtPath.replace(/\\/g, '/').split('/').filter(Boolean)
-    return parts[parts.length - 1] || wtPath
-  }, [])
-
   // ==========================================
   // Render
   // ==========================================
@@ -277,7 +285,7 @@ export const WorktreePanel = memo(function WorktreePanel({ isResizing: _isResizi
         </div>
         <button
           onClick={() => setShowCreateForm(true)}
-          disabled={!!actionLoading}
+          disabled={!!actionLoading || !canManageWorktrees}
           className="p-1 rounded text-text-400 hover:text-text-100 hover:bg-bg-200/50 transition-colors"
           title={t('worktreePanel.createWorktree')}
         >
@@ -299,7 +307,7 @@ export const WorktreePanel = memo(function WorktreePanel({ isResizing: _isResizi
       )}
 
       {/* Create Form */}
-      {showCreateForm && (
+      {showCreateForm && canManageWorktrees && (
         <CreateWorktreeForm
           onSubmit={handleCreate}
           onCancel={() => setShowCreateForm(false)}
@@ -320,6 +328,7 @@ export const WorktreePanel = memo(function WorktreePanel({ isResizing: _isResizi
             <span>{t('worktreePanel.noWorktrees')}</span>
             <button
               onClick={() => setShowCreateForm(true)}
+              disabled={!canManageWorktrees}
               className="px-3 py-1.5 text-[11px] bg-bg-200/50 hover:bg-bg-200 text-text-200 rounded-md transition-colors"
             >
               {t('worktreePanel.createWorktree')}
@@ -331,7 +340,7 @@ export const WorktreePanel = memo(function WorktreePanel({ isResizing: _isResizi
               <WorktreeItem
                 key={wt}
                 directory={wt}
-                name={getWorktreeName(wt)}
+                name={getDirectoryName(wt)}
                 isLoading={actionLoading === `delete-${wt}` || actionLoading === `reset-${wt}`}
                 onOpenSession={() => handleOpenSession(wt)}
                 onDelete={() => setDeleteConfirm({ isOpen: true, directory: wt })}
@@ -353,7 +362,7 @@ export const WorktreePanel = memo(function WorktreePanel({ isResizing: _isResizi
         }}
         title={t('worktreePanel.removeWorktree')}
         description={t('worktreePanel.removeWorktreeConfirm', {
-          name: deleteConfirm.directory ? getWorktreeName(deleteConfirm.directory) : '',
+          name: deleteConfirm.directory ? getDirectoryName(deleteConfirm.directory) : '',
         })}
         confirmText={t('common:remove')}
         variant="danger"
@@ -370,7 +379,7 @@ export const WorktreePanel = memo(function WorktreePanel({ isResizing: _isResizi
         }}
         title={t('worktreePanel.resetWorktree')}
         description={t('worktreePanel.resetWorktreeConfirm', {
-          name: resetConfirm.directory ? getWorktreeName(resetConfirm.directory) : '',
+          name: resetConfirm.directory ? getDirectoryName(resetConfirm.directory) : '',
         })}
         confirmText={t('common:reset')}
         variant="danger"

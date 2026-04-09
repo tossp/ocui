@@ -388,8 +388,11 @@ export function SidePanel({
         const existing = groups.get(projectId)
 
         if (existing) {
-          existing.memberDirectories = [...(existing.memberDirectories ?? []), directory.path]
-          if (!existing.reorderPath) existing.reorderPath = directory.path
+          groups.set(projectId, {
+            ...existing,
+            memberDirectories: [...(existing.memberDirectories ?? []), directory.path],
+            reorderPath: existing.reorderPath ?? directory.path,
+          })
           continue
         }
 

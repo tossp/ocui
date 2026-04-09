@@ -33,16 +33,18 @@ export function useGitWorkspaceCatalog(directories: string[]) {
   }, [])
 
   const refresh = useCallback(async () => {
-    const normalizedDirectories = Array.from(
-      new Set(directories.filter(Boolean).map(directory => normalizeToForwardSlash(directory))),
+    const version = ++versionRef.current
+    const normalizedDirectorySet = new Set(
+      directories.filter(Boolean).map(directory => normalizeToForwardSlash(directory)),
     )
+    const normalizedDirectories = Array.from(normalizedDirectorySet)
 
     if (normalizedDirectories.length === 0) {
+      setIsLoading(false)
       setCatalogState(new Map())
       return
     }
 
-    const version = ++versionRef.current
     setIsLoading(true)
     const previousCatalog = catalogRef.current
 
@@ -66,7 +68,7 @@ export function useGitWorkspaceCatalog(directories: string[]) {
           previousWorkspacesByRoot.set(meta.rootDirectory, meta.workspaces)
         }
 
-        if (normalizedDirectories.includes(directory)) {
+        if (normalizedDirectorySet.has(directory)) {
           nextCatalog.set(directory, meta)
         }
       }

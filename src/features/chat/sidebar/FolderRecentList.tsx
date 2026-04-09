@@ -154,6 +154,31 @@ function getInitialExpandedProjectIds(projects: FolderRecentProject[], currentDi
   return [currentProject?.id || projects[0].id]
 }
 
+function areProjectIdListsEqual(left: string[], right: string[]) {
+  return left.length === right.length && left.every((id, index) => id === right[index])
+}
+
+function getCurrentProjectId(projects: FolderRecentProject[], currentDirectory?: string) {
+  return currentDirectory
+    ? projects.find(project => isSameDirectory(project.worktree, currentDirectory))?.id
+    : undefined
+}
+
+function reconcileExpandedProjectIds(prev: string[], projects: FolderRecentProject[], currentDirectory?: string) {
+  const next = prev.filter(id => projects.some(project => project.id === id))
+  const fallback = next.length > 0 ? next : getInitialExpandedProjectIds(projects, currentDirectory)
+  return areProjectIdListsEqual(fallback, prev) ? prev : fallback
+}
+
+function expandProjectId(prev: string[], projectId?: string) {
+  if (!projectId || prev.includes(projectId)) return prev
+  return [projectId, ...prev]
+}
+
+function toggleProjectId(prev: string[], projectId: string) {
+  return prev.includes(projectId) ? prev.filter(id => id !== projectId) : [...prev, projectId]
+}
+
 function createDirectoryProject(directory: string, sectionKind: FolderRecentProject['sectionKind'] = 'project') {
   return {
     id: directory,
@@ -161,6 +186,26 @@ function createDirectoryProject(directory: string, sectionKind: FolderRecentProj
     name: getDirectoryName(directory) || directory,
     sectionKind,
   } satisfies FolderRecentProject
+}
+
+function useCollapseExpandedIdsOnDrag(
+  expandedIds: string[],
+  setExpandedIds: React.Dispatch<React.SetStateAction<string[]>>,
+) {
+  const savedExpandedRef = useRef<string[] | null>(null)
+
+  const handleDragActivated = useCallback(() => {
+    savedExpandedRef.current = expandedIds
+    setExpandedIds([])
+  }, [expandedIds, setExpandedIds])
+
+  const handleDragFinished = useCallback(() => {
+    if (!savedExpandedRef.current) return
+    setExpandedIds(savedExpandedRef.current)
+    savedExpandedRef.current = null
+  }, [setExpandedIds])
+
+  return { handleDragActivated, handleDragFinished }
 }
 
 interface ReorderState {
@@ -386,39 +431,22 @@ export function FolderRecentList({
   const [pendingDelete, setPendingDelete] = useState<PendingDeleteSession | null>(null)
   const allBusySessions = useBusySessions()
   const allNotifications = useNotifications()
-  const savedExpandedRef = useRef<string[] | null>(null)
   const projectById = useMemo(() => new Map(projects.map(project => [project.id, project])), [projects])
+  const { handleDragActivated, handleDragFinished } = useCollapseExpandedIdsOnDrag(
+    expandedProjectIds,
+    onExpandedProjectIdsChange,
+  )
 
-  // 当 projects 列表变化时，过滤掉已不存在的展开项
+  // 当 projects 列表变化时，过滤掉已不存在的展开项 + 确保当前目录对应的 project 展开
   useEffect(() => {
     onExpandedProjectIdsChange(prev => {
-      const next = prev.filter(id => projects.some(project => project.id === id))
-      const fallback = next.length > 0 ? next : getInitialExpandedProjectIds(projects, currentDirectory)
-      if (fallback.length === prev.length && fallback.every((id, index) => id === prev[index])) {
-        return prev
-      }
-      return fallback
-    })
-  }, [projects, currentDirectory, onExpandedProjectIdsChange])
-
-  // 确保当前目录对应的 project 展开
-  useEffect(() => {
-    if (!currentDirectory) return
-    const currentProject = projects.find(project => isSameDirectory(project.worktree, currentDirectory))
-    if (!currentProject) return
-
-    onExpandedProjectIdsChange(prev => {
-      if (prev.includes(currentProject.id)) return prev
-      return [currentProject.id, ...prev]
+      const reconciled = reconcileExpandedProjectIds(prev, projects, currentDirectory)
+      return expandProjectId(reconciled, getCurrentProjectId(projects, currentDirectory))
     })
   }, [projects, currentDirectory, onExpandedProjectIdsChange])
 
   const handleToggleProject = useCallback(
-    (projectId: string) => {
-      onExpandedProjectIdsChange(prev =>
-        prev.includes(projectId) ? prev.filter(id => id !== projectId) : [...prev, projectId],
-      )
-    },
+    (projectId: string) => onExpandedProjectIdsChange(prev => toggleProjectId(prev, projectId)),
     [onExpandedProjectIdsChange],
   )
 
@@ -440,16 +468,8 @@ export function FolderRecentList({
       if (!draggedProject?.canReorder || !targetProject?.canReorder) return
       onReorderProject(draggedProject.worktree, targetProject.worktree)
     },
-    onDragActivated: () => {
-      savedExpandedRef.current = expandedProjectIds
-      onExpandedProjectIdsChange([])
-    },
-    onDragFinished: () => {
-      if (savedExpandedRef.current) {
-        onExpandedProjectIdsChange(savedExpandedRef.current)
-        savedExpandedRef.current = null
-      }
-    },
+    onDragActivated: handleDragActivated,
+    onDragFinished: handleDragFinished,
   })
 
   const handleSelectDirectory = useCallback(
@@ -931,36 +951,21 @@ function WorkspaceFolderList({
   const [expandedWorkspaceIds, setExpandedWorkspaceIds] = useState<string[]>(() =>
     getInitialExpandedProjectIds(workspaceProjects, currentDirectory),
   )
+  const { handleDragActivated, handleDragFinished } = useCollapseExpandedIdsOnDrag(
+    expandedWorkspaceIds,
+    setExpandedWorkspaceIds,
+  )
 
   useEffect(() => {
     setExpandedWorkspaceIds(prev => {
-      const next = prev.filter(id => workspaceProjects.some(project => project.id === id))
-      const fallback = next.length > 0 ? next : getInitialExpandedProjectIds(workspaceProjects, currentDirectory)
-      if (fallback.length === prev.length && fallback.every((id, index) => id === prev[index])) {
-        return prev
-      }
-      return fallback
-    })
-  }, [workspaceProjects, currentDirectory])
-
-  useEffect(() => {
-    if (!currentDirectory) return
-    const currentWorkspace = workspaceProjects.find(project => isSameDirectory(project.worktree, currentDirectory))
-    if (!currentWorkspace) return
-
-    setExpandedWorkspaceIds(prev => {
-      if (prev.includes(currentWorkspace.id)) return prev
-      return [currentWorkspace.id, ...prev]
+      const reconciled = reconcileExpandedProjectIds(prev, workspaceProjects, currentDirectory)
+      return expandProjectId(reconciled, getCurrentProjectId(workspaceProjects, currentDirectory))
     })
   }, [workspaceProjects, currentDirectory])
 
   const handleToggleWorkspace = useCallback((workspaceId: string) => {
-    setExpandedWorkspaceIds(prev =>
-      prev.includes(workspaceId) ? prev.filter(id => id !== workspaceId) : [...prev, workspaceId],
-    )
+    setExpandedWorkspaceIds(prev => toggleProjectId(prev, workspaceId))
   }, [])
-
-  const savedWorkspaceExpandedRef = useRef<string[] | null>(null)
 
   const {
     draggedId,
@@ -979,16 +984,8 @@ function WorkspaceFolderList({
       if (!draggedWorkspace || !targetWorkspace || !onReorderWorkspace) return
       onReorderWorkspace(draggedWorkspace.worktree, targetWorkspace.worktree)
     },
-    onDragActivated: () => {
-      savedWorkspaceExpandedRef.current = expandedWorkspaceIds
-      setExpandedWorkspaceIds([])
-    },
-    onDragFinished: () => {
-      if (savedWorkspaceExpandedRef.current) {
-        setExpandedWorkspaceIds(savedWorkspaceExpandedRef.current)
-        savedWorkspaceExpandedRef.current = null
-      }
-    },
+    onDragActivated: handleDragActivated,
+    onDragFinished: handleDragFinished,
   })
 
   return (
