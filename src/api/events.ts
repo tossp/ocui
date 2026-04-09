@@ -2,28 +2,30 @@
 // Global Event Subscription (SSE) - Singleton Pattern
 // ============================================
 
-import type { EventTodoUpdated as SDKEventTodoUpdated } from '@opencode-ai/sdk/v2/client'
+import type {
+  EventMessagePartDelta as SDKEventMessagePartDelta,
+  EventMessagePartRemoved as SDKEventMessagePartRemoved,
+  EventMessagePartUpdated as SDKEventMessagePartUpdated,
+  EventMessageUpdated as SDKEventMessageUpdated,
+  EventPermissionAsked as SDKEventPermissionAsked,
+  EventPermissionReplied as SDKEventPermissionReplied,
+  EventQuestionAsked as SDKEventQuestionAsked,
+  EventQuestionRejected as SDKEventQuestionRejected,
+  EventQuestionReplied as SDKEventQuestionReplied,
+  EventSessionCreated as SDKEventSessionCreated,
+  EventSessionIdle as SDKEventSessionIdle,
+  EventSessionStatus as SDKEventSessionStatus,
+  EventSessionUpdated as SDKEventSessionUpdated,
+  EventTodoUpdated as SDKEventTodoUpdated,
+  EventVcsBranchUpdated as SDKEventVcsBranchUpdated,
+  EventWorktreeFailed as SDKEventWorktreeFailed,
+  EventWorktreeReady as SDKEventWorktreeReady,
+} from '@opencode-ai/sdk/v2/client'
 import { getApiBaseUrl, getAuthHeader } from './http'
 import { normalizeTodoItems } from './todo'
 import { isTauri } from '../utils/tauri'
-import type {
-  ApiMessageWithParts,
-  ApiPart,
-  ApiSession,
-  ApiPermissionRequest,
-  PermissionReply,
-  ApiQuestionRequest,
-  GlobalEvent,
-  EventCallbacks,
-  PartDeltaPayload,
-  PartRemovedPayload,
-  SessionStatusPayload,
-  WorktreeReadyPayload,
-  WorktreeFailedPayload,
-  VcsBranchUpdatedPayload,
-  TodoUpdatedPayload,
-  QuestionAnswer,
-} from './types'
+import type { GlobalEvent, EventCallbacks, SessionErrorPayload, TodoUpdatedPayload } from './types'
+import { EventTypes } from '../types/api/event'
 
 // ============================================
 // Connection State
@@ -643,68 +645,68 @@ function broadcastEvent(globalEvent: GlobalEvent) {
 
 function handleEventForSubscriber(type: string, properties: unknown, callbacks: EventCallbacks) {
   switch (type) {
-    case 'message.updated': {
-      const data = properties as { info: ApiMessageWithParts['info'] }
+    case EventTypes.MESSAGE_UPDATED: {
+      const data = properties as SDKEventMessageUpdated['properties']
       callbacks.onMessageUpdated?.(data.info)
       break
     }
-    case 'message.part.updated': {
-      const data = properties as { part: ApiPart; delta?: string }
-      callbacks.onPartUpdated?.(data.part, data.delta)
+    case EventTypes.MESSAGE_PART_UPDATED: {
+      const data = properties as SDKEventMessagePartUpdated['properties']
+      callbacks.onPartUpdated?.(data.part)
       break
     }
-    case 'message.part.delta': {
-      const data = properties as PartDeltaPayload
+    case EventTypes.MESSAGE_PART_DELTA: {
+      const data = properties as SDKEventMessagePartDelta['properties']
       callbacks.onPartDelta?.(data)
       break
     }
-    case 'message.part.removed':
-      callbacks.onPartRemoved?.(properties as PartRemovedPayload)
+    case EventTypes.MESSAGE_PART_REMOVED:
+      callbacks.onPartRemoved?.(properties as SDKEventMessagePartRemoved['properties'])
       break
-    case 'session.updated': {
-      const data = properties as { info: ApiSession }
+    case EventTypes.SESSION_UPDATED: {
+      const data = properties as SDKEventSessionUpdated['properties']
       callbacks.onSessionUpdated?.(data.info)
       break
     }
-    case 'session.created': {
-      const data = properties as { info: ApiSession }
+    case EventTypes.SESSION_CREATED: {
+      const data = properties as SDKEventSessionCreated['properties']
       callbacks.onSessionCreated?.(data.info)
       break
     }
-    case 'session.error':
-      callbacks.onSessionError?.(properties as { sessionID: string; name: string; data: unknown })
+    case EventTypes.SESSION_ERROR:
+      callbacks.onSessionError?.(normalizeSessionError(properties))
       break
-    case 'session.idle':
-      callbacks.onSessionIdle?.(properties as { sessionID: string })
+    case EventTypes.SESSION_IDLE:
+      callbacks.onSessionIdle?.(properties as SDKEventSessionIdle['properties'])
       break
-    case 'session.status':
-      callbacks.onSessionStatus?.(properties as SessionStatusPayload)
+    case EventTypes.SESSION_STATUS:
+      callbacks.onSessionStatus?.(properties as SDKEventSessionStatus['properties'])
       break
-    case 'permission.asked':
-      callbacks.onPermissionAsked?.(properties as ApiPermissionRequest)
+    case EventTypes.PERMISSION_ASKED:
+      callbacks.onPermissionAsked?.(properties as SDKEventPermissionAsked['properties'])
       break
-    case 'permission.replied':
-      callbacks.onPermissionReplied?.(properties as { sessionID: string; requestID: string; reply: PermissionReply })
+    case EventTypes.PERMISSION_REPLIED:
+      callbacks.onPermissionReplied?.(properties as SDKEventPermissionReplied['properties'])
       break
-    case 'question.asked':
-      callbacks.onQuestionAsked?.(properties as ApiQuestionRequest)
+    case EventTypes.QUESTION_ASKED:
+      callbacks.onQuestionAsked?.(properties as SDKEventQuestionAsked['properties'])
       break
-    case 'question.replied':
-      callbacks.onQuestionReplied?.(properties as { sessionID: string; requestID: string; answers: QuestionAnswer[] })
+    case EventTypes.QUESTION_REPLIED:
+      callbacks.onQuestionReplied?.(properties as SDKEventQuestionReplied['properties'])
       break
-    case 'question.rejected':
-      callbacks.onQuestionRejected?.(properties as { sessionID: string; requestID: string })
+    case EventTypes.QUESTION_REJECTED:
+      callbacks.onQuestionRejected?.(properties as SDKEventQuestionRejected['properties'])
       break
-    case 'worktree.ready':
-      callbacks.onWorktreeReady?.(properties as WorktreeReadyPayload)
+    case EventTypes.WORKTREE_READY:
+      callbacks.onWorktreeReady?.(properties as SDKEventWorktreeReady['properties'])
       break
-    case 'worktree.failed':
-      callbacks.onWorktreeFailed?.(properties as WorktreeFailedPayload)
+    case EventTypes.WORKTREE_FAILED:
+      callbacks.onWorktreeFailed?.(properties as SDKEventWorktreeFailed['properties'])
       break
-    case 'vcs.branch.updated':
-      callbacks.onVcsBranchUpdated?.(properties as VcsBranchUpdatedPayload)
+    case EventTypes.VCS_BRANCH_UPDATED:
+      callbacks.onVcsBranchUpdated?.(properties as SDKEventVcsBranchUpdated['properties'])
       break
-    case 'todo.updated': {
+    case EventTypes.TODO_UPDATED: {
       const data = properties as SDKEventTodoUpdated['properties']
       callbacks.onTodoUpdated?.({
         sessionID: data.sessionID,
@@ -715,6 +717,39 @@ function handleEventForSubscriber(type: string, properties: unknown, callbacks: 
     default:
       // 忽略其他事件类型
       break
+  }
+}
+
+function normalizeSessionError(properties: unknown): SessionErrorPayload {
+  if (!properties || typeof properties !== 'object') {
+    return { sessionID: '', name: 'UnknownError', data: properties }
+  }
+
+  const candidate = properties as Record<string, unknown>
+  const sessionID = typeof candidate.sessionID === 'string' ? candidate.sessionID : ''
+
+  if (typeof candidate.name === 'string') {
+    return {
+      sessionID,
+      name: candidate.name,
+      data: candidate.data,
+    }
+  }
+
+  const sdkError = candidate.error
+  if (sdkError && typeof sdkError === 'object') {
+    const errorRecord = sdkError as Record<string, unknown>
+    return {
+      sessionID,
+      name: typeof errorRecord.name === 'string' ? errorRecord.name : 'UnknownError',
+      data: 'data' in errorRecord ? errorRecord.data : sdkError,
+    }
+  }
+
+  return {
+    sessionID,
+    name: 'UnknownError',
+    data: sdkError,
   }
 }
 
