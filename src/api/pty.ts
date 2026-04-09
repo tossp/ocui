@@ -8,27 +8,12 @@ import { formatPathForApi } from '../utils/directoryUtils'
 import { serverStore } from '../store/serverStore'
 import type { Pty, PtyCreateParams, PtyUpdateParams } from '../types/api/pty'
 
-function normalizePty(pty: {
-  id: string
-  title: string
-  command: string
-  args: string[]
-  cwd: string
-  status: 'running' | 'exited'
-  pid: number
-}): Pty {
-  return {
-    ...pty,
-    running: pty.status === 'running',
-  }
-}
-
 /**
  * 获取所有 PTY 会话列表
  */
 export async function listPtySessions(directory?: string): Promise<Pty[]> {
   const sdk = getSDKClient()
-  return unwrap(await sdk.pty.list({ directory: formatPathForApi(directory) })).map(normalizePty)
+  return unwrap(await sdk.pty.list({ directory: formatPathForApi(directory) }))
 }
 
 /**
@@ -36,7 +21,7 @@ export async function listPtySessions(directory?: string): Promise<Pty[]> {
  */
 export async function createPtySession(params: PtyCreateParams, directory?: string): Promise<Pty> {
   const sdk = getSDKClient()
-  return normalizePty(unwrap(await sdk.pty.create({ directory: formatPathForApi(directory), ...params })))
+  return unwrap(await sdk.pty.create({ directory: formatPathForApi(directory), ...params }))
 }
 
 /**
@@ -44,7 +29,7 @@ export async function createPtySession(params: PtyCreateParams, directory?: stri
  */
 export async function getPtySession(ptyId: string, directory?: string): Promise<Pty> {
   const sdk = getSDKClient()
-  return normalizePty(unwrap(await sdk.pty.get({ ptyID: ptyId, directory: formatPathForApi(directory) })))
+  return unwrap(await sdk.pty.get({ ptyID: ptyId, directory: formatPathForApi(directory) }))
 }
 
 /**
@@ -52,7 +37,7 @@ export async function getPtySession(ptyId: string, directory?: string): Promise<
  */
 export async function updatePtySession(ptyId: string, params: PtyUpdateParams, directory?: string): Promise<Pty> {
   const sdk = getSDKClient()
-  return normalizePty(unwrap(await sdk.pty.update({ ptyID: ptyId, directory: formatPathForApi(directory), ...params })))
+  return unwrap(await sdk.pty.update({ ptyID: ptyId, directory: formatPathForApi(directory), ...params }))
 }
 
 /**

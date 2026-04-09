@@ -80,7 +80,7 @@ export const BottomPanel = memo(function BottomPanel({ directory }: BottomPanelP
           sessions.map(pty => ({
             id: pty.id,
             title: pty.title || 'Terminal',
-            status: pty.status === 'running' || pty.running ? 'connecting' : 'exited',
+            status: pty.status === 'running' ? 'connecting' : 'exited',
           })),
         )
       } catch (error) {

@@ -1,4 +1,5 @@
 import type {
+  ConfigProvidersResponse as SDKConfigProvidersResponse,
   Model as SDKModel,
   Provider as SDKProvider,
   ProviderAuthAuthorization as SDKProviderAuthAuthorization,
@@ -17,10 +18,7 @@ export type Model = SDKModel
 
 export type Provider = SDKProvider
 
-export interface ProvidersResponse {
-  providers: Provider[]
-  default: Record<string, string>
-}
+export type ProvidersResponse = SDKConfigProvidersResponse
 
 export type ProviderAuthMethod = SDKProviderAuthMethod
 

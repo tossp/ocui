@@ -52,7 +52,7 @@ export const TerminalPanel = memo(function TerminalPanel({ directory }: Terminal
               const tab: TerminalTab = {
                 id: pty.id,
                 title: pty.title || 'Terminal',
-                status: pty.running ? 'connecting' : 'exited',
+                status: pty.status === 'running' ? 'connecting' : 'exited',
               }
               layoutStore.addTerminalTab(tab, false) // 不自动打开面板
             }

@@ -19,9 +19,11 @@ vi.mock('../api', () => ({
 function makeSession(id: string, directory = '/workspace/demo') {
   return {
     id,
+    slug: id,
     projectID: 'project-1',
     directory,
     title: `Session ${id}`,
+    version: '1',
     time: {
       created: 1,
       updated: 2,

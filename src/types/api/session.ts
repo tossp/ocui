@@ -10,7 +10,7 @@ export type SessionShare = NonNullable<SDKSession['share']>
 
 export type SessionRevert = NonNullable<SDKSession['revert']>
 
-export type Session = Omit<SDKSession, 'slug' | 'version'> & Partial<Pick<SDKSession, 'slug' | 'version'>>
+export type Session = SDKSession
 
 export interface SessionListParams {
   directory?: string

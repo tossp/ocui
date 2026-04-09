@@ -8,10 +8,7 @@ import type {
 
 export type FileNodeType = SDKFileNode['type']
 
-export type FileNode = SDKFileNode & {
-  size?: number
-  modified?: number
-}
+export type FileNode = SDKFileNode
 
 export type FilePatch = NonNullable<SDKFileContent['patch']>
 
@@ -30,6 +27,4 @@ export type SymbolRange = SDKSymbol['location']['range']
 
 export type SymbolLocation = SDKSymbol['location']
 
-export type Symbol = SDKSymbol & {
-  containerName?: string
-}
+export type Symbol = SDKSymbol

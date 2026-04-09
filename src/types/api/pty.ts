@@ -1,26 +1,13 @@
-import type { Pty as SDKPty } from '@opencode-ai/sdk/v2/client'
+import type {
+  Pty as SDKPty,
+  PtyCreateData as SDKPtyCreateData,
+  PtyUpdateData as SDKPtyUpdateData,
+} from '@opencode-ai/sdk/v2/client'
 
-export interface PtySize {
-  rows: number
-  cols: number
-}
+export type PtySize = NonNullable<NonNullable<SDKPtyUpdateData['body']>['size']>
 
-export type Pty = SDKPty & {
-  env?: Record<string, string>
-  size?: PtySize
-  running: boolean
-  exitCode?: number
-}
+export type Pty = SDKPty
 
-export interface PtyCreateParams {
-  command?: string
-  args?: string[]
-  cwd?: string
-  title?: string
-  env?: Record<string, string>
-}
+export type PtyCreateParams = NonNullable<SDKPtyCreateData['body']>
 
-export interface PtyUpdateParams {
-  title?: string
-  size?: PtySize
-}
+export type PtyUpdateParams = NonNullable<SDKPtyUpdateData['body']>
