@@ -3,6 +3,7 @@ import type {
   McpOAuthConfig as SDKMcpOAuthConfig,
   McpResource as SDKMcpResource,
   McpRemoteConfig as SDKMcpRemoteConfig,
+  McpStatusResponse as SDKMcpStatusResponse,
   McpStatus as SDKMcpStatus,
   McpStatusConnected as SDKMcpStatusConnected,
   McpStatusDisabled as SDKMcpStatusDisabled,
@@ -25,9 +26,7 @@ export type MCPStatus = SDKMcpStatus
 
 export type MCPResource = SDKMcpResource
 
-export interface MCPStatusResponse {
-  [serverName: string]: MCPStatus
-}
+export type MCPStatusResponse = SDKMcpStatusResponse
 
 export type McpLocalConfig = SDKMcpLocalConfig
 
