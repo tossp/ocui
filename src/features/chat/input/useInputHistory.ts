@@ -26,7 +26,7 @@ interface UseInputHistoryReturn {
     e: React.KeyboardEvent<HTMLTextAreaElement>,
     text: string,
     attachments: Attachment[],
-  ) => { text: string; attachments: Attachment[] } | null
+  ) => { text: string; attachments: Attachment[]; cursor: 'start' | 'end' } | null
   /**
    * 在 handleChange 中调用：文本变化时检测是否应退出历史模式。
    */
@@ -114,9 +114,29 @@ export function useInputHistory({ textareaRef }: UseInputHistoryOptions): UseInp
       e: React.KeyboardEvent<HTMLTextAreaElement>,
       text: string,
       attachments: Attachment[],
-    ): { text: string; attachments: Attachment[] } | null => {
+    ): { text: string; attachments: Attachment[]; cursor: 'start' | 'end' } | null => {
       const history = userHistoryRef.current
       if (history.length === 0) return null
+
+      const canNavigateHistoryAtCursor = (direction: 'up' | 'down', inHistory: boolean) => {
+        const ta = textareaRef.current
+        if (!ta) return false
+        if (ta.selectionStart !== ta.selectionEnd) return false
+
+        const cursor = ta.selectionStart
+        const atStart = cursor === 0
+        const atEnd = cursor === ta.value.length
+
+        if (inHistory) {
+          return atStart || atEnd
+        }
+
+        if (direction === 'up') {
+          return atStart && ta.value.length === 0
+        }
+
+        return atEnd
+      }
 
       // 检查历史内容是否未被用户修改
       const isHistoryUnmodified = () => {
@@ -128,14 +148,11 @@ export function useInputHistory({ textareaRef }: UseInputHistoryOptions): UseInp
       }
 
       if (e.key === 'ArrowUp') {
-        const ta = textareaRef.current
-        if (!ta) return null
-        const cursorAtFirstLine =
-          ta.selectionStart === ta.selectionEnd && ta.value.lastIndexOf('\n', ta.selectionStart - 1) === -1
         const inHistory = historyIndexRef.current >= 0
         const isEmpty = text.trim() === '' && attachments.length === 0
+        const canRecallHistory = inHistory ? isHistoryUnmodified() : isEmpty
 
-        if (cursorAtFirstLine && (isEmpty || isHistoryUnmodified())) {
+        if (canRecallHistory && canNavigateHistoryAtCursor('up', inHistory)) {
           e.preventDefault()
           if (!inHistory) {
             savedInputRef.current = { text, attachments: [...attachments] }
@@ -144,26 +161,21 @@ export function useInputHistory({ textareaRef }: UseInputHistoryOptions): UseInp
           if (nextIndex !== historyIndexRef.current) {
             historyIndexRef.current = nextIndex
             const entry = history[history.length - 1 - nextIndex]
-            return { text: entry.text, attachments: entry.attachments }
+            return { text: entry.text, attachments: entry.attachments, cursor: 'start' }
           }
         }
       }
 
       if (e.key === 'ArrowDown' && historyIndexRef.current >= 0) {
-        const ta = textareaRef.current
-        if (!ta) return null
-        const cursorAtLastLine =
-          ta.selectionStart === ta.selectionEnd && ta.value.indexOf('\n', ta.selectionStart) === -1
-
-        if (cursorAtLastLine && isHistoryUnmodified()) {
+        if (canNavigateHistoryAtCursor('down', true) && isHistoryUnmodified()) {
           e.preventDefault()
           const nextIndex = historyIndexRef.current - 1
           historyIndexRef.current = nextIndex
           if (nextIndex < 0) {
-            return { text: savedInputRef.current.text, attachments: savedInputRef.current.attachments }
+            return { text: savedInputRef.current.text, attachments: savedInputRef.current.attachments, cursor: 'end' }
           }
           const entry = history[history.length - 1 - nextIndex]
-          return { text: entry.text, attachments: entry.attachments }
+          return { text: entry.text, attachments: entry.attachments, cursor: 'end' }
         }
       }
 

@@ -508,6 +508,12 @@ function InputBoxComponent({
       if (historyResult) {
         setText(historyResult.text)
         setAttachments(historyResult.attachments)
+        requestAnimationFrame(() => {
+          if (!textareaRef.current) return
+          const cursorPos = historyResult.cursor === 'start' ? 0 : historyResult.text.length
+          textareaRef.current.focus()
+          textareaRef.current.setSelectionRange(cursorPos, cursorPos)
+        })
         return
       }
 

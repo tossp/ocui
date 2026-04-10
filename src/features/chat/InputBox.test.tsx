@@ -3,8 +3,17 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { InputBox } from './InputBox'
 import type { Command } from '../../api/command'
+import type { Message } from '../../types/message'
 
 let slashCommands: Command[] = []
+let messagesMock: Message[] = []
+
+function createHistoryMessage(text: string): Message {
+  return {
+    info: { role: 'user' },
+    parts: [{ type: 'text', text, synthetic: false }],
+  } as unknown as Message
+}
 
 vi.mock('../attachment', () => ({
   AttachmentPreview: () => null,
@@ -86,7 +95,7 @@ vi.mock('../../hooks', () => ({
 }))
 
 vi.mock('../../store/messageStoreHooks', () => ({
-  useMessages: () => [],
+  useMessages: () => messagesMock,
 }))
 
 vi.mock('../../store/keybindingStore', () => ({
@@ -99,6 +108,7 @@ vi.mock('../../store/keybindingStore', () => ({
 describe('InputBox slash command selection', () => {
   beforeEach(() => {
     slashCommands = []
+    messagesMock = []
   })
 
   it('executes frontend commands immediately on selection', async () => {
@@ -259,6 +269,57 @@ describe('InputBox slash command selection', () => {
 
     await waitFor(() => {
       expect(textarea.value).toBe('/review ')
+    })
+  })
+
+  it('keeps navigating multiline history entries with ArrowUp', async () => {
+    messagesMock = [createHistoryMessage('first line\nsecond line'), createHistoryMessage('third line\nfourth line')]
+
+    render(<InputBox paneId="pane-test" onSend={vi.fn()} />)
+
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+
+    fireEvent.keyDown(textarea, { key: 'ArrowUp' })
+
+    await waitFor(() => {
+      expect(textarea.value).toBe('third line\nfourth line')
+      expect(textarea.selectionStart).toBe(0)
+      expect(textarea.selectionEnd).toBe(0)
+    })
+
+    fireEvent.keyDown(textarea, { key: 'ArrowUp' })
+
+    await waitFor(() => {
+      expect(textarea.value).toBe('first line\nsecond line')
+      expect(textarea.selectionStart).toBe(0)
+      expect(textarea.selectionEnd).toBe(0)
+    })
+  })
+
+  it('moves the caret to the end when navigating forward with ArrowDown', async () => {
+    messagesMock = [createHistoryMessage('older line\nentry'), createHistoryMessage('newer line\nentry')]
+
+    render(<InputBox paneId="pane-test" onSend={vi.fn()} />)
+
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+
+    fireEvent.keyDown(textarea, { key: 'ArrowUp' })
+    await waitFor(() => {
+      expect(textarea.value).toBe('newer line\nentry')
+    })
+
+    fireEvent.keyDown(textarea, { key: 'ArrowUp' })
+    await waitFor(() => {
+      expect(textarea.value).toBe('older line\nentry')
+      expect(textarea.selectionStart).toBe(0)
+    })
+
+    fireEvent.keyDown(textarea, { key: 'ArrowDown' })
+
+    await waitFor(() => {
+      expect(textarea.value).toBe('newer line\nentry')
+      expect(textarea.selectionStart).toBe('newer line\nentry'.length)
+      expect(textarea.selectionEnd).toBe('newer line\nentry'.length)
     })
   })
 })
