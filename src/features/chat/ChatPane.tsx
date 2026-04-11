@@ -335,29 +335,39 @@ export const ChatPane = memo(function ChatPane({
 
   // ============================================
   // Model Restoration Effect
+  // --
+  // 只在 session 切换（routeSessionId 变化）或 revert/undo 恢复时执行一次。
+  // 流式输出期间 messages 变化不会触发，避免覆盖用户的模型选择。
   // ============================================
   const inputRestoreContent = revertedContent ?? restoredContent
 
+  // revert/undo 恢复：inputRestoreContent 变化时立即恢复
   useEffect(() => {
-    if (inputRestoreContent?.model) {
-      const modelSelection = restoreModelSelection(
-        inputRestoreContent.model,
-        inputRestoreContent.variant ?? null,
-        models,
-      )
-      if (modelSelection) {
-        restoreFromMessage(inputRestoreContent.model, inputRestoreContent.variant)
-        return
-      }
+    if (!inputRestoreContent?.model) return
+    const modelSelection = restoreModelSelection(inputRestoreContent.model, inputRestoreContent.variant ?? null, models)
+    if (modelSelection) {
+      restoreFromMessage(inputRestoreContent.model, inputRestoreContent.variant)
     }
+  }, [inputRestoreContent, models, restoreFromMessage])
 
+  // session 切换：只在 routeSessionId 变化时，从最后一条 user 消息恢复模型
+  const restoredSessionRef = useRef<string | null>(null)
+  useEffect(() => {
+    // 没有 session、或者这个 session 已经恢复过了 → 跳过
+    if (!routeSessionId || restoredSessionRef.current === routeSessionId) return
+    // messages 还没加载完 → 等下次
     if (messages.length === 0) return
+
+    restoredSessionRef.current = routeSessionId
+
     const lastUserMsg = [...messages].reverse().find(m => m.info.role === 'user')
     if (lastUserMsg && 'model' in lastUserMsg.info) {
       const userInfo = lastUserMsg.info as { model?: { providerID: string; modelID: string; variant?: string } }
       restoreFromMessage(userInfo.model, userInfo.model?.variant)
     }
-  }, [inputRestoreContent, messages, models, restoreFromMessage])
+    // 依赖 routeSessionId 和 messages.length（等加载完），不依赖 messages 引用
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeSessionId, messages.length, models, restoreFromMessage])
 
   // ============================================
   // Agent Restoration Effect

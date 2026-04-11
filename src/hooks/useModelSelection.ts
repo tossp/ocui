@@ -75,7 +75,7 @@ export function useModelSelection({ models }: UseModelSelectionOptions): UseMode
     [resolvedModelKey],
   )
 
-  // 从消息中恢复模型选择
+  // 从消息中恢复模型选择（仅更新内存状态，不写 storage）
   const restoreFromMessage = useCallback(
     (model: { providerID: string; modelID: string } | null | undefined, variant: string | null | undefined) => {
       if (!model) return
