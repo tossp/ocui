@@ -1,16 +1,14 @@
 // ============================================
 // Tauri Application Entry Point
-// SSE Bridge + Plugin Registration + Service Management
+// Unified Bridge + Plugin Registration + Service Management
 // ============================================
+mod bridge;
 mod commands;
 #[cfg(not(target_os = "android"))]
 mod dir_state;
-mod pty;
 mod service;
-mod sse;
 
-use pty::PtyState;
-use sse::SseState;
+use bridge::BridgeState;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::Manager;
 
@@ -67,8 +65,7 @@ fn create_new_window(app: &tauri::AppHandle, directory: Option<String>) {
 
 pub fn run() {
     let builder = tauri::Builder::default()
-        .manage(SseState::default())
-        .manage(PtyState::default());
+        .manage(BridgeState::default());
 
     // Desktop: 注册 OpenDirectoryState + single-instance 插件（需在 setup 之前）
     #[cfg(not(target_os = "android"))]
@@ -138,21 +135,17 @@ pub fn run() {
                     }
                 }
                 tauri::WindowEvent::Destroyed => {
-                    // 窗口销毁时清理该窗口的 SSE 连接
-                    let state = window.state::<SseState>();
-                    state.active().pin().remove(window.label());
-                    let pty_state = window.state::<PtyState>();
-                    pty_state.disconnect_window(window.label());
+                    // 窗口销毁时清理该窗口的所有桥接连接
+                    let state = window.state::<BridgeState>();
+                    state.disconnect_window(window.label());
                 }
                 _ => {}
             }
         })
         .invoke_handler(tauri::generate_handler![
-            commands::pty::pty_connect,
-            commands::pty::pty_send,
-            commands::pty::pty_disconnect,
-            commands::sse::sse_connect,
-            commands::sse::sse_disconnect,
+            commands::bridge::bridge_connect,
+            commands::bridge::bridge_send,
+            commands::bridge::bridge_disconnect,
             commands::utils::get_cli_directory,
             commands::opencode::check_opencode_service,
             commands::opencode::start_opencode_service,
@@ -161,14 +154,12 @@ pub fn run() {
             commands::opencode::confirm_close_app,
         ]);
 
-    // Android: 注册 SSE + PTY bridge commands
+    // Android: 注册 bridge commands
     #[cfg(target_os = "android")]
     let builder = builder.invoke_handler(tauri::generate_handler![
-        commands::pty::pty_connect,
-        commands::pty::pty_send,
-        commands::pty::pty_disconnect,
-        commands::sse::sse_connect,
-        commands::sse::sse_disconnect,
+        commands::bridge::bridge_connect,
+        commands::bridge::bridge_send,
+        commands::bridge::bridge_disconnect,
     ]);
 
     // build + run 分开调用，以支持 macOS RunEvent::Opened

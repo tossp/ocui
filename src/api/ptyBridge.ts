@@ -1,10 +1,11 @@
 import { getAuthHeader } from './http'
 import { getPtyConnectUrl } from './pty'
 
-interface TauriPtyEvent {
-  event: 'connected' | 'message' | 'disconnected' | 'error'
+/** Unified bridge event from Rust */
+interface BridgeEvent {
+  event: 'connected' | 'data' | 'disconnected' | 'error'
   data?: {
-    chunk?: string
+    data?: string
     code?: number
     reason?: string
     message?: string
@@ -36,7 +37,7 @@ export async function connectTauriPty({
   const { invoke, Channel } = await import('@tauri-apps/api/core')
   const url = getPtyConnectUrl(ptyId, directory, { includeAuthInUrl: false })
   const authHeader = getAuthHeader()['Authorization'] || null
-  const onEvent = new Channel<TauriPtyEvent>()
+  const onEvent = new Channel<BridgeEvent>()
   let closed = false
 
   onEvent.onmessage = msg => {
@@ -46,9 +47,9 @@ export async function connectTauriPty({
       case 'connected':
         onConnected()
         break
-      case 'message':
-        if (msg.data?.chunk) {
-          onMessage(msg.data.chunk)
+      case 'data':
+        if (msg.data?.data) {
+          onMessage(msg.data.data)
         }
         break
       case 'disconnected':
@@ -56,13 +57,13 @@ export async function connectTauriPty({
         onDisconnected({ code: msg.data?.code, reason: msg.data?.reason })
         break
       case 'error':
-        onError(msg.data?.message || 'Unknown PTY bridge error')
+        onError(msg.data?.message || 'Unknown bridge error')
         break
     }
   }
 
-  void invoke('pty_connect', {
-    args: { ptyId, url, authHeader },
+  void invoke('bridge_connect', {
+    args: { bridgeId: ptyId, url, authHeader },
     onEvent,
   }).catch((error: unknown) => {
     if (closed) return
@@ -74,7 +75,7 @@ export async function connectTauriPty({
   return {
     send(data: string) {
       if (closed) return
-      void invoke('pty_send', { args: { ptyId, data } }).catch((error: unknown) => {
+      void invoke('bridge_send', { args: { bridgeId: ptyId, data } }).catch((error: unknown) => {
         if (closed) return
         const message = error instanceof Error ? error.message : String(error)
         onError(message)
@@ -83,7 +84,7 @@ export async function connectTauriPty({
     close() {
       if (closed) return
       closed = true
-      void invoke('pty_disconnect', { args: { ptyId } }).catch(() => {})
+      void invoke('bridge_disconnect', { args: { bridgeId: ptyId } }).catch(() => {})
     },
   }
 }

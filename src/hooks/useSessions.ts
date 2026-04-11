@@ -65,6 +65,8 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
   // 当前 limit，loadMore 时递增（与 SessionContext 保持一致）
   const currentLimitRef = useRef(pageSize)
   const searchRef = useRef(search)
+  // 防止 onReconnected 密集触发时重复请求
+  const isFetchingRef = useRef(false)
   const fetchSessionsRef = useRef<(params?: SessionListParams & { append?: boolean }) => Promise<void>>(() =>
     Promise.resolve(),
   )
@@ -87,6 +89,7 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
 
       const { append = false, ...queryParams } = params
       const requestId = ++requestIdRef.current
+      isFetchingRef.current = true
 
       if (append) {
         setIsLoadingMore(true)
@@ -116,6 +119,7 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
         if (requestId !== requestIdRef.current) return
         setError(e instanceof Error ? e : new Error('Failed to fetch sessions'))
       } finally {
+        isFetchingRef.current = false
         if (requestId === requestIdRef.current) {
           setIsLoading(false)
           setIsLoadingMore(false)
@@ -206,6 +210,8 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
         setSessions(prev => prev.filter(item => item.id !== sessionId))
       },
       onReconnected: () => {
+        // 如果已经有一个请求在进行中，跳过重复拉取
+        if (isFetchingRef.current) return
         setSessions([])
         void fetchSessionsRef.current({ search: searchRef.current || undefined })
       },

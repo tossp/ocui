@@ -77,8 +77,26 @@ let connectionGeneration = 0
 let isInBackground = false
 /** 是否因为切换服务器而触发的重连 */
 let isServerSwitch = false
-/** 上一次 sse_disconnect 的 Promise，用于串行化 Tauri 侧的 disconnect → connect */
+/** 上一次 bridge_disconnect 的 Promise，用于串行化 Tauri 侧的 disconnect → connect */
 let pendingDisconnect: Promise<void> = Promise.resolve()
+/** Cooldown: 上一次 onReconnected 广播的时间戳 */
+let lastReconnectedBroadcast = 0
+const RECONNECTED_COOLDOWN = 2000
+
+/**
+ * 广播 onReconnected，带 cooldown 防止 SSE 快速重连时密集触发数据拉取
+ */
+function broadcastReconnected(reason: 'network' | 'server-switch') {
+  const now = Date.now()
+  if (reason !== 'server-switch' && now - lastReconnectedBroadcast < RECONNECTED_COOLDOWN) {
+    if (import.meta.env.DEV) {
+      console.log('[SSE] onReconnected skipped (cooldown)')
+    }
+    return
+  }
+  lastReconnectedBroadcast = now
+  allSubscribers.forEach(cb => cb.onReconnected?.(reason))
+}
 
 /**
  * 请求 Tauri 侧断开 SSE 连接
@@ -89,7 +107,9 @@ function disconnectTauri(): Promise<void> {
   if (!isTauri()) return Promise.resolve()
 
   const p = pendingDisconnect.then(() =>
-    import('@tauri-apps/api/core').then(({ invoke }) => invoke('sse_disconnect').then(() => undefined)).catch(() => {}),
+    import('@tauri-apps/api/core')
+      .then(({ invoke }) => invoke('bridge_disconnect', { args: { bridgeId: 'sse' } }).then(() => undefined))
+      .catch(() => {}),
   )
   pendingDisconnect = p
   return p
@@ -177,11 +197,12 @@ function connectSingleton() {
 // Tauri SSE Bridge (via Rust reqwest + Channel)
 // ============================================
 
-/** Tauri Channel 的 onmessage 事件类型 */
-interface TauriSseEvent {
-  event: 'connected' | 'message' | 'disconnected' | 'error'
+/** Unified bridge event from Rust (transparent proxy) */
+interface BridgeEvent {
+  event: 'connected' | 'data' | 'disconnected' | 'error'
   data?: {
-    raw?: string
+    data?: string
+    code?: number
     reason?: string
     message?: string
   }
@@ -201,9 +222,13 @@ async function connectViaTauri() {
     // 捕获当前连接代次，旧代次的事件一律丢弃
     const myGeneration = connectionGeneration
 
-    const onEvent = new Channel<TauriSseEvent>()
+    // SSE line parser state — Rust sends raw HTTP chunks, we parse SSE here
+    let sseBuffer = ''
+    const sseDataLines: string[] = []
 
-    onEvent.onmessage = (msg: TauriSseEvent) => {
+    const onEvent = new Channel<BridgeEvent>()
+
+    onEvent.onmessage = (msg: BridgeEvent) => {
       // 代次不匹配，说明已经 reconnect 过了，忽略旧连接的事件
       if (myGeneration !== connectionGeneration) return
 
@@ -224,15 +249,31 @@ async function connectViaTauri() {
           // 覆盖场景：首次连接（先开 UI 后开 server）、网络重连、服务器切换
           const reason = isServerSwitch ? ('server-switch' as const) : ('network' as const)
           isServerSwitch = false
-          allSubscribers.forEach(cb => cb.onReconnected?.(reason))
+          broadcastReconnected(reason)
           break
         }
-        case 'message': {
+        case 'data': {
           resetHeartbeat()
-          if (msg.data?.raw) {
-            const globalEvent = parseGlobalEvent(msg.data.raw)
-            if (globalEvent) {
-              broadcastEvent(globalEvent)
+          if (!msg.data?.data) break
+
+          // Parse raw SSE chunk — same logic as the browser branch
+          sseBuffer += msg.data.data
+          const lines = sseBuffer.split('\n')
+          sseBuffer = lines.pop() || ''
+
+          for (const rawLine of lines) {
+            const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine
+
+            if (line.startsWith('data:')) {
+              const payload = line[5] === ' ' ? line.slice(6) : line.slice(5)
+              sseDataLines.push(payload)
+            } else if (line === '' && sseDataLines.length > 0) {
+              const eventData = sseDataLines.join('\n')
+              sseDataLines.length = 0
+              const globalEvent = parseGlobalEvent(eventData)
+              if (globalEvent) {
+                broadcastEvent(globalEvent)
+              }
             }
           }
           break
@@ -263,11 +304,9 @@ async function connectViaTauri() {
       }
     }
 
-    // 调用 Rust 命令启动 SSE 流
-    // 注意：这个 invoke 会在 SSE 流结束或出错时 resolve/reject
-    // 但事件通过 Channel 实时推送
-    invoke('sse_connect', {
-      args: { url, authHeader },
+    // 调用统一桥接命令
+    invoke('bridge_connect', {
+      args: { bridgeId: 'sse', url, authHeader },
       onEvent,
     }).catch((error: unknown) => {
       isConnecting = false
@@ -329,7 +368,7 @@ function connectViaBrowser() {
       // 覆盖场景：首次连接（先开 UI 后开 server）、网络重连、服务器切换
       const reason = isServerSwitch ? ('server-switch' as const) : ('network' as const)
       isServerSwitch = false
-      allSubscribers.forEach(cb => cb.onReconnected?.(reason))
+      broadcastReconnected(reason)
 
       const reader = response.body?.getReader()
       if (!reader) {
