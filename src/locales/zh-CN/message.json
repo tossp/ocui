@@ -135,8 +135,8 @@
     "reasoningTokens": "Reasoning: {{reasoning}}",
     "cacheRead": "Cache read: {{read}}",
     "cacheWrite": "Cache write: {{write}}",
-    "cached": "已缓存 {{count}}",
-    "totalDuration": "共 {{duration}}"
+    "cached": "{{count}} cached",
+    "totalDuration": "{{duration}} total"
   },
   "errors": {
     "authError": "认证错误",
