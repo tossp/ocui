@@ -759,7 +759,7 @@ function formatTokens(
   return `${total} ${t('tokens')}`
 }
 
-type ToolSummaryCategory = 'execute' | 'edit' | 'read' | 'search' | 'list' | 'network' | 'task' | 'todo' | 'question' | 'skill' | 'think' | 'other'
+type ToolSummaryCategory = 'execute' | 'write' | 'edit' | 'read' | 'search' | 'list' | 'network' | 'task' | 'todo' | 'question' | 'skill' | 'think' | 'other'
 
 type ToolSummaryPhase = 'done' | 'active' | 'failed'
 
@@ -814,7 +814,12 @@ function buildDescriptiveToolStepsSummary(
         segments.push({ text: formatToolSummarySegment(cat, done, 'done', t), type: 'normal' })
       } else {
         // 纯失败
-        segments.push({ text: formatToolSummarySegment(cat, failed, 'failed', t), type: 'error' })
+        if (failed === 1) {
+          segments.push({ text: formatToolSummarySegment(cat, failed, 'failed', t), type: 'error' })
+        } else {
+          segments.push({ text: formatToolSummarySegment(cat, failed, 'done', t), type: 'error' })
+          segments.push({ text: t('toolSteps.failedAllSuffix'), type: 'error' })
+        }
       }
     }
   }
@@ -884,7 +889,11 @@ function getToolSummaryCategory(toolName: string): ToolSummaryCategory {
   }
   if (
     lower.includes('write') ||
-    lower.includes('save') ||
+    lower.includes('save')
+  ) {
+    return 'write'
+  }
+  if (
     lower.includes('edit') ||
     lower.includes('replace') ||
     lower.includes('patch')
