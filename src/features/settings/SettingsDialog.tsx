@@ -4,13 +4,15 @@ import { Dialog } from '../../components/ui/Dialog'
 import {
   SunIcon,
   GlobeIcon,
-  SettingsIcon,
+  AgentIcon,
   CpuIcon,
   KeyboardIcon,
   CloseIcon,
   BellIcon,
   PlugIcon,
-  DownloadIcon,
+  MessageSquareIcon,
+  LayersIcon,
+  QuestionIcon,
 } from '../../components/Icons'
 import { useIsMobile } from '../../hooks'
 import { isTauri } from '../../utils/tauri'
@@ -53,15 +55,15 @@ interface SettingsDialogProps {
 
 const TAB_ICONS: Record<SettingsTab, React.ReactNode> = {
   servers: <GlobeIcon size={15} />,
-  agent: <SettingsIcon size={15} />,
-  chat: <SettingsIcon size={15} />,
+  agent: <AgentIcon size={15} />,
+  chat: <MessageSquareIcon size={15} />,
   models: <CpuIcon size={15} />,
   appearance: <SunIcon size={15} />,
-  workspace: <SettingsIcon size={15} />,
+  workspace: <LayersIcon size={15} />,
   notifications: <BellIcon size={15} />,
   service: <PlugIcon size={15} />,
   keybindings: <KeyboardIcon size={15} />,
-  about: <DownloadIcon size={15} />,
+  about: <QuestionIcon size={15} />,
 }
 
 const TAB_IDS: SettingsTab[] = [
