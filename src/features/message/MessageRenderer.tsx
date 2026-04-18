@@ -879,11 +879,6 @@ function formatToolSummarySegment(
   t: (key: string, opts?: Record<string, unknown>) => string,
 ): string {
   const key = `toolSteps.${category}${phase.charAt(0).toUpperCase()}${phase.slice(1)}`
-  if (count === 1) {
-    const singularKey = `${key}Single`
-    const singular = t(singularKey)
-    if (singular !== singularKey) return singular
-  }
   return t(key, { count })
 }
 
