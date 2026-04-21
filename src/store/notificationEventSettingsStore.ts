@@ -9,6 +9,10 @@ export interface NotificationEventSettings {
   events: Record<NotificationType, NotificationEventConfig>
 }
 
+export interface NotificationEventSettingsBackup {
+  events: Record<NotificationType, NotificationEventConfig>
+}
+
 type Subscriber = () => void
 
 const STORAGE_KEY = 'opencode:notification-event-settings'
@@ -73,6 +77,59 @@ function saveSettings(settings: NotificationEventSettings) {
   }
 }
 
+function normalizeSettings(raw: unknown): NotificationEventSettings {
+  const defaults = createDefaultSettings()
+  const parsed = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : undefined
+
+  return {
+    events: {
+      completed: {
+        systemEnabled:
+          typeof parsed?.events === 'object' &&
+          parsed.events &&
+          typeof (parsed.events as Record<string, unknown>).completed === 'object' &&
+          typeof ((parsed.events as Record<string, unknown>).completed as Record<string, unknown>).systemEnabled ===
+            'boolean'
+            ? (((parsed.events as Record<string, unknown>).completed as Record<string, unknown>)
+                .systemEnabled as boolean)
+            : defaults.events.completed.systemEnabled,
+      },
+      permission: {
+        systemEnabled:
+          typeof parsed?.events === 'object' &&
+          parsed.events &&
+          typeof (parsed.events as Record<string, unknown>).permission === 'object' &&
+          typeof ((parsed.events as Record<string, unknown>).permission as Record<string, unknown>).systemEnabled ===
+            'boolean'
+            ? (((parsed.events as Record<string, unknown>).permission as Record<string, unknown>)
+                .systemEnabled as boolean)
+            : defaults.events.permission.systemEnabled,
+      },
+      question: {
+        systemEnabled:
+          typeof parsed?.events === 'object' &&
+          parsed.events &&
+          typeof (parsed.events as Record<string, unknown>).question === 'object' &&
+          typeof ((parsed.events as Record<string, unknown>).question as Record<string, unknown>).systemEnabled ===
+            'boolean'
+            ? (((parsed.events as Record<string, unknown>).question as Record<string, unknown>)
+                .systemEnabled as boolean)
+            : defaults.events.question.systemEnabled,
+      },
+      error: {
+        systemEnabled:
+          typeof parsed?.events === 'object' &&
+          parsed.events &&
+          typeof (parsed.events as Record<string, unknown>).error === 'object' &&
+          typeof ((parsed.events as Record<string, unknown>).error as Record<string, unknown>).systemEnabled ===
+            'boolean'
+            ? (((parsed.events as Record<string, unknown>).error as Record<string, unknown>).systemEnabled as boolean)
+            : defaults.events.error.systemEnabled,
+      },
+    },
+  }
+}
+
 class NotificationEventSettingsStore {
   private state: NotificationEventSettings = loadSettings()
   private subscribers = new Set<Subscriber>()
@@ -110,6 +167,14 @@ class NotificationEventSettingsStore {
 }
 
 export const notificationEventSettingsStore = new NotificationEventSettingsStore()
+
+export function exportNotificationEventSettingsBackup(): NotificationEventSettingsBackup {
+  return normalizeSettings(notificationEventSettingsStore.getSnapshot())
+}
+
+export function importNotificationEventSettingsBackup(raw: unknown): void {
+  saveSettings(normalizeSettings(raw))
+}
 
 export function useNotificationEventSettings(): NotificationEventSettings {
   return useSyncExternalStore(notificationEventSettingsStore.subscribe, notificationEventSettingsStore.getSnapshot)
