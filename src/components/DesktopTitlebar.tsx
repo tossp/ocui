@@ -1,5 +1,10 @@
 import { useEffect, useMemo } from 'react'
-import { DESKTOP_TITLEBAR_CONTROLS_Z_INDEX, DESKTOP_TITLEBAR_HEIGHT, DESKTOP_TITLEBAR_Z_INDEX } from '../constants'
+import {
+  DESKTOP_MACOS_TRAFFIC_LIGHTS_WIDTH,
+  DESKTOP_TITLEBAR_CONTROLS_Z_INDEX,
+  DESKTOP_TITLEBAR_HEIGHT,
+  DESKTOP_TITLEBAR_Z_INDEX,
+} from '../constants'
 import { useTheme } from '../hooks/useTheme'
 import { getDesktopPlatform, usesCustomDesktopTitlebar } from '../utils/tauri'
 
@@ -36,7 +41,7 @@ export function DesktopTitlebar() {
       style={{ height: DESKTOP_TITLEBAR_HEIGHT, zIndex: DESKTOP_TITLEBAR_Z_INDEX }}
     >
       {platform === 'macos' ? (
-        <div className="h-full w-[76px] shrink-0" />
+        <div className="h-full shrink-0" style={{ width: DESKTOP_MACOS_TRAFFIC_LIGHTS_WIDTH }} />
       ) : (
         <div data-tauri-drag-region className="flex h-full min-w-0 items-center px-3 shrink-0">
           <span className="truncate text-[12px] font-medium tracking-[0.01em] text-text-300">OpenCode</span>

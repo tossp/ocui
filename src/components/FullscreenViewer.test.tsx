@@ -1,9 +1,24 @@
 import { act, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { DESKTOP_MACOS_FULLSCREEN_HEADER_LEFT_INSET } from '../constants'
 import { FullscreenViewer } from './FullscreenViewer'
+
+const { getDesktopPlatformMock, usesCustomDesktopTitlebarMock } = vi.hoisted(() => ({
+  getDesktopPlatformMock: vi.fn(() => 'other'),
+  usesCustomDesktopTitlebarMock: vi.fn(() => false),
+}))
+
+vi.mock('../utils/tauri', () => ({
+  getDesktopPlatform: getDesktopPlatformMock,
+  usesCustomDesktopTitlebar: usesCustomDesktopTitlebarMock,
+}))
 
 describe('FullscreenViewer', () => {
   beforeEach(() => {
+    getDesktopPlatformMock.mockReset()
+    usesCustomDesktopTitlebarMock.mockReset()
+    getDesktopPlatformMock.mockReturnValue('other')
+    usesCustomDesktopTitlebarMock.mockReturnValue(false)
     vi.useFakeTimers()
     vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => {
       return window.setTimeout(() => cb(performance.now()), 0)
@@ -65,5 +80,24 @@ describe('FullscreenViewer', () => {
     expect(screen.getByTestId('content')).toBeInTheDocument()
     // header 不应该存在
     expect(screen.queryByText('closeEsc')).not.toBeInTheDocument()
+  })
+
+  it('reserves space for macOS traffic lights in the fullscreen header', () => {
+    getDesktopPlatformMock.mockReturnValue('macos')
+    usesCustomDesktopTitlebarMock.mockReturnValue(true)
+
+    render(
+      <FullscreenViewer isOpen={true} onClose={vi.fn()} title="app.ts">
+        <div data-testid="content">hello</div>
+      </FullscreenViewer>,
+    )
+
+    act(() => {
+      vi.runAllTimers()
+    })
+
+    expect(screen.getByTestId('fullscreen-viewer-header')).toHaveStyle({
+      paddingLeft: `${DESKTOP_MACOS_FULLSCREEN_HEADER_LEFT_INSET}px`,
+    })
   })
 })
