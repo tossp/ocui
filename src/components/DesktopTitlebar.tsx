@@ -32,6 +32,15 @@ export function DesktopTitlebar() {
   /* ---- 原生主题同步 ---- */
   useEffect(() => {
     if (!isDesktopChrome) return
+    // 让 overlay 侧边栏知道标题栏高度
+    document.documentElement.style.setProperty('--desktop-titlebar-height', `${DESKTOP_TITLEBAR_HEIGHT}px`)
+    return () => {
+      document.documentElement.style.removeProperty('--desktop-titlebar-height')
+    }
+  }, [isDesktopChrome])
+
+  useEffect(() => {
+    if (!isDesktopChrome) return
 
     let cancelled = false
     const theme = mode === 'system' ? null : resolvedTheme

@@ -206,9 +206,8 @@ export const ResizablePanel = memo(function ResizablePanel({
     const mobileInsetStyle =
       position === 'right'
         ? ({
-            top: 0,
-            height: '100%',
-            paddingTop: 'var(--safe-area-inset-top)',
+            top: 'calc(var(--safe-area-inset-top, 0px) + var(--desktop-titlebar-height, 0px))',
+            height: 'calc(100% - var(--safe-area-inset-top, 0px) - var(--desktop-titlebar-height, 0px))',
             paddingBottom: safeBottomInset,
           } as React.CSSProperties)
         : ({} as React.CSSProperties)
@@ -221,7 +220,7 @@ export const ResizablePanel = memo(function ResizablePanel({
             transition-opacity ${ANIMATION_DURATION} ease-out
             ${isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}
           `}
-          style={position === 'right' ? { inset: 0 } : undefined}
+          style={position === 'right' ? { top: 'calc(var(--safe-area-inset-top, 0px) + var(--desktop-titlebar-height, 0px))', left: 0, right: 0, bottom: 0 } : undefined}
           onClick={onClose}
         />
 

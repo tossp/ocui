@@ -229,7 +229,7 @@ export const Sidebar = memo(function Sidebar({
             transition-opacity duration-300
             ${isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}
           `}
-          style={{ top: 'var(--safe-area-inset-top)', height: 'calc(100% - var(--safe-area-inset-top))' }}
+          style={{ top: 'calc(var(--safe-area-inset-top) + var(--desktop-titlebar-height, 0px))', height: 'calc(100% - var(--safe-area-inset-top) - var(--desktop-titlebar-height, 0px))' }}
           onClick={handleBackdropClick}
         />
 
@@ -246,8 +246,8 @@ export const Sidebar = memo(function Sidebar({
           style={{
             width: `${layout.sidebar.overlayWidth}px`,
             transform: isOpen ? `translateX(${Math.min(0, swipeX)}px)` : 'translateX(-100%)',
-            top: 'var(--safe-area-inset-top)',
-            height: 'calc(100% - var(--safe-area-inset-top))',
+            top: 'calc(var(--safe-area-inset-top) + var(--desktop-titlebar-height, 0px))',
+            height: 'calc(100% - var(--safe-area-inset-top) - var(--desktop-titlebar-height, 0px))',
           }}
         >
           <SidePanel
