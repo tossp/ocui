@@ -1,5 +1,10 @@
 # Changelog
 
+## [v0.5.16] - 2026-04-28
+
+- fix: hide session actions after mouse selection (1d6b4be)
+- ci: upgrade GitHub Actions Node runtimes (ff10d7b)
+
 ## [v0.5.15] - 2026-04-28
 
 - fix: restore model selector typography scaling (121b762)
