@@ -996,7 +996,7 @@ export function SidePanel({
         }}
       >
         {/* Search */}
-        <div className="px-3 py-2 mt-2">
+        <div className="px-3 pt-1.5 pb-2">
           <div className="relative group">
             <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-400 w-3.5 h-3.5 group-focus-within:text-accent-main-100 transition-colors" />
             <input
