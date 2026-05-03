@@ -829,8 +829,17 @@ body {
   width: 32px;
   min-width: 32px;
   padding: 0;
+  line-height: 0;
   cursor: pointer;
   border-right: 2px solid hsl(var(--bg-100));
+}
+
+.diff-separator-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  transform-origin: center;
 }
 
 .diff-separator-button:hover {
