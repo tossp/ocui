@@ -30,13 +30,32 @@ import { RetryStatusInline, type RetryStatusInlineData } from './RetryStatusInli
 import { buildVisibleMessageEntries, getVisibleMessageForkTargetId } from './chatAreaVisibility'
 import { AT_BOTTOM_THRESHOLD_PX } from '../../constants'
 import { useChatViewport } from './chatViewport'
-import { usePanelResizeStatus } from '../../hooks/usePanelResizeStatus'
 
 const MESSAGE_RENDER_ROOT_MARGIN = '150% 0px'
 const STICKY_RENDER_MESSAGE_COUNT = 8
+const ESTIMATED_USER_MESSAGE_HEIGHT = 72
+const ESTIMATED_ASSISTANT_MESSAGE_HEIGHT = 160
+const MAX_MEASURED_MESSAGE_HEIGHT_CACHE = 2000
+const measuredMessageHeightCache = new Map<string, number>()
 
 /** Stable no-op to avoid creating a new closure on every render. */
 const NOOP = () => {}
+
+function estimateMessageHeight(message: Message): number {
+  if (message.info.role === 'user') {
+    return Math.max(ESTIMATED_USER_MESSAGE_HEIGHT, message.parts.length * 40)
+  }
+
+  return Math.max(ESTIMATED_ASSISTANT_MESSAGE_HEIGHT, message.parts.length * 80)
+}
+
+function rememberMeasuredMessageHeight(cacheKey: string, height: number) {
+  measuredMessageHeightCache.set(cacheKey, height)
+  if (measuredMessageHeightCache.size <= MAX_MEASURED_MESSAGE_HEIGHT_CACHE) return
+
+  const oldestKey = measuredMessageHeightCache.keys().next().value
+  if (oldestKey) measuredMessageHeightCache.delete(oldestKey)
+}
 
 export function buildTurnDurationMap(messages: Message[], visibleMessages: Message[]): Map<string, number> {
   const map = new Map<string, number>()
@@ -144,7 +163,6 @@ export const ChatArea = memo(
 
       const { isWideMode } = useTheme()
       const { presentation } = useChatViewport()
-      const isPanelResizing = usePanelResizeStatus()
       const atBottomThreshold = presentation.isCompact ? 150 : AT_BOTTOM_THRESHOLD_PX
       const messagePaddingClass = presentation.isCompact ? 'px-3' : 'px-5'
 
@@ -160,6 +178,7 @@ export const ChatArea = memo(
       const turnDurationMap = useMemo(() => buildTurnDurationMap(messages, visibleMessages), [messages, visibleMessages])
 
       const messageMaxWidthClass = isWideMode ? 'max-w-[95%] xl:max-w-6xl' : 'max-w-2xl'
+      const heightCacheScope = `${presentation.surfaceVariant}:${isWideMode ? 'wide' : 'normal'}`
       const stickyRenderIds = useMemo(
         () => new Set(visibleMessages.slice(-STICKY_RENDER_MESSAGE_COUNT).map(message => message.info.id)),
         [visibleMessages],
@@ -389,9 +408,10 @@ export const ChatArea = memo(
                       key={msg.info.id}
                       messageId={msg.info.id}
                       scrollRoot={scrollRoot}
-                      resizeUnmountActive={isPanelResizing}
                       registerMessage={registerMessage}
                       forceRender={msg.isStreaming || stickyRenderIds.has(msg.info.id)}
+                      estimatedHeight={estimateMessageHeight(msg)}
+                      heightCacheKey={`${heightCacheScope}:${msg.info.id}`}
                     >
                       <MessageRenderer
                         message={msg}
@@ -412,7 +432,7 @@ export const ChatArea = memo(
         },
         [
           scrollRoot,
-          isPanelResizing,
+          heightCacheScope,
           stickyRenderIds,
           registerMessage,
           onUndo,
@@ -507,8 +527,9 @@ export const ChatArea = memo(
 interface ViewportMessageItemProps {
   messageId: string
   scrollRoot: HTMLDivElement | null
-  resizeUnmountActive?: boolean
   forceRender?: boolean
+  estimatedHeight: number
+  heightCacheKey: string
   registerMessage?: (id: string, element: HTMLElement | null) => void
   children: ReactNode
 }
@@ -516,15 +537,21 @@ interface ViewportMessageItemProps {
 const ViewportMessageItem = memo(function ViewportMessageItem({
   messageId,
   scrollRoot,
-  resizeUnmountActive = false,
   forceRender = false,
+  estimatedHeight,
+  heightCacheKey,
   registerMessage,
   children,
 }: ViewportMessageItemProps) {
   const wrapperRef = useRef<HTMLDivElement | null>(null)
   const contentRef = useRef<HTMLDivElement | null>(null)
-  const [isNearViewport, setIsNearViewport] = useState(true)
-  const [measuredHeight, setMeasuredHeight] = useState<number | null>(null)
+  const [isNearViewport, setIsNearViewport] = useState(() => forceRender || typeof IntersectionObserver === 'undefined')
+  const [measuredHeightState, setMeasuredHeightState] = useState(() => ({
+    cacheKey: heightCacheKey,
+    height: measuredMessageHeightCache.get(heightCacheKey) ?? null,
+  }))
+  const measuredHeight =
+    measuredHeightState.cacheKey === heightCacheKey ? measuredHeightState.height : measuredMessageHeightCache.get(heightCacheKey) ?? null
 
   const setWrapperElement = useCallback(
     (node: HTMLDivElement | null) => {
@@ -536,11 +563,12 @@ const ViewportMessageItem = memo(function ViewportMessageItem({
 
   useEffect(() => {
     const wrapper = wrapperRef.current
-    if (!wrapper || !scrollRoot || !resizeUnmountActive) return
+    if (!wrapper || !scrollRoot) return
+    if (typeof IntersectionObserver === 'undefined') return
 
     const observer = new IntersectionObserver(
       ([entry]) => {
-        setIsNearViewport(entry.isIntersecting)
+        setIsNearViewport(prev => (prev === entry.isIntersecting ? prev : entry.isIntersecting))
       },
       {
         root: scrollRoot,
@@ -550,9 +578,9 @@ const ViewportMessageItem = memo(function ViewportMessageItem({
 
     observer.observe(wrapper)
     return () => observer.disconnect()
-  }, [scrollRoot, resizeUnmountActive])
+  }, [scrollRoot])
 
-  const shouldRender = !resizeUnmountActive || forceRender || measuredHeight === null || isNearViewport
+  const shouldRender = forceRender || isNearViewport
 
   useEffect(() => {
     const content = contentRef.current
@@ -561,7 +589,11 @@ const ViewportMessageItem = memo(function ViewportMessageItem({
     const updateHeight = () => {
       const nextHeight = content.offsetHeight
       if (nextHeight <= 0) return
-      setMeasuredHeight(prev => (prev !== null && Math.abs(prev - nextHeight) < 1 ? prev : nextHeight))
+      setMeasuredHeightState(prev => {
+        if (prev.cacheKey === heightCacheKey && prev.height !== null && Math.abs(prev.height - nextHeight) < 1) return prev
+        rememberMeasuredMessageHeight(heightCacheKey, nextHeight)
+        return { cacheKey: heightCacheKey, height: nextHeight }
+      })
     }
 
     updateHeight()
@@ -569,14 +601,14 @@ const ViewportMessageItem = memo(function ViewportMessageItem({
     const observer = new ResizeObserver(updateHeight)
     observer.observe(content)
     return () => observer.disconnect()
-  }, [shouldRender])
+  }, [heightCacheKey, shouldRender])
 
   return (
     <div ref={setWrapperElement} data-message-id={messageId}>
       {shouldRender ? (
         <div ref={contentRef}>{children}</div>
       ) : (
-        <div aria-hidden="true" style={measuredHeight ? { height: `${measuredHeight}px` } : undefined} />
+        <div aria-hidden="true" style={{ height: `${measuredHeight ?? estimatedHeight}px` }} />
       )}
     </div>
   )

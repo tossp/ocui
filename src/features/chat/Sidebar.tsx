@@ -75,7 +75,6 @@ export const Sidebar = memo(function Sidebar({
       const finalWidth = clampSidebarWidth(nextWidth, layout.sidebar.hardMinWidth, layout.sidebar.resizeMaxWidth)
       actions.setSidebarRequestedWidth(finalWidth)
       setIsResizing(false)
-      window.dispatchEvent(new CustomEvent('panel-resize-end'))
       return finalWidth
     },
     [actions, layout.sidebar.hardMinWidth, layout.sidebar.resizeMaxWidth],
@@ -90,7 +89,6 @@ export const Sidebar = memo(function Sidebar({
       if (!sidebar) return
 
       setIsResizing(true)
-      window.dispatchEvent(new CustomEvent('panel-resize-start'))
       document.body.style.cursor = 'col-resize'
       document.body.style.userSelect = 'none'
 
@@ -131,7 +129,6 @@ export const Sidebar = memo(function Sidebar({
       if (!sidebar) return
 
       setIsResizing(true)
-      window.dispatchEvent(new CustomEvent('panel-resize-start'))
       document.body.style.userSelect = 'none'
 
       const handleTouchMove = (moveEvent: TouchEvent) => {

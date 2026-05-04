@@ -6,7 +6,7 @@
  * compact viewport wrapper.
  */
 
-import { memo, useRef, useEffect, useState, useCallback, useMemo } from 'react'
+import { memo, useRef, useEffect, useState, useCallback, useMemo, useDeferredValue } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 
 import { ChatArea, Header, InputBox, PermissionDialog, QuestionDialog, type ChatAreaHandle } from '.'
@@ -89,6 +89,26 @@ const PANE_VIEWPORT: ChatViewportValue = {
   actions: {
     setSidebarRequestedWidth: () => {},
   },
+}
+
+let splitSessionNavigationToken = 0
+
+function scheduleSplitSessionNavigation(callback: () => void) {
+  const token = ++splitSessionNavigationToken
+
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      if (token !== splitSessionNavigationToken) return
+      splitSessionNavigationToken = 0
+      callback()
+    })
+  })
+}
+
+function cancelPendingSplitSessionNavigation() {
+  if (splitSessionNavigationToken !== 0) {
+    splitSessionNavigationToken += 1
+  }
 }
 
 export const ChatPane = memo(function ChatPane({
@@ -265,6 +285,14 @@ export const ChatPane = memo(function ChatPane({
     navigateToSession,
     navigateHome,
   })
+
+  const messageView = useMemo(() => ({ sessionId: routeSessionId, messages }), [routeSessionId, messages])
+  const deferredMessageView = useDeferredValue(messageView)
+  const shouldDeferMessages = displayMode === 'split' && !isStreaming && messages.length > 20
+  const renderedMessagesView = shouldDeferMessages ? deferredMessageView : messageView
+  const renderedMessages = renderedMessagesView.sessionId === routeSessionId ? renderedMessagesView.messages : []
+  const isRenderingDeferredMessages = renderedMessages !== messages
+  const renderedLoadState = loadState === 'loaded' && isRenderingDeferredMessages ? 'loading' : loadState
 
   const navigationCtx = useMemo(
     () => ({ navigateToSession, currentSessionId: routeSessionId, currentDirectory: effectiveDirectory }),
@@ -501,6 +529,7 @@ export const ChatPane = memo(function ChatPane({
       // (what rAF had a chance to commit) so we never miss a last-frame move.
       const zone = pendingZoneRef.current ?? currentZoneRef.current
       resetDropState()
+      cancelPendingSplitSessionNavigation()
 
       const payload = readSessionDragPayload(e)
       if (!payload || !zone) return
@@ -515,9 +544,17 @@ export const ChatPane = memo(function ChatPane({
       }
 
       // Split: create new pane on the chosen side, then route the new pane to the session
+      const previousFocusedPaneId = paneLayoutStore.getFocusedPaneId()
       const newPaneId = paneLayoutStore.splitPaneToSide(paneId, zone, null)
       if (newPaneId) {
-        navigatePaneToSession(newPaneId, payload.sessionId, payload.directory || undefined)
+        if (previousFocusedPaneId && paneLayoutStore.findLeaf(previousFocusedPaneId)) {
+          paneLayoutStore.focusPane(previousFocusedPaneId)
+        }
+
+        scheduleSplitSessionNavigation(() => {
+          if (!paneLayoutStore.findLeaf(newPaneId)) return
+          navigatePaneToSession(newPaneId, payload.sessionId, payload.directory || undefined)
+        })
       }
     },
     [paneId, routeSessionId, navigatePaneToSession, readSessionDragPayload, resetDropState],
@@ -680,11 +717,11 @@ export const ChatPane = memo(function ChatPane({
         <InlineToolRequestContext.Provider value={inlineToolRequestCtx}>
           <ChatArea
             ref={chatAreaRef}
-            messages={messages}
+            messages={renderedMessages}
             sessionId={routeSessionId}
             isStreaming={isStreaming}
             allowStreamingLayoutAnimation={isAtBottom}
-            loadState={loadState}
+            loadState={renderedLoadState}
             hasMoreHistory={hasMoreHistory}
             onLoadMore={loadMoreHistory}
             onUndo={handleUndoWithAnimation}
@@ -700,7 +737,7 @@ export const ChatPane = memo(function ChatPane({
       </div>
 
       <OutlineIndex
-        messages={messages}
+        messages={renderedMessages}
         visibleMessageIds={visibleMessageIds}
         onScrollToMessageId={handleOutlineScrollToMessage}
       />
