@@ -324,16 +324,23 @@ function EmptyContentBuffer({ height, yOffset = 0, xOffset = 0 }: { height: numb
 }
 
 /** Change bar 样式 — 行号左侧的 3px 竖条，add 实心 / delete 虚线 */
-function getChangeBarProps(type: LineType): { className: string; style?: React.CSSProperties } {
+function getChangeBarProps(type: LineType, yOffset = 0): { className: string; style?: React.CSSProperties } {
   switch (type) {
     case 'add':
       return { className: 'w-1 shrink-0 bg-success-100' }
     case 'delete':
       return {
         className: 'diff-change-bar-delete w-1 shrink-0',
+        style: { backgroundPositionY: `${-yOffset}px` },
       }
     default:
       return { className: 'w-1 shrink-0' }
+  }
+}
+
+function alignDeleteChangeBars(container: HTMLElement, yOffset: number) {
+  for (const bar of container.querySelectorAll<HTMLElement>('.diff-change-bar-delete')) {
+    bar.style.backgroundPositionY = `${-yOffset}px`
   }
 }
 
@@ -659,6 +666,7 @@ const WrappedSplitDiffView = memo(function WrappedSplitDiffView({
       for (const buffer of el.querySelectorAll<HTMLElement>('.diff-empty-content-buffer')) {
         buffer.style.backgroundPosition = `5px ${-rowTop}px`
       }
+      alignDeleteChangeBars(el, rowTop)
     },
     [measureRef, offsetY],
   )
@@ -1029,7 +1037,7 @@ const SplitDiffView = memo(function SplitDiffView({
           className={`flex items-stretch ${leftGutterClass}`}
           style={pair.left.type === 'empty' ? leftGutterStyle : { height: lineHeight }}
         >
-          <div {...getChangeBarProps(pair.left.type)} />
+          <div {...getChangeBarProps(pair.left.type, rowTop)} />
           <LineNumberCell lineNo={pair.left.lineNo} width={lineNumberWidth} type={pair.left.type} />
         </div>
       ) : (
@@ -1059,7 +1067,7 @@ const SplitDiffView = memo(function SplitDiffView({
           className={`flex items-stretch ${rightGutterClass}`}
           style={pair.right.type === 'empty' ? rightGutterStyle : { height: lineHeight }}
         >
-          <div {...getChangeBarProps(pair.right.type)} />
+          <div {...getChangeBarProps(pair.right.type, rowTop)} />
           <LineNumberCell lineNo={pair.right.lineNo} width={lineNumberWidth} type={pair.right.type} />
         </div>
       ) : (
@@ -1346,7 +1354,7 @@ const UnifiedDiffView = memo(function UnifiedDiffView({
     gutterRows.push(
       useChangeBars ? (
         <div key={i} className={`flex items-stretch ${getGutterBgClass(line.type)}`} style={{ height: lineHeight }}>
-          <div {...getChangeBarProps(line.type)} />
+          <div {...getChangeBarProps(line.type, i * lineHeight)} />
           <LineNumberCell lineNo={line.oldLineNo} width={lineNumberWidth} type={line.type} />
           <LineNumberCell lineNo={line.newLineNo} width={lineNumberWidth} type={line.type} />
         </div>
@@ -1457,6 +1465,16 @@ const WrappedUnifiedDiffView = memo(function WrappedUnifiedDiffView({
       estimateHeight: estimateRowHeight,
     })
 
+  const measureWrappedUnifiedRowRef = useCallback(
+    (index: number, el: HTMLDivElement | null) => {
+      measureRef(index, el)
+      if (!el) return
+
+      alignDeleteChangeBars(el, offsetY + el.offsetTop)
+    },
+    [measureRef, offsetY],
+  )
+
   if (lines.length === 0) {
     return (
       <div className="h-full flex items-center justify-center text-text-400 text-[length:var(--fs-base)]">
@@ -1471,7 +1489,7 @@ const WrappedUnifiedDiffView = memo(function WrappedUnifiedDiffView({
 
     if (isCollapsed(item)) {
       visibleRows.push(
-        <div key={`c-${i}`} ref={el => measureRef(i, el)}>
+        <div key={`c-${i}`} ref={el => measureWrappedUnifiedRowRef(i, el)}>
           <CollapsedBar
             count={item.count}
             t={t}
@@ -1500,7 +1518,7 @@ const WrappedUnifiedDiffView = memo(function WrappedUnifiedDiffView({
     }
 
     visibleRows.push(
-      <div key={i} ref={el => measureRef(i, el)} className={`flex items-stretch ${getLineBgClass(line.type)}`}>
+      <div key={i} ref={el => measureWrappedUnifiedRowRef(i, el)} className={`flex items-stretch ${getLineBgClass(line.type)}`}>
         <div className="shrink-0" style={{ width: gutterWidth }}>
             {useChangeBars ? (
               <div className="flex items-stretch h-full">
