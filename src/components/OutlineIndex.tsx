@@ -23,6 +23,11 @@ import { useChatViewport } from '../features/chat/chatViewport'
 
 // ─── Types ──────────────────────────────────
 
+export interface OutlineSourceEntry {
+  messageId: string
+  title: string
+}
+
 interface OutlineEntry {
   messageId: string
   fullTitle: string
@@ -32,6 +37,7 @@ interface OutlineEntry {
 
 interface OutlineIndexProps {
   messages: Message[]
+  sourceEntries?: OutlineSourceEntry[]
   visibleMessageIds?: string[]
   onScrollToMessageId: (messageId: string) => void
 }
@@ -225,8 +231,8 @@ function messageHasContent(msg: Message): boolean {
   return hasRenderable
 }
 
-function extractEntries(messages: Message[], visual: VisualConfig): OutlineEntry[] {
-  const entries: OutlineEntry[] = []
+export function buildOutlineSourceEntries(messages: Message[]): OutlineSourceEntry[] {
+  const entries: OutlineSourceEntry[] = []
   for (const msg of messages.filter(messageHasContent)) {
     if (!isUserMessage(msg.info)) continue
     const raw =
@@ -240,12 +246,19 @@ function extractEntries(messages: Message[], visual: VisualConfig): OutlineEntry
     const n = normalizeWhitespace(raw)
     entries.push({
       messageId: msg.info.id,
-      fullTitle: truncate(n, FULL_TITLE_MAX),
-      railLabel: truncate(n, visual.railLabelMax),
-      overlayLabel: truncate(n, visual.overlayLabelMax),
+      title: truncate(n, FULL_TITLE_MAX),
     })
   }
   return entries
+}
+
+function formatEntries(entries: OutlineSourceEntry[], visual: VisualConfig): OutlineEntry[] {
+  return entries.map(entry => ({
+    messageId: entry.messageId,
+    fullTitle: entry.title,
+    railLabel: truncate(entry.title, visual.railLabelMax),
+    overlayLabel: truncate(entry.title, visual.overlayLabelMax),
+  }))
 }
 
 /** 条目超过上限时，取可见区域附近的 N 条 */
@@ -321,12 +334,14 @@ function TickRail({ entries, visual }: TickRailProps) {
 
 export const OutlineIndex = memo(function OutlineIndex({
   messages,
+  sourceEntries,
   visibleMessageIds,
   onScrollToMessageId,
 }: OutlineIndexProps) {
   const { interaction, presentation } = useChatViewport()
   const visual = presentation.isCompact ? COMPACT_VISUAL : DESKTOP_VISUAL
-  const allEntries = useMemo(() => extractEntries(messages, visual), [messages, visual])
+  const outlineSourceEntries = useMemo(() => sourceEntries ?? buildOutlineSourceEntries(messages), [messages, sourceEntries])
+  const allEntries = useMemo(() => formatEntries(outlineSourceEntries, visual), [outlineSourceEntries, visual])
   const entries = useMemo(
     () => sliceAroundVisible(allEntries, visibleMessageIds ?? [], visual.maxEntries),
     [allEntries, visibleMessageIds, visual.maxEntries],

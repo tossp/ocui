@@ -3,11 +3,13 @@
 // ChatArea - 聊天消息显示区域
 // ============================================
 //
-// flex-direction: column-reverse 实现原生 stick-to-bottom：
-// - scrollTop=0 是底部，负值是向上滚动
-// - 新内容向上生长，浏览器自动维持底部锚定，零 JS auto-scroll
-// - 消息反序渲染：DOM 前面=视觉底部，loadMore append 到 DOM 末尾=视觉顶部
-// - IntersectionObserver 触发 loadMore，历史消息在视觉顶部自然追加
+// 这版改成页块级虚拟化：
+// - 消息按页分块，不再按 message 逐条虚拟
+// - 视口附近少量页保持真实 DOM
+// - 远页折叠成固定高度块，但只有在该页真实渲染并量过高度后才允许折叠
+//
+// 这样滚动链路里不会出现“正在眼前从假高度变真高度的 message”，
+// 手感比消息级壳切换稳定得多，同时 DOM 数量也有上限。
 
 import {
   useRef,
@@ -16,6 +18,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -30,74 +33,65 @@ import { RetryStatusInline, type RetryStatusInlineData } from './RetryStatusInli
 import { buildVisibleMessageEntries, getVisibleMessageForkTargetId } from './chatAreaVisibility'
 import { AT_BOTTOM_THRESHOLD_PX } from '../../constants'
 import { useChatViewport } from './chatViewport'
+import {
+  PREMEASURE_PAGE_RADIUS,
+  buildExpandedPageSelection,
+  buildPageOffsets,
+  buildPageRenderSegments,
+  buildStableChatPages,
+  buildTurnDurationMap,
+  computeExpandedPageRange,
+  reconcileStableChatPages,
+  type ChatPage,
+  type StableChatPage,
+} from './chatPageModel'
 
-const MESSAGE_RENDER_ROOT_MARGIN = '150% 0px'
-const STICKY_RENDER_MESSAGE_COUNT = 8
-const ESTIMATED_USER_MESSAGE_HEIGHT = 72
-const ESTIMATED_ASSISTANT_MESSAGE_HEIGHT = 160
-const MAX_MEASURED_MESSAGE_HEIGHT_CACHE = 2000
-const measuredMessageHeightCache = new Map<string, number>()
+const LOAD_MORE_ROOT_MARGIN = '240px 0px 0px 0px'
+const LOAD_MORE_WHEEL_COOLDOWN_MS = 90
+const LOAD_MORE_DEFER_MS = 100
+const PENDING_SCROLL_TARGET_KEEPALIVE_MS = 900
+
+type LoadMoreAnchorSnapshot = {
+  messageId: string
+  topOffset: number
+  pageCountBefore: number
+}
 
 /** Stable no-op to avoid creating a new closure on every render. */
 const NOOP = () => {}
 
-function estimateMessageHeight(message: Message): number {
-  if (message.info.role === 'user') {
-    return Math.max(ESTIMATED_USER_MESSAGE_HEIGHT, message.parts.length * 40)
-  }
-
-  return Math.max(ESTIMATED_ASSISTANT_MESSAGE_HEIGHT, message.parts.length * 80)
+export function computeAnchorRestoreScrollDelta(previousTopOffset: number, nextTopOffset: number): number {
+  return nextTopOffset - previousTopOffset
 }
 
-function rememberMeasuredMessageHeight(cacheKey: string, height: number) {
-  measuredMessageHeightCache.set(cacheKey, height)
-  if (measuredMessageHeightCache.size <= MAX_MEASURED_MESSAGE_HEIGHT_CACHE) return
+function captureLoadMoreAnchor(root: HTMLElement, pageCountBefore = 0): LoadMoreAnchorSnapshot | null {
+  const rootRect = root.getBoundingClientRect()
+  const candidates = root.querySelectorAll<HTMLElement>('[data-message-id]')
 
-  const oldestKey = measuredMessageHeightCache.keys().next().value
-  if (oldestKey) measuredMessageHeightCache.delete(oldestKey)
-}
+  let best: LoadMoreAnchorSnapshot | null = null
+  for (const element of candidates) {
+    const messageId = element.getAttribute('data-message-id')
+    if (!messageId) continue
 
-export function buildTurnDurationMap(messages: Message[], visibleMessages: Message[]): Map<string, number> {
-  const map = new Map<string, number>()
-  const visibleAssistantIds = new Set(
-    visibleMessages.filter(message => message.info.role === 'assistant').map(message => message.info.id),
-  )
+    const rect = element.getBoundingClientRect()
+    const intersectsViewport = rect.bottom > rootRect.top && rect.top < rootRect.bottom
+    if (!intersectsViewport) continue
 
-  let currentUserCreated: number | null = null
-  let currentVisibleAssistantId: string | null = null
-  let currentLastCompleted: number | null = null
-
-  const commitTurn = () => {
-    if (currentUserCreated == null || currentVisibleAssistantId == null || currentLastCompleted == null) return
-    map.set(currentVisibleAssistantId, currentLastCompleted - currentUserCreated)
-  }
-
-  for (const message of messages) {
-    if (message.info.role === 'user') {
-      commitTurn()
-      currentUserCreated = message.info.time.created
-      currentVisibleAssistantId = null
-      currentLastCompleted = null
-      continue
-    }
-
-    if (currentUserCreated == null || message.info.role !== 'assistant') continue
-
-    if (visibleAssistantIds.has(message.info.id)) {
-      currentVisibleAssistantId = message.info.id
-    }
-    if (message.info.time.completed != null) {
-      currentLastCompleted = message.info.time.completed
+    const topOffset = rect.top - rootRect.top
+    if (!best || topOffset < best.topOffset) {
+      best = { messageId, topOffset, pageCountBefore }
     }
   }
 
-  commitTurn()
-
-  return map
+  return best
 }
 
 interface ChatAreaProps {
   messages: Message[]
+  pageRecords?: StableChatPage[]
+  visibleMessages?: Message[]
+  forkTargetIdMap?: Map<string, string | undefined>
+  turnDurationMap?: Map<string, number>
   sessionId?: string | null
   isStreaming?: boolean
   allowStreamingLayoutAnimation?: boolean
@@ -127,6 +121,10 @@ export const ChatArea = memo(
     (
       {
         messages,
+        pageRecords,
+        visibleMessages: visibleMessagesProp,
+        forkTargetIdMap: forkTargetIdMapProp,
+        turnDurationMap: turnDurationMapProp,
         sessionId,
         isStreaming: _isStreaming = false,
         allowStreamingLayoutAnimation = true,
@@ -144,112 +142,316 @@ export const ChatArea = memo(
       },
       ref,
     ) => {
-      // ---- Refs ----
       const { t } = useTranslation('chat')
       const scrollRef = useRef<HTMLDivElement>(null)
       const [scrollRoot, setScrollRoot] = useState<HTMLDivElement | null>(null)
       const topSentinelRef = useRef<HTMLDivElement>(null)
       const isAtBottomRef = useRef(true)
       const loadMoreRef = useRef(onLoadMore)
+      const isLoadingRef = useRef(false)
+      const [isLoadingMore, setIsLoadingMore] = useState(false)
+      const [scrollOffsetFromBottom, setScrollOffsetFromBottom] = useState(0)
+      const [viewportHeight, setViewportHeight] = useState(0)
+      const [measuredPageHeights, setMeasuredPageHeights] = useState<Record<string, number>>({})
+      const [pendingScrollMessageId, setPendingScrollMessageId] = useState<string | null>(null)
+      const [pendingLoadMoreAnchorMessageId, setPendingLoadMoreAnchorMessageId] = useState<string | null>(null)
+      const pageKeyCounterRef = useRef(0)
+      const scrollSnapshotRafRef = useRef<number | null>(null)
+      const pendingLoadMoreAnchorRef = useRef<LoadMoreAnchorSnapshot | null>(null)
+      const pendingLayoutAnchorRef = useRef<LoadMoreAnchorSnapshot | null>(null)
+      const pendingLoadMoreTimerRef = useRef<number | null>(null)
+      const pendingScrollClearTimerRef = useRef<number | null>(null)
+      const settlingScrollMessageIdRef = useRef<string | null>(null)
+      const loadMoreRequestIdRef = useRef(0)
+      const topSentinelVisibleRef = useRef(false)
+      const lastWheelInputAtRef = useRef(0)
+
       useEffect(() => {
         loadMoreRef.current = onLoadMore
       }, [onLoadMore])
-      const isLoadingRef = useRef(false)
-      const [isLoadingMore, setIsLoadingMore] = useState(false)
 
-      // Guard: 防止 session 初始加载时 sentinel 在视口内立即触发 loadMore。
-      // 只有用户主动滚离底部后解除。
       const loadMoreBlockedRef = useRef(true)
 
       const { isWideMode } = useTheme()
       const { presentation } = useChatViewport()
       const atBottomThreshold = presentation.isCompact ? 150 : AT_BOTTOM_THRESHOLD_PX
       const messagePaddingClass = presentation.isCompact ? 'px-3' : 'px-5'
-
-      // ---- Data ----
-      const visibleMessageEntries = useMemo(() => buildVisibleMessageEntries(messages), [messages])
-      const visibleMessages = useMemo(() => visibleMessageEntries.map(e => e.message), [visibleMessageEntries])
-      const forkTargetIdMap = useMemo(
-        () =>
-          new Map(visibleMessageEntries.map(entry => [entry.message.info.id, getVisibleMessageForkTargetId(entry)])),
-        [visibleMessageEntries],
-      )
-
-      const turnDurationMap = useMemo(() => buildTurnDurationMap(messages, visibleMessages), [messages, visibleMessages])
-
       const messageMaxWidthClass = isWideMode ? 'max-w-[95%] xl:max-w-6xl' : 'max-w-2xl'
-      const heightCacheScope = `${presentation.surfaceVariant}:${isWideMode ? 'wide' : 'normal'}`
-      const stickyRenderIds = useMemo(
-        () => new Set(visibleMessages.slice(-STICKY_RENDER_MESSAGE_COUNT).map(message => message.info.id)),
-        [visibleMessages],
+      const allocatePageKey = useCallback(() => `chat-page:${pageKeyCounterRef.current++}`, [])
+
+      const shouldUseExternalViewModel = pageRecords != null && visibleMessagesProp != null
+      const visibleMessageEntries = useMemo(
+        () => (shouldUseExternalViewModel ? [] : buildVisibleMessageEntries(messages)),
+        [messages, shouldUseExternalViewModel],
       )
+      const visibleMessages = useMemo(
+        () => visibleMessagesProp ?? visibleMessageEntries.map(entry => entry.message),
+        [visibleMessageEntries, visibleMessagesProp],
+      )
+      const [pages, setPages] = useState<StableChatPage[]>(() => buildStableChatPages(visibleMessages, allocatePageKey))
+      const localForkTargetIdMap = useMemo(
+        () =>
+          forkTargetIdMapProp ??
+          new Map(visibleMessageEntries.map(entry => [entry.message.info.id, getVisibleMessageForkTargetId(entry)])),
+        [forkTargetIdMapProp, visibleMessageEntries],
+      )
+      const localTurnDurationMap = useMemo(
+        () => turnDurationMapProp ?? buildTurnDurationMap(messages, visibleMessages),
+        [messages, turnDurationMapProp, visibleMessages],
+      )
+
+      useLayoutEffect(() => {
+        if (pageRecords) return
+        setPages(currentPages =>
+          reconcileStableChatPages({
+            currentPages,
+            nextMessages: visibleMessages,
+            allocateKey: allocatePageKey,
+          }),
+        )
+      }, [allocatePageKey, pageRecords, visibleMessages])
+
+      const activePages = pageRecords ?? pages
+
+      useEffect(() => {
+        const validKeys = new Set(activePages.map(page => page.key))
+        setMeasuredPageHeights(previous => {
+          let changed = false
+          const next: Record<string, number> = {}
+          for (const [key, value] of Object.entries(previous)) {
+            if (!validKeys.has(key)) {
+              changed = true
+              continue
+            }
+            next[key] = value
+          }
+          return changed ? next : previous
+        })
+      }, [activePages])
+
+      const pendingTargetPageIndex = useMemo(
+        () =>
+          pendingScrollMessageId == null ? -1 : activePages.findIndex(page => page.messageIds.includes(pendingScrollMessageId)),
+        [activePages, pendingScrollMessageId],
+      )
+
+      const pendingLoadMoreAnchorPageIndex = useMemo(
+        () =>
+          pendingLoadMoreAnchorMessageId == null
+            ? -1
+            : activePages.findIndex(page => page.messageIds.includes(pendingLoadMoreAnchorMessageId)),
+        [activePages, pendingLoadMoreAnchorMessageId],
+      )
+
+      const expandedPageRange = useMemo(
+        () =>
+          computeExpandedPageRange({
+            pages: activePages,
+            measuredPageHeights,
+            scrollOffsetFromBottom,
+            viewportHeight,
+          }),
+        [activePages, measuredPageHeights, scrollOffsetFromBottom, viewportHeight],
+      )
+
+      const expandedPageSelection = useMemo(
+        () => buildExpandedPageSelection(expandedPageRange, [pendingTargetPageIndex, pendingLoadMoreAnchorPageIndex]),
+        [expandedPageRange, pendingLoadMoreAnchorPageIndex, pendingTargetPageIndex],
+      )
+
+      const renderSegments = useMemo(
+        () =>
+          buildPageRenderSegments({
+            pages: activePages,
+            expandedPageSelection,
+            measuredPageHeights,
+          }),
+        [activePages, expandedPageSelection, measuredPageHeights],
+      )
+
+      const pageToPremeasure = useMemo(() => {
+        const startIndex = Math.max(0, expandedPageRange.startIndex - PREMEASURE_PAGE_RADIUS)
+        const endIndex = Math.min(activePages.length - 1, expandedPageRange.endIndex + PREMEASURE_PAGE_RADIUS)
+
+        for (let index = startIndex; index <= endIndex; index++) {
+          if (index >= expandedPageRange.startIndex && index <= expandedPageRange.endIndex) continue
+          const page = activePages[index]
+          if (measuredPageHeights[page.key] == null) return page
+        }
+        return null
+      }, [activePages, expandedPageRange.endIndex, expandedPageRange.startIndex, measuredPageHeights])
+
+      const clearPendingLoadMoreTimer = useCallback(() => {
+        if (pendingLoadMoreTimerRef.current === null) return
+        window.clearTimeout(pendingLoadMoreTimerRef.current)
+        pendingLoadMoreTimerRef.current = null
+      }, [])
+
+      const clearPendingScrollTimer = useCallback(() => {
+        if (pendingScrollClearTimerRef.current === null) return
+        window.clearTimeout(pendingScrollClearTimerRef.current)
+        pendingScrollClearTimerRef.current = null
+      }, [])
+
+      useEffect(() => {
+        return () => {
+          clearPendingLoadMoreTimer()
+          clearPendingScrollTimer()
+          if (scrollSnapshotRafRef.current !== null) cancelAnimationFrame(scrollSnapshotRafRef.current)
+        }
+      }, [clearPendingLoadMoreTimer, clearPendingScrollTimer])
 
       const setScrollContainerRef = useCallback((node: HTMLDivElement | null) => {
         scrollRef.current = node
         setScrollRoot(prev => (prev === node ? prev : node))
       }, [])
 
-      // ============================================
-      // Scroll: isAtBottom tracking
-      // ============================================
-      // column-reverse: scrollTop=0 是底部，向上滚 scrollTop 为负。
-      // abs(scrollTop) 就是离底部的像素距离。
+      const updateScrollOffsetSnapshot = useCallback(() => {
+        const root = scrollRef.current
+        if (!root) return
+
+        const nextOffset = Math.abs(root.scrollTop)
+        if (scrollSnapshotRafRef.current !== null) cancelAnimationFrame(scrollSnapshotRafRef.current)
+        scrollSnapshotRafRef.current = requestAnimationFrame(() => {
+          scrollSnapshotRafRef.current = null
+          setScrollOffsetFromBottom(prev => (Math.abs(prev - nextOffset) < 1 ? prev : nextOffset))
+        })
+      }, [])
 
       useEffect(() => {
-        const el = scrollRef.current
-        if (!el) return
-        const onScroll = () => {
-          const hasOverflow = el.scrollHeight > el.clientHeight + 1
-          const distFromBottom = Math.abs(el.scrollTop)
-          const atBottom = !hasOverflow || distFromBottom <= atBottomThreshold
-          const prev = isAtBottomRef.current
-          isAtBottomRef.current = atBottom
-          if (prev !== atBottom) onAtBottomChange?.(atBottom)
+        const root = scrollRoot
+        if (!root || typeof ResizeObserver === 'undefined') return
 
-          // 用户滚离底部 → 解除 loadMore guard
-          if (!atBottom) loadMoreBlockedRef.current = false
+        const syncViewport = () => {
+          setViewportHeight(prev => (Math.abs(prev - root.clientHeight) < 1 ? prev : root.clientHeight))
         }
-        el.addEventListener('scroll', onScroll, { passive: true })
-        return () => el.removeEventListener('scroll', onScroll)
-      }, [atBottomThreshold, onAtBottomChange])
 
-      // column-reverse 天然 stick-to-bottom，无需 auto-scroll 代码
+        syncViewport()
+        const observer = new ResizeObserver(syncViewport)
+        observer.observe(root)
+        return () => observer.disconnect()
+      }, [scrollRoot])
 
-      // ============================================
-      // Session switch: snap to bottom
-      // ============================================
+      useEffect(() => {
+        const root = scrollRef.current
+        if (!root) return
+
+        const onScroll = () => {
+          const hasOverflow = root.scrollHeight > root.clientHeight + 1
+          const distFromBottom = Math.abs(root.scrollTop)
+          const atBottom = !hasOverflow || distFromBottom <= atBottomThreshold
+          const previous = isAtBottomRef.current
+          isAtBottomRef.current = atBottom
+          if (previous !== atBottom) onAtBottomChange?.(atBottom)
+
+          if (!atBottom) loadMoreBlockedRef.current = false
+          updateScrollOffsetSnapshot()
+        }
+
+        const onWheel = () => {
+          lastWheelInputAtRef.current = Date.now()
+        }
+
+        root.addEventListener('scroll', onScroll, { passive: true })
+        root.addEventListener('wheel', onWheel, { passive: true })
+        updateScrollOffsetSnapshot()
+        return () => {
+          root.removeEventListener('scroll', onScroll)
+          root.removeEventListener('wheel', onWheel)
+        }
+      }, [atBottomThreshold, onAtBottomChange, updateScrollOffsetSnapshot])
 
       const prevSessionIdRef = useRef(sessionId)
       useEffect(() => {
         if (sessionId === prevSessionIdRef.current) return
         prevSessionIdRef.current = sessionId
+        pageKeyCounterRef.current = 0
         isAtBottomRef.current = true
-        loadMoreBlockedRef.current = true // 重置 guard
+        loadMoreBlockedRef.current = true
+        pendingLoadMoreAnchorRef.current = null
+        setPendingLoadMoreAnchorMessageId(null)
+        topSentinelVisibleRef.current = false
+        loadMoreRequestIdRef.current += 1
+        isLoadingRef.current = false
+        setIsLoadingMore(false)
+        clearPendingLoadMoreTimer()
+        setMeasuredPageHeights({})
+        setPendingScrollMessageId(null)
+        settlingScrollMessageIdRef.current = null
+        clearPendingScrollTimer()
+        setPages(buildStableChatPages(visibleMessages, allocatePageKey))
         onAtBottomChange?.(true)
+        onVisibleMessageIdsChange?.([])
 
         requestAnimationFrame(() => {
-          const el = scrollRef.current
-          if (!el) return
-          el.scrollTop = 0 // column-reverse: 0 = 底部
-
-          // 消息列表整体淡入 — 一次命令式 animate，零 React 开销
-          animate(el, { opacity: [0, 1] }, { duration: 0.2, ease: 'easeOut' })
+          const root = scrollRef.current
+          if (!root) return
+          root.scrollTop = 0
+          updateScrollOffsetSnapshot()
+          animate(root, { opacity: [0, 1] }, { duration: 0.2, ease: 'easeOut' })
         })
-      }, [sessionId, onAtBottomChange])
+      }, [
+        allocatePageKey,
+        clearPendingLoadMoreTimer,
+        clearPendingScrollTimer,
+        onAtBottomChange,
+        onVisibleMessageIdsChange,
+        sessionId,
+        updateScrollOffsetSnapshot,
+        visibleMessages,
+      ])
 
-      // 加载完成后 snap to bottom
       useEffect(() => {
         if (loadState !== 'loaded') return
         requestAnimationFrame(() => {
-          const el = scrollRef.current
-          if (el && isAtBottomRef.current) el.scrollTop = 0 // column-reverse: 0 = 底部
+          const root = scrollRef.current
+          if (root && isAtBottomRef.current) {
+            root.scrollTop = 0
+            updateScrollOffsetSnapshot()
+          }
         })
-      }, [loadState])
+      }, [loadState, updateScrollOffsetSnapshot])
 
-      // ============================================
-      // Load more: IntersectionObserver on top sentinel
-      // ============================================
-      // 依赖 column-reverse + ViewportMessageItem 占位，自然保持滚动位置。
+      const tryLoadMore = useCallback(() => {
+        if (isLoadingRef.current) return
+        if (!topSentinelVisibleRef.current) return
+        if (loadMoreBlockedRef.current) return
+
+        const fn = loadMoreRef.current
+        if (!fn) return
+
+        const sid = sessionId
+        if (!sid) return
+        const hasMore = messageStore.getSessionState(sid)?.hasMoreHistory ?? false
+        if (!hasMore) return
+
+        const sinceWheel = Date.now() - lastWheelInputAtRef.current
+        if (sinceWheel < LOAD_MORE_WHEEL_COOLDOWN_MS) {
+          clearPendingLoadMoreTimer()
+          pendingLoadMoreTimerRef.current = window.setTimeout(() => {
+            pendingLoadMoreTimerRef.current = null
+            tryLoadMore()
+          }, LOAD_MORE_DEFER_MS)
+          return
+        }
+
+        const root = scrollRef.current
+        if (root) {
+          const anchor = captureLoadMoreAnchor(root, activePages.length)
+          pendingLoadMoreAnchorRef.current = anchor
+          setPendingLoadMoreAnchorMessageId(anchor?.messageId ?? null)
+        }
+
+        const requestId = ++loadMoreRequestIdRef.current
+        const requestSessionId = sid
+        isLoadingRef.current = true
+        setIsLoadingMore(true)
+        Promise.resolve(fn()).finally(() => {
+          if (loadMoreRequestIdRef.current !== requestId || sessionId !== requestSessionId) return
+          isLoadingRef.current = false
+          setIsLoadingMore(false)
+        })
+      }, [activePages.length, clearPendingLoadMoreTimer, sessionId])
 
       useEffect(() => {
         const sentinel = topSentinelRef.current
@@ -258,38 +460,62 @@ export const ChatArea = memo(
 
         const observer = new IntersectionObserver(
           ([entry]) => {
-            if (!entry.isIntersecting || isLoadingRef.current) return
-            if (loadMoreBlockedRef.current) return
-
-            const fn = loadMoreRef.current
-            if (!fn) return
-
-            const sid = sessionId
-            if (!sid) return
-            const hasMore = messageStore.getSessionState(sid)?.hasMoreHistory ?? false
-            if (!hasMore) return
-
-            isLoadingRef.current = true
-            setIsLoadingMore(true)
-
-            Promise.resolve(fn()).finally(() => {
-              isLoadingRef.current = false
-              setIsLoadingMore(false)
-            })
+            topSentinelVisibleRef.current = entry.isIntersecting
+            if (!entry.isIntersecting) {
+              clearPendingLoadMoreTimer()
+              return
+            }
+            tryLoadMore()
           },
-          { root, rootMargin: '200px 0px 0px 0px' },
+          { root, rootMargin: LOAD_MORE_ROOT_MARGIN },
         )
 
         observer.observe(sentinel)
-        return () => observer.disconnect()
-      }, [sessionId, visibleMessages])
+        return () => {
+          observer.disconnect()
+          topSentinelVisibleRef.current = false
+          clearPendingLoadMoreTimer()
+        }
+      }, [clearPendingLoadMoreTimer, tryLoadMore, visibleMessages])
 
-      // column-reverse 下 prepend 在负方向远端，scrollTop 不变，视口自然不跳。
-      // 不需要手动补偿。
+      useLayoutEffect(() => {
+        const anchor = pendingLoadMoreAnchorRef.current
+        const root = scrollRef.current
+        if (!anchor || !root) return
+        if (activePages.length <= anchor.pageCountBefore) return
 
-      // ============================================
-      // Visible message tracking (for outline)
-      // ============================================
+        const target = root.querySelector<HTMLElement>(`[data-message-id="${anchor.messageId}"]`)
+        if (!target) return
+
+        pendingLoadMoreAnchorRef.current = null
+        setPendingLoadMoreAnchorMessageId(null)
+
+        const rootRect = root.getBoundingClientRect()
+        const nextTopOffset = target.getBoundingClientRect().top - rootRect.top
+        const delta = computeAnchorRestoreScrollDelta(anchor.topOffset, nextTopOffset)
+        if (Math.abs(delta) >= 1) {
+          root.scrollTop += delta
+          updateScrollOffsetSnapshot()
+        }
+      }, [activePages, updateScrollOffsetSnapshot])
+
+      useLayoutEffect(() => {
+        const anchor = pendingLayoutAnchorRef.current
+        const root = scrollRef.current
+        if (!anchor || !root) return
+
+        const target = root.querySelector<HTMLElement>(`[data-message-id="${anchor.messageId}"]`)
+        pendingLayoutAnchorRef.current = null
+        if (!target) return
+
+        const rootRect = root.getBoundingClientRect()
+        const nextTopOffset = target.getBoundingClientRect().top - rootRect.top
+        const delta = computeAnchorRestoreScrollDelta(anchor.topOffset, nextTopOffset)
+        if (Math.abs(delta) >= 1) {
+          root.scrollTop += delta
+          updateScrollOffsetSnapshot()
+        }
+      }, [activePages, measuredPageHeights, renderSegments, updateScrollOffsetSnapshot])
 
       const onVisibleIdsChangeRef = useRef(onVisibleMessageIdsChange)
       useEffect(() => {
@@ -317,138 +543,122 @@ export const ChatArea = memo(
                 changed = true
               }
             }
-            if (changed) {
-              onVisibleIdsChangeRef.current?.(Array.from(visibleIds))
-            }
+            if (changed) onVisibleIdsChangeRef.current?.(Array.from(visibleIds))
           },
           { root, rootMargin: '100% 0px' },
         )
 
-        // Observe all current message elements
         const elements = root.querySelectorAll<HTMLElement>('[data-message-id]')
-        elements.forEach(el => observer.observe(el))
+        elements.forEach(element => observer.observe(element))
 
         return () => observer.disconnect()
-      }, [visibleMessages])
+      }, [activePages, expandedPageRange.endIndex, expandedPageRange.startIndex])
 
-      // ============================================
-      // Imperative Handle
-      // ============================================
+      useEffect(() => {
+        if (!pendingScrollMessageId) return
+        const target = scrollRef.current?.querySelector<HTMLElement>(`[data-message-id="${pendingScrollMessageId}"]`)
+        if (!target) return
+        if (settlingScrollMessageIdRef.current === pendingScrollMessageId) return
+
+        settlingScrollMessageIdRef.current = pendingScrollMessageId
+        target.scrollIntoView({ block: 'start', behavior: 'smooth' })
+        clearPendingScrollTimer()
+        pendingScrollClearTimerRef.current = window.setTimeout(() => {
+          pendingScrollClearTimerRef.current = null
+          if (settlingScrollMessageIdRef.current !== pendingScrollMessageId) return
+          settlingScrollMessageIdRef.current = null
+          setPendingScrollMessageId(current => (current === pendingScrollMessageId ? null : current))
+        }, PENDING_SCROLL_TARGET_KEEPALIVE_MS)
+      }, [activePages, clearPendingScrollTimer, expandedPageRange.endIndex, expandedPageRange.startIndex, pendingScrollMessageId])
+
+      const updateMeasuredPageHeight = useCallback((pageKey: string, nextHeight: number) => {
+        if (nextHeight <= 0) return
+        setMeasuredPageHeights(previous => {
+          const current = previous[pageKey] ?? null
+          if (current !== null && Math.abs(current - nextHeight) < 1) return previous
+          const root = scrollRef.current
+          if (root && !isAtBottomRef.current) {
+            pendingLayoutAnchorRef.current = captureLoadMoreAnchor(root)
+          }
+          return { ...previous, [pageKey]: nextHeight }
+        })
+      }, [])
+
+      const requestScrollToMessage = useCallback(
+        (messageId: string, behavior: ScrollBehavior) => {
+          const root = scrollRef.current
+          if (!root) return
+
+          const directTarget = root.querySelector<HTMLElement>(`[data-message-id="${messageId}"]`)
+          if (directTarget) {
+            directTarget.scrollIntoView({ block: 'start', behavior })
+            return
+          }
+
+          const targetPageIndex = activePages.findIndex(page => page.messageIds.includes(messageId))
+          if (targetPageIndex === -1) return
+
+          const pageOffsets = buildPageOffsets(activePages, measuredPageHeights)
+          root.scrollTo({ top: -pageOffsets[targetPageIndex], behavior: behavior === 'smooth' ? 'auto' : behavior })
+          updateScrollOffsetSnapshot()
+          settlingScrollMessageIdRef.current = null
+          clearPendingScrollTimer()
+          setPendingScrollMessageId(messageId)
+        },
+        [activePages, clearPendingScrollTimer, measuredPageHeights, updateScrollOffsetSnapshot],
+      )
 
       useImperativeHandle(
         ref,
         () => ({
           scrollToBottom: (instant = false) => {
-            const el = scrollRef.current
-            if (!el) return
-            el.scrollTo({ top: 0, behavior: instant ? 'auto' : 'smooth' })
+            const root = scrollRef.current
+            if (!root) return
+            root.scrollTo({ top: 0, behavior: instant ? 'auto' : 'smooth' })
           },
           scrollToBottomIfAtBottom: () => {
-            const el = scrollRef.current
-            if (!el) return
-            // 自动跟随使用严格贴底判定，避免用户刚开始向上滚时还在宽松阈值内被抢回去。
-            if (Math.abs(el.scrollTop) > 2) return
-            el.scrollTop = 0
+            const root = scrollRef.current
+            if (!root) return
+            if (Math.abs(root.scrollTop) > 2) return
+            root.scrollTop = 0
           },
           scrollToLastMessage: () => {
             if (visibleMessages.length === 0) return
-            const lastId = visibleMessages[visibleMessages.length - 1].info.id
-            scrollRef.current
-              ?.querySelector(`[data-message-id="${lastId}"]`)
-              ?.scrollIntoView({ block: 'start', behavior: 'auto' })
+            requestScrollToMessage(visibleMessages[visibleMessages.length - 1].info.id, 'auto')
           },
           scrollToMessageIndex: (index: number) => {
-            const msg = visibleMessages[index]
-            if (!msg) return
-            scrollRef.current
-              ?.querySelector(`[data-message-id="${msg.info.id}"]`)
-              ?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+            const message = visibleMessages[index]
+            if (!message) return
+            requestScrollToMessage(message.info.id, 'smooth')
           },
           scrollToMessageId: (messageId: string) => {
-            scrollRef.current
-              ?.querySelector(`[data-message-id="${messageId}"]`)
-              ?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+            requestScrollToMessage(messageId, 'smooth')
           },
         }),
-        [visibleMessages],
-      )
-
-      // ============================================
-      // Render
-      // ============================================
-
-      // 将连续助手消息分组，共享容器渲染（浑然一体）
-      const messageGroups = useMemo(() => {
-        const groups: Message[][] = []
-        for (const msg of visibleMessages) {
-          const prev = groups[groups.length - 1]
-          if (prev && msg.info.role === 'assistant' && prev[0].info.role === 'assistant') {
-            prev.push(msg)
-          } else {
-            groups.push([msg])
-          }
-        }
-        return groups
-      }, [visibleMessages])
-
-      // column-reverse 下 DOM 顺序反转：最新在前（视觉底部），最旧在后（视觉顶部）
-      const reversedGroups = useMemo(() => messageGroups.slice().reverse(), [messageGroups])
-
-      const renderMessageGroup = useCallback(
-        (messages: Message[]) => {
-          const isUser = messages[0].info.role === 'user'
-          return (
-            <div
-              className={`w-full ${messageMaxWidthClass} mx-auto ${messagePaddingClass} py-3 transition-[max-width] duration-300 ease-in-out`}
-            >
-              <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-                <div className={`min-w-0 group ${!isUser ? 'w-full' : ''} flex flex-col gap-2`}>
-                  {messages.map(msg => (
-                    <ViewportMessageItem
-                      key={msg.info.id}
-                      messageId={msg.info.id}
-                      scrollRoot={scrollRoot}
-                      registerMessage={registerMessage}
-                      forceRender={msg.isStreaming || stickyRenderIds.has(msg.info.id)}
-                      estimatedHeight={estimateMessageHeight(msg)}
-                      heightCacheKey={`${heightCacheScope}:${msg.info.id}`}
-                    >
-                      <MessageRenderer
-                        message={msg}
-                        allowStreamingLayoutAnimation={allowStreamingLayoutAnimation}
-                        turnDuration={turnDurationMap.get(msg.info.id)}
-                        onUndo={onUndo}
-                        onFork={onFork}
-                        forkMessageId={forkTargetIdMap.get(msg.info.id)}
-                        canUndo={canUndo}
-                        onEnsureParts={NOOP}
-                      />
-                    </ViewportMessageItem>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )
-        },
-        [
-          scrollRoot,
-          heightCacheScope,
-          stickyRenderIds,
-          registerMessage,
-          onUndo,
-          onFork,
-          canUndo,
-          messageMaxWidthClass,
-          messagePaddingClass,
-          turnDurationMap,
-          forkTargetIdMap,
-          allowStreamingLayoutAnimation,
-        ],
+        [requestScrollToMessage, visibleMessages],
       )
 
       return (
         <div className="h-full overflow-hidden contain-strict relative">
-          {/* Session loading spinner — 延迟 150ms 显示，快速加载时不闪烁 */}
+          {pageToPremeasure && (
+            <div
+              className="absolute left-0 right-0 top-0 pointer-events-none opacity-0"
+              style={{ visibility: 'hidden', contain: 'layout style paint' }}
+              aria-hidden="true"
+            >
+              <PageMeasureBlock
+                key={pageToPremeasure.key}
+                page={pageToPremeasure}
+                messageMaxWidthClass={messageMaxWidthClass}
+                messagePaddingClass={messagePaddingClass}
+                turnDurationMap={localTurnDurationMap}
+                forkTargetIdMap={localForkTargetIdMap}
+                allowStreamingLayoutAnimation={false}
+                onMeasuredHeightChange={updateMeasuredPageHeight}
+              />
+            </div>
+          )}
+
           {loadState === 'loading' && visibleMessages.length === 0 && (
             <div className="absolute inset-0 z-10 flex items-center justify-center">
               <div className="flex flex-col items-center gap-3 text-text-400 session-loading-indicator">
@@ -460,20 +670,11 @@ export const ChatArea = memo(
 
           <div
             ref={setScrollContainerRef}
+            data-chat-scroll-root="true"
             className="h-full overflow-y-auto overflow-x-hidden custom-scrollbar contain-content flex flex-col-reverse"
           >
-            {/* column-reverse: DOM 第一个 = 视觉最底。所有子元素直接平铺，无 wrapper。
-                DOM 顺序（上→下）：shim, bottomSpacing, retryStatus, messages(新→旧), loadingIndicator, topSpacing, sentinel
-                视觉顺序（上→下）：sentinel, topSpacing, loadingIndicator, messages(旧→新), retryStatus, bottomSpacing, shim
-            */}
-
-            {/* Shim: flex-1 占满剩余空间，消息不满一屏时推到视觉顶部 */}
             <div className="flex-1" />
 
-            {/* Bottom spacing (视觉底部)：
-             * 预留一块高 = inputBoxHeight + GAP 的空区，让最后一条消息不被贴底的 InputBox 遮住。
-             * GAP 控制消息底部 (fork/copy 按钮一行) 到输入胶囊顶部的空白，
-             * 保持偏宽松的留白，避免最后一条消息贴近输入区。 */}
             <div
               className="shrink-0"
               style={{
@@ -481,7 +682,6 @@ export const ChatArea = memo(
               }}
             />
 
-            {/* Retry status */}
             {retryStatus && (
               <div className={`w-full ${messageMaxWidthClass} mx-auto ${messagePaddingClass} shrink-0`}>
                 <div className="flex justify-start">
@@ -492,17 +692,29 @@ export const ChatArea = memo(
               </div>
             )}
 
-            {/* Messages: loadMore 的旧消息 append 到 DOM 末尾 = 视觉顶部，column-reverse 天然不跳 */}
-            {reversedGroups.map(group => {
-              const first = group[0]
-              return (
-                <div key={first.info.id} className="shrink-0">
-                  {renderMessageGroup(group)}
-                </div>
-              )
-            })}
+            {renderSegments.map(segment =>
+              segment.kind === 'expanded' ? (
+                <PageBlock
+                  key={segment.key}
+                  page={segment.page}
+                  expanded={true}
+                  measuredHeight={segment.measuredHeight}
+                  messageMaxWidthClass={messageMaxWidthClass}
+                  messagePaddingClass={messagePaddingClass}
+                  registerMessage={registerMessage}
+                  onUndo={onUndo}
+                  onFork={onFork}
+                  canUndo={canUndo}
+                  turnDurationMap={localTurnDurationMap}
+                  forkTargetIdMap={localForkTargetIdMap}
+                  allowStreamingLayoutAnimation={allowStreamingLayoutAnimation}
+                  onMeasuredHeightChange={updateMeasuredPageHeight}
+                />
+              ) : (
+                <CollapsedPagesBlock key={segment.key} height={segment.height} />
+              ),
+            )}
 
-            {/* Loading more indicator (视觉顶部附近) */}
             {visibleMessages.length > 0 && isLoadingMore && (
               <div className="flex justify-center py-3 shrink-0">
                 <div className="flex items-center gap-2 text-text-400 text-[length:var(--fs-sm)]">
@@ -512,10 +724,7 @@ export const ChatArea = memo(
               </div>
             )}
 
-            {/* Top spacing (视觉顶部) */}
             <div className="h-20 shrink-0" />
-
-            {/* Top sentinel for loadMore (视觉最顶部) */}
             <div ref={topSentinelRef} className="h-px shrink-0" aria-hidden="true" />
           </div>
         </div>
@@ -524,92 +733,177 @@ export const ChatArea = memo(
   ),
 )
 
-interface ViewportMessageItemProps {
+interface PageBlockProps {
+  page: ChatPage
+  expanded: boolean
+  measuredHeight: number
+  messageMaxWidthClass: string
+  messagePaddingClass: string
+  registerMessage?: (id: string, element: HTMLElement | null) => void
+  onUndo?: (userMessageId: string) => void
+  onFork?: (message: Message, forkMessageId?: string) => void | Promise<void>
+  canUndo?: boolean
+  turnDurationMap: Map<string, number>
+  forkTargetIdMap: Map<string, string | undefined>
+  allowStreamingLayoutAnimation: boolean
+  onMeasuredHeightChange: (pageKey: string, nextHeight: number) => void
+}
+
+const PageBlock = memo(function PageBlock({
+  page,
+  expanded,
+  measuredHeight,
+  messageMaxWidthClass,
+  messagePaddingClass,
+  registerMessage,
+  onUndo,
+  onFork,
+  canUndo,
+  turnDurationMap,
+  forkTargetIdMap,
+  allowStreamingLayoutAnimation,
+  onMeasuredHeightChange,
+}: PageBlockProps) {
+  const wrapperRef = useRef<HTMLDivElement | null>(null)
+
+  useLayoutEffect(() => {
+    if (!expanded) return
+    const element = wrapperRef.current
+    if (!element) return
+    onMeasuredHeightChange(page.key, element.offsetHeight)
+  }, [expanded, onMeasuredHeightChange, page.key])
+
+  useEffect(() => {
+    if (!expanded) return
+    const element = wrapperRef.current
+    if (!element || typeof ResizeObserver === 'undefined') return
+
+    const observer = new ResizeObserver(() => {
+      onMeasuredHeightChange(page.key, element.offsetHeight)
+    })
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [expanded, onMeasuredHeightChange, page.key])
+
+  if (!expanded) {
+    return <div className="shrink-0" data-page-key={page.key} style={{ height: `${measuredHeight}px` }} aria-hidden="true" />
+  }
+
+  return (
+    <div ref={wrapperRef} className="shrink-0" data-page-key={page.key}>
+      {page.rows.map(row => {
+        const isUser = row.messages[0].info.role === 'user'
+        return (
+          <div
+            key={row.key}
+            className={`w-full ${messageMaxWidthClass} mx-auto ${messagePaddingClass} py-3 transition-[max-width] duration-300 ease-in-out`}
+          >
+            <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+              <div className={`min-w-0 group ${!isUser ? 'w-full' : ''} flex flex-col gap-2`}>
+                {row.messages.map(message => (
+                  <RenderedMessageItem key={message.info.id} messageId={message.info.id} registerMessage={registerMessage}>
+                    <MessageRenderer
+                      message={message}
+                      allowStreamingLayoutAnimation={allowStreamingLayoutAnimation}
+                      turnDuration={turnDurationMap.get(message.info.id)}
+                      onUndo={onUndo}
+                      onFork={onFork}
+                      forkMessageId={forkTargetIdMap.get(message.info.id)}
+                      canUndo={canUndo}
+                      onEnsureParts={NOOP}
+                    />
+                  </RenderedMessageItem>
+                ))}
+              </div>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+})
+
+interface PageMeasureBlockProps {
+  page: ChatPage
+  messageMaxWidthClass: string
+  messagePaddingClass: string
+  turnDurationMap: Map<string, number>
+  forkTargetIdMap: Map<string, string | undefined>
+  allowStreamingLayoutAnimation: boolean
+  onMeasuredHeightChange: (pageKey: string, nextHeight: number) => void
+}
+
+const PageMeasureBlock = memo(function PageMeasureBlock({
+  page,
+  messageMaxWidthClass,
+  messagePaddingClass,
+  turnDurationMap,
+  forkTargetIdMap,
+  allowStreamingLayoutAnimation,
+  onMeasuredHeightChange,
+}: PageMeasureBlockProps) {
+  const wrapperRef = useRef<HTMLDivElement | null>(null)
+
+  useLayoutEffect(() => {
+    const element = wrapperRef.current
+    if (!element) return
+    onMeasuredHeightChange(page.key, element.offsetHeight)
+  }, [onMeasuredHeightChange, page.key])
+
+  return (
+    <div ref={wrapperRef} className="shrink-0" data-page-measure-key={page.key}>
+      {page.rows.map(row => {
+        const isUser = row.messages[0].info.role === 'user'
+        return (
+          <div key={row.key} className={`w-full ${messageMaxWidthClass} mx-auto ${messagePaddingClass} py-3`}>
+            <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+              <div className={`min-w-0 group ${!isUser ? 'w-full' : ''} flex flex-col gap-2`}>
+                {row.messages.map(message => (
+                  <div key={message.info.id}>
+                    <MessageRenderer
+                      message={message}
+                      allowStreamingLayoutAnimation={allowStreamingLayoutAnimation}
+                      turnDuration={turnDurationMap.get(message.info.id)}
+                      onFork={undefined}
+                      forkMessageId={forkTargetIdMap.get(message.info.id)}
+                      onEnsureParts={NOOP}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+})
+
+const CollapsedPagesBlock = memo(function CollapsedPagesBlock({ height }: { height: number }) {
+  return <div className="shrink-0" style={{ height: `${height}px` }} aria-hidden="true" />
+})
+
+interface RenderedMessageItemProps {
   messageId: string
-  scrollRoot: HTMLDivElement | null
-  forceRender?: boolean
-  estimatedHeight: number
-  heightCacheKey: string
   registerMessage?: (id: string, element: HTMLElement | null) => void
   children: ReactNode
 }
 
-const ViewportMessageItem = memo(function ViewportMessageItem({
+const RenderedMessageItem = memo(function RenderedMessageItem({
   messageId,
-  scrollRoot,
-  forceRender = false,
-  estimatedHeight,
-  heightCacheKey,
   registerMessage,
   children,
-}: ViewportMessageItemProps) {
-  const wrapperRef = useRef<HTMLDivElement | null>(null)
-  const contentRef = useRef<HTMLDivElement | null>(null)
-  const [isNearViewport, setIsNearViewport] = useState(() => forceRender || typeof IntersectionObserver === 'undefined')
-  const [measuredHeightState, setMeasuredHeightState] = useState(() => ({
-    cacheKey: heightCacheKey,
-    height: measuredMessageHeightCache.get(heightCacheKey) ?? null,
-  }))
-  const measuredHeight =
-    measuredHeightState.cacheKey === heightCacheKey ? measuredHeightState.height : measuredMessageHeightCache.get(heightCacheKey) ?? null
-
-  const setWrapperElement = useCallback(
+}: RenderedMessageItemProps) {
+  const setElement = useCallback(
     (node: HTMLDivElement | null) => {
-      wrapperRef.current = node
       registerMessage?.(messageId, node)
     },
     [messageId, registerMessage],
   )
 
-  useEffect(() => {
-    const wrapper = wrapperRef.current
-    if (!wrapper || !scrollRoot) return
-    if (typeof IntersectionObserver === 'undefined') return
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        setIsNearViewport(prev => (prev === entry.isIntersecting ? prev : entry.isIntersecting))
-      },
-      {
-        root: scrollRoot,
-        rootMargin: MESSAGE_RENDER_ROOT_MARGIN,
-      },
-    )
-
-    observer.observe(wrapper)
-    return () => observer.disconnect()
-  }, [scrollRoot])
-
-  const shouldRender = forceRender || isNearViewport
-
-  useEffect(() => {
-    const content = contentRef.current
-    if (!content || !shouldRender || typeof ResizeObserver === 'undefined') return
-
-    const updateHeight = () => {
-      const nextHeight = content.offsetHeight
-      if (nextHeight <= 0) return
-      setMeasuredHeightState(prev => {
-        if (prev.cacheKey === heightCacheKey && prev.height !== null && Math.abs(prev.height - nextHeight) < 1) return prev
-        rememberMeasuredMessageHeight(heightCacheKey, nextHeight)
-        return { cacheKey: heightCacheKey, height: nextHeight }
-      })
-    }
-
-    updateHeight()
-
-    const observer = new ResizeObserver(updateHeight)
-    observer.observe(content)
-    return () => observer.disconnect()
-  }, [heightCacheKey, shouldRender])
-
   return (
-    <div ref={setWrapperElement} data-message-id={messageId}>
-      {shouldRender ? (
-        <div ref={contentRef}>{children}</div>
-      ) : (
-        <div aria-hidden="true" style={{ height: `${measuredHeight ?? estimatedHeight}px` }} />
-      )}
+    <div ref={setElement} data-message-id={messageId}>
+      {children}
     </div>
   )
 })

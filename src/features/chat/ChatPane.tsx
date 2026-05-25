@@ -18,6 +18,7 @@ import { useChatSession, useModels, useModelSelection } from '../../hooks'
 import { useCancelHint } from '../../hooks/useCancelHint'
 import { InlineToolRequestContext, type InlineToolRequestContextValue } from './InlineToolRequestContext'
 import { ChatViewportProvider, canUseSplitPane, useChatViewportMaybe, type ChatViewportValue } from './chatViewport'
+import { useChatPageViewModel } from './useChatPageViewModel'
 import { SessionNavigationContext } from '../../contexts/SessionNavigationContext'
 import { paneLayoutStore } from '../../store/paneLayoutStore'
 import { autoApproveStore } from '../../store/autoApproveStore'
@@ -293,6 +294,7 @@ export const ChatPane = memo(function ChatPane({
   const renderedMessages = renderedMessagesView.sessionId === routeSessionId ? renderedMessagesView.messages : []
   const isRenderingDeferredMessages = renderedMessages !== messages
   const renderedLoadState = loadState === 'loaded' && isRenderingDeferredMessages ? 'loading' : loadState
+  const chatPageViewModel = useChatPageViewModel(renderedMessages)
 
   const navigationCtx = useMemo(
     () => ({ navigateToSession, currentSessionId: routeSessionId, currentDirectory: effectiveDirectory }),
@@ -721,6 +723,10 @@ export const ChatPane = memo(function ChatPane({
           <ChatArea
             ref={chatAreaRef}
             messages={renderedMessages}
+            pageRecords={chatPageViewModel.pageRecords}
+            visibleMessages={chatPageViewModel.visibleMessages}
+            forkTargetIdMap={chatPageViewModel.forkTargetIdMap}
+            turnDurationMap={chatPageViewModel.turnDurationMap}
             sessionId={routeSessionId}
             isStreaming={isStreaming}
             allowStreamingLayoutAnimation={isAtBottom}
@@ -741,6 +747,7 @@ export const ChatPane = memo(function ChatPane({
 
       <OutlineIndex
         messages={renderedMessages}
+        sourceEntries={chatPageViewModel.outlineSourceEntries}
         visibleMessageIds={visibleMessageIds}
         onScrollToMessageId={handleOutlineScrollToMessage}
       />

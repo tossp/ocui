@@ -2,4 +2,4 @@
 export const INITIAL_MESSAGE_LIMIT = 50
 
 /** 历史加载批次大小 */
-export const HISTORY_LOAD_BATCH_SIZE = 15
+export const HISTORY_LOAD_BATCH_SIZE = 50
