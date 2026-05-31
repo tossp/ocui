@@ -50,12 +50,15 @@ function getHSLColor(varName: string): string {
 
 function getTerminalTheme(isDark: boolean) {
   const fgColor = getHSLColor('--text-100') || (isDark ? '#e8e0d5' : '#2d2a26')
+  // 背景色需要设为实际颜色（而非透明），因为 xterm 在处理反转视频（\e[7m）时
+  // 会用 theme.background 作为反转后的前景色。如果设为 #00000000，
+  // 反转视频的文字会变成黑色，且反转背景也会出现黑框。
+  // 实际的透明效果由 CSS `.xterm-viewport { background-color: transparent !important }` 实现。
+  const bgColor = getHSLColor('--bg-100') || (isDark ? '#1a1a1a' : '#f5f3ef')
 
-  // 背景色设置为透明，实际上由 CSS 强制覆盖，
-  // 但这里设置 transparent 可以让 xterm 内部逻辑知道它是透明的
   if (isDark) {
     return {
-      background: '#00000000', // 完全透明
+      background: bgColor,
       foreground: fgColor,
       cursor: '#e8e0d5',
       cursorAccent: '#1a1a1a',
@@ -82,7 +85,7 @@ function getTerminalTheme(isDark: boolean) {
     }
   } else {
     return {
-      background: '#00000000', // 完全透明
+      background: bgColor,
       foreground: fgColor,
       cursor: '#2d2a26',
       cursorAccent: '#f5f3ef',
@@ -90,14 +93,16 @@ function getTerminalTheme(isDark: boolean) {
       selectionForeground: '#2d2a26',
       selectionInactiveBackground: '#e5e0d8',
       // ANSI colors - 浅色模式
-      black: '#2d2a26',
+      // 注意：在浅色背景下，white/brightWhite 需要是深色，
+      // 因为 PowerShell 等 shell 会用这些 ANSI 颜色渲染用户输入文本
+      black: '#f5f3ef',
       red: '#c9514a',
       green: '#4a9f4a',
       yellow: '#b58900',
       blue: '#3a7fc9',
       magenta: '#a04a9f',
       cyan: '#3a9f9f',
-      white: '#f5f3ef',
+      white: '#655f58',
       brightBlack: '#6b6560',
       brightRed: '#e55561',
       brightGreen: '#6ab56a',
@@ -105,7 +110,7 @@ function getTerminalTheme(isDark: boolean) {
       brightBlue: '#5a9fe0',
       brightMagenta: '#c06abf',
       brightCyan: '#5abfbf',
-      brightWhite: '#ffffff',
+      brightWhite: '#2d2a26',
     }
   }
 }
