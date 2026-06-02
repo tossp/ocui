@@ -1,5 +1,12 @@
 # Changelog
 
+## [v0.6.12] - 2026-06-02
+
+- refactor: harden internal drag interactions (ccb0280)
+- feat: support desktop file path drops (aa177a3)
+- fix: keep mermaid touch controls off desktop (346423a)
+- fix: refine markdown touch controls (6dfa4b9)
+
 ## [v0.6.11] - 2026-05-31
 
 - fix: clarify auto approval behavior (e16e7aa)
