@@ -10,7 +10,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import { Streamdown, type Components, type CustomRendererProps, type PluginConfig } from 'streamdown'
+import { Streamdown, defaultRehypePlugins, type Components, type CustomRendererProps, type PluginConfig } from 'streamdown'
 import { createMathPlugin } from '@streamdown/math'
 import { CodeBlock } from './CodeBlock'
 import { HandIcon, RetryIcon, ZoomInIcon, ZoomOutIcon } from './Icons'
@@ -18,6 +18,7 @@ import { CopyButton } from './ui'
 import { useTheme } from '../hooks/useTheme'
 import { useInputCapabilities } from '../hooks/useInputCapabilities'
 import { detectLanguage } from '../utils/languageUtils'
+import { isTauri } from '../utils/tauri'
 
 interface MarkdownRendererProps {
   content: string
@@ -35,6 +36,7 @@ const MERMAID_SCALE_STEP = 0.15
 const MERMAID_CONTROL_BUTTON_BASE_CLASS =
   'inline-flex h-8 w-8 items-center justify-center rounded-md bg-bg-300/70 backdrop-blur-md transition-colors duration-150 hover:bg-bg-300/85 disabled:opacity-40 disabled:cursor-not-allowed'
 const MERMAID_CONTROL_BUTTON_CLASS = `${MERMAID_CONTROL_BUTTON_BASE_CLASS} text-text-400 hover:text-text-200`
+const LOCAL_FILE_LINK_PREFIX = '#opencode-local-file:'
 
 type DiagramPointer = { x: number; y: number }
 
@@ -141,6 +143,58 @@ function extractBlockCode(children: React.ReactNode): { code: string; language?:
   return {
     code: contentStr,
     language: match?.[1],
+  }
+}
+
+type HastNode = {
+  type?: string
+  tagName?: string
+  properties?: Record<string, unknown>
+  children?: HastNode[]
+}
+
+function decodeHref(value: string): string {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
+function getWindowsAbsolutePath(value: string): string | null {
+  const decoded = decodeHref(value)
+  return /^[A-Za-z]:[\\/]/.test(decoded) ? decoded : null
+}
+
+function encodeLocalFileHref(filePath: string): string {
+  return `${LOCAL_FILE_LINK_PREFIX}${encodeURIComponent(filePath)}`
+}
+
+function decodeLocalFileHref(href?: string): string | null {
+  if (!href?.startsWith(LOCAL_FILE_LINK_PREFIX)) return null
+
+  try {
+    return decodeURIComponent(href.slice(LOCAL_FILE_LINK_PREFIX.length))
+  } catch {
+    return null
+  }
+}
+
+function rewriteWindowsPathLinkHrefs() {
+  return (tree: HastNode) => {
+    const visit = (node: HastNode) => {
+      if (node.type === 'element' && node.tagName === 'a') {
+        const href = node.properties?.href
+        const filePath = typeof href === 'string' ? getWindowsAbsolutePath(href) : null
+        if (filePath) {
+          node.properties = { ...node.properties, href: encodeLocalFileHref(filePath) }
+        }
+      }
+
+      node.children?.forEach(visit)
+    }
+
+    visit(tree)
   }
 }
 
@@ -589,6 +643,12 @@ const markdownPlugins: PluginConfig = {
   math: markdownMath,
   renderers: [{ language: 'mermaid', component: MarkdownMermaid }],
 }
+const markdownRehypePlugins = [
+  defaultRehypePlugins.raw,
+  rewriteWindowsPathLinkHrefs,
+  defaultRehypePlugins.sanitize,
+  defaultRehypePlugins.harden,
+]
 
 // ─── Main Renderer ─────────────────────────────────────────────
 
@@ -723,20 +783,35 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
       ),
 
       // --- Links ---
-      a: ({ href, children }) => (
-        <a
-          href={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={
-            isReasoning
-              ? 'text-[length:var(--fs-sm)] font-medium text-accent-main-200/80 hover:text-accent-main-200 underline underline-offset-2 transition-colors'
-              : 'font-medium text-accent-main-100 hover:text-accent-main-200 underline underline-offset-2 transition-colors'
-          }
-        >
-          {children}
-        </a>
-      ),
+      a: ({ href, children }) => {
+        const localFilePath = decodeLocalFileHref(href)
+        const className = isReasoning
+          ? 'text-[length:var(--fs-sm)] font-medium text-accent-main-200/80 hover:text-accent-main-200 underline underline-offset-2 transition-colors'
+          : 'font-medium text-accent-main-100 hover:text-accent-main-200 underline underline-offset-2 transition-colors'
+
+        if (localFilePath) {
+          return (
+            <a
+              href={href}
+              title={localFilePath}
+              className={className}
+              onClick={event => {
+                event.preventDefault()
+                if (!isTauri()) return
+                import('@tauri-apps/plugin-opener').then(mod => mod.openPath(localFilePath)).catch(() => {})
+              }}
+            >
+              {children}
+            </a>
+          )
+        }
+
+        return (
+          <a href={href} target="_blank" rel="noopener noreferrer" className={className}>
+            {children}
+          </a>
+        )
+      },
 
       // --- Images ---
       img: ({ src, alt, title }) => <MarkdownImage src={src} alt={alt} title={title} />,
@@ -828,7 +903,13 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
     <div
       className={`markdown-content ${isReasoning ? 'text-[length:var(--fs-sm)] leading-5 text-text-400' : 'text-[length:var(--fs-base)] leading-relaxed text-text-100'} break-words min-w-0 overflow-hidden ${className}`}
     >
-      <Streamdown components={components} isAnimating={isStreaming} controls={false} plugins={markdownPlugins}>
+      <Streamdown
+        components={components}
+        isAnimating={isStreaming}
+        controls={false}
+        plugins={markdownPlugins}
+        rehypePlugins={markdownRehypePlugins}
+      >
         {content}
       </Streamdown>
     </div>

@@ -276,4 +276,31 @@ describe('MarkdownRenderer', () => {
     expect(img.tagName).toBe('IMG')
     expect(screen.queryByTitle('Download image')).not.toBeInTheDocument()
   })
+
+  it('renders Windows absolute path links without blocked indicator', () => {
+    const filePath = 'G:/projects/koishi_projects/koishi-new/external/chatluna/packages/core/src/commands/conversation.ts'
+    render(<MarkdownRenderer content={`[conversation.ts](${filePath})`} />)
+
+    const link = screen.getByRole('link', { name: 'conversation.ts' })
+    expect(link).toHaveAttribute('href', `#opencode-local-file:${encodeURIComponent(filePath)}`)
+    expect(link).toHaveAttribute('title', filePath)
+    expect(screen.queryByText(/\[blocked\]/)).not.toBeInTheDocument()
+  })
+
+  it('renders Windows backslash path links without blocked indicator', () => {
+    const filePath = 'C:\\Users\\test\\projects\\assets\\script.js'
+    render(<MarkdownRenderer content={`[script.js](${filePath})`} />)
+
+    const link = screen.getByRole('link', { name: 'script.js' })
+    expect(link).toHaveAttribute('href', `#opencode-local-file:${encodeURIComponent(filePath)}`)
+    expect(link).toHaveAttribute('title', filePath)
+    expect(screen.queryByText(/\[blocked\]/)).not.toBeInTheDocument()
+  })
+
+  it('still blocks unsafe javascript links', () => {
+    render(<MarkdownRenderer content={'[bad](javascript:alert(1))'} />)
+
+    expect(screen.getByText('bad [blocked]')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'bad' })).not.toBeInTheDocument()
+  })
 })
