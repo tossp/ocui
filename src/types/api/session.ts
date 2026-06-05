@@ -1,4 +1,11 @@
-import type { Session as SDKSession, SessionStatus as SDKSessionStatus } from '@opencode-ai/sdk/v2/client'
+import type {
+  Session as SDKSession,
+  SessionCreateData as SDKSessionCreateData,
+  SessionForkData as SDKSessionForkData,
+  SessionListData as SDKSessionListData,
+  SessionStatus as SDKSessionStatus,
+  SessionUpdateData as SDKSessionUpdateData,
+} from '@opencode-ai/sdk/v2/client'
 
 export type SessionStatus = SDKSessionStatus
 
@@ -12,25 +19,10 @@ export type SessionRevert = NonNullable<SDKSession['revert']>
 
 export type Session = SDKSession
 
-export interface SessionListParams {
-  directory?: string
-  roots?: boolean
-  start?: number
-  search?: string
-  limit?: number
-}
+export type SessionListParams = NonNullable<SDKSessionListData['query']>
 
-export interface SessionCreateParams {
-  title?: string
-  directory?: string
-}
+export type SessionCreateParams = NonNullable<SDKSessionCreateData['query']> & NonNullable<SDKSessionCreateData['body']>
 
-export interface SessionUpdateParams {
-  title?: string
-  summary?: SessionSummary
-}
+export type SessionUpdateParams = NonNullable<SDKSessionUpdateData['body']>
 
-export interface SessionForkParams {
-  messageID?: string
-  directory?: string
-}
+export type SessionForkParams = NonNullable<SDKSessionForkData['query']> & NonNullable<SDKSessionForkData['body']>

@@ -41,7 +41,7 @@ export const InlinePermission = memo(function InlinePermission({
   let diffData: { before: string; after: string } | string | undefined
   if (metadata?.filediff && typeof metadata.filediff === 'object') {
     const fd = metadata.filediff as Record<string, unknown>
-    // 上游 v1.4.0+ 优先 patch 格式
+    // 上游优先返回 patch 格式
     if (typeof fd.patch === 'string') {
       diffData = fd.patch
     } else if (fd.before !== undefined && fd.after !== undefined) {
