@@ -1,5 +1,12 @@
 # Changelog
 
+## [v0.6.13] - 2026-06-05
+
+- chore: update opencode sdk (4a4fe17)
+- fix: render Windows path markdown links (d895fa6)
+- fix: improve Linux terminal font fallback (7158d87)
+- fix: make markdown code blocks selectable (cd453ad)
+
 ## [v0.6.12] - 2026-06-02
 
 - refactor: harden internal drag interactions (ccb0280)
