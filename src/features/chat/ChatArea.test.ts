@@ -11,6 +11,7 @@ import {
   findPagesToPremeasure,
   findMessageSequenceOffset,
   reconcileStableChatPages,
+  seedMeasuredPageHeightsFromPreviousPages,
 } from './chatPageModel'
 import { buildVisibleMessageEntries, getVisibleMessageForkTargetId } from './chatAreaVisibility'
 import type { Message, MessageError, Part, ToolPart, ReasoningPart } from '../../types/message'
@@ -390,6 +391,30 @@ describe('findMessageSequenceOffset', () => {
 
   it('returns -1 when the old sequence is not contiguous', () => {
     expect(findMessageSequenceOffset(['a', 'b', 'x', 'c'], ['b', 'c'])).toBe(-1)
+  })
+})
+
+describe('seedMeasuredPageHeightsFromPreviousPages', () => {
+  it('carries measured height forward when a page appends to measured content', () => {
+    const previousPages = [{ key: 'old-page', rows: [], messageIds: ['user-1', 'assistant-1'], estimatedHeight: 240 }]
+    const pages = [{ key: 'new-page', rows: [], messageIds: ['user-1', 'assistant-1', 'user-2'], estimatedHeight: 320 }]
+    const measuredPageHeights = { 'old-page': 980 }
+
+    const seeded = seedMeasuredPageHeightsFromPreviousPages({ pages, previousPages, measuredPageHeights })
+
+    expect(seeded).not.toBe(measuredPageHeights)
+    expect(seeded['new-page']).toBe(1060)
+  })
+
+  it('does not seed from partial page overlap', () => {
+    const previousPages = [{ key: 'old-page', rows: [], messageIds: ['user-1', 'assistant-1'], estimatedHeight: 240 }]
+    const pages = [{ key: 'new-page', rows: [], messageIds: ['assistant-1', 'user-2'], estimatedHeight: 220 }]
+    const measuredPageHeights = { 'old-page': 980 }
+
+    const seeded = seedMeasuredPageHeightsFromPreviousPages({ pages, previousPages, measuredPageHeights })
+
+    expect(seeded).toBe(measuredPageHeights)
+    expect(seeded['new-page']).toBeUndefined()
   })
 })
 

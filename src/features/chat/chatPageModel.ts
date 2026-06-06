@@ -234,6 +234,51 @@ export function buildPageOffsets(pages: ChatPage[], measuredPageHeights: Record<
   return offsets
 }
 
+export function seedMeasuredPageHeightsFromPreviousPages(options: {
+  pages: ChatPage[]
+  previousPages: ChatPage[]
+  measuredPageHeights: Record<string, number>
+}): Record<string, number> {
+  const { pages, previousPages, measuredPageHeights } = options
+  if (pages.length === 0 || previousPages.length === 0) return measuredPageHeights
+
+  let nextHeights = measuredPageHeights
+  for (const page of pages) {
+    if (nextHeights[page.key] != null) continue
+
+    const seedHeight = findMeasuredPageHeightSeed(page, previousPages, measuredPageHeights)
+    if (seedHeight == null) continue
+
+    if (nextHeights === measuredPageHeights) nextHeights = { ...measuredPageHeights }
+    nextHeights[page.key] = seedHeight
+  }
+
+  return nextHeights
+}
+
+function findMeasuredPageHeightSeed(
+  page: ChatPage,
+  previousPages: ChatPage[],
+  measuredPageHeights: Record<string, number>,
+): number | null {
+  let best: { messageCount: number; height: number } | null = null
+
+  for (const previousPage of previousPages) {
+    const measuredHeight = measuredPageHeights[previousPage.key]
+    if (measuredHeight == null || measuredHeight <= 0) continue
+    if (previousPage.messageIds.length === 0 || previousPage.messageIds.length > page.messageIds.length) continue
+    if (findMessageSequenceOffset(page.messageIds, previousPage.messageIds) === -1) continue
+
+    const estimatedAddedHeight = Math.max(0, page.estimatedHeight - previousPage.estimatedHeight)
+    const height = Math.max(1, Math.ceil(measuredHeight + estimatedAddedHeight))
+    if (!best || previousPage.messageIds.length > best.messageCount) {
+      best = { messageCount: previousPage.messageIds.length, height }
+    }
+  }
+
+  return best?.height ?? null
+}
+
 function findPageIndexAtOffset(offsets: number[], offset: number): number {
   let low = 0
   let high = offsets.length - 2
