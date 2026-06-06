@@ -58,11 +58,11 @@ if (document.readyState === 'loading') {
   requestAnimationFrame(initOverlayScrollbars)
 }
 
-// 注册 server 切换 → 清理所有 server-specific 状态 + SSE 重连
+// 注册 active server 入口变化 → 清理 server-specific 状态 + 重建 SDK/SSE
 serverStore.onServerChange(() => {
   invalidateSDKClient()
   if (isTauri()) {
-    void getSDKClientAsync().catch(err => apiErrorHandler('reinitialize sdk client after server switch', err))
+    void getSDKClientAsync().catch(err => apiErrorHandler('reinitialize sdk client after server endpoint change', err))
   }
 
   // 1. 清空内存中的 session/消息数据
@@ -76,7 +76,7 @@ serverStore.onServerChange(() => {
   // 4. 重新加载 auto-approve 开关状态（从新服务器的 storage key 读取）
   autoApproveStore.reloadFromStorage()
 
-  // 5. 重连 SSE（会自动连到新服务器）
+  // 5. 重连 SSE（会自动连到新的 server endpoint）
   reconnectSSE()
 })
 
@@ -169,14 +169,14 @@ function bootstrap() {
   )
 }
 
-async function startApp() {
-  await initializeNativeDesktopService()
+function startApp() {
+  bootstrap()
+
+  void initializeNativeDesktopService()
 
   if (isNativeTauri) {
-    await getSDKClientAsync().catch(err => apiErrorHandler('initialize sdk client', err))
+    void getSDKClientAsync().catch(err => apiErrorHandler('initialize sdk client', err))
   }
-
-  bootstrap()
 }
 
-void startApp()
+startApp()

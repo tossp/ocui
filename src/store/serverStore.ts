@@ -61,6 +61,7 @@ interface ServerClockCalibration {
 }
 
 type Listener = () => void
+export type ServerChangeReason = 'server-switch' | 'local-runtime-url'
 
 const STORAGE_KEY = 'opencode-servers'
 const ACTIVE_SERVER_KEY = 'opencode-active-server'
@@ -79,7 +80,7 @@ class ServerStore {
   private localServerUrlOverride: string | null = null
 
   // server 切换监听器（用于触发 SSE 重连等副作用，避免循环依赖）
-  private serverChangeListeners: Set<(newServerId: string) => void> = new Set()
+  private serverChangeListeners: Set<(newServerId: string, reason: ServerChangeReason) => void> = new Set()
 
   // 快照缓存 (用于 useSyncExternalStore)
   private _serversSnapshot: ServerConfig[] = []
@@ -165,12 +166,18 @@ class ServerStore {
   }
 
   /**
-   * 注册 server 切换监听器（用于触发 SSE 重连等副作用）
-   * 返回取消注册函数
+   * 注册 active server 入口变化监听器（server id 切换或 active local runtime URL 变化）。
+   * 返回取消注册函数。
    */
-  onServerChange(fn: (newServerId: string) => void): () => void {
+  onServerChange(fn: (newServerId: string, reason: ServerChangeReason) => void): () => void {
     this.serverChangeListeners.add(fn)
     return () => this.serverChangeListeners.delete(fn)
+  }
+
+  private notifyServerChange(serverId: string, reason: ServerChangeReason): void {
+    this.serverChangeListeners.forEach(fn => {
+      fn(serverId, reason)
+    })
   }
 
   private notify(): void {
@@ -332,6 +339,9 @@ class ServerStore {
 
     this.localServerUrlOverride = normalizedUrl
     this.notify()
+    if (this.isActiveLocalServer()) {
+      this.notifyServerChange(this.DEFAULT_SERVER_ID, 'local-runtime-url')
+    }
     return true
   }
 
@@ -369,11 +379,8 @@ class ServerStore {
     this.saveToStorage()
     this.notify()
 
-    // 实际切换了服务器，通知外部（SSE 重连等）
     if (changed) {
-      this.serverChangeListeners.forEach(fn => {
-        fn(id)
-      })
+      this.notifyServerChange(id, 'server-switch')
     }
 
     return true

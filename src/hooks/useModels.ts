@@ -1,5 +1,7 @@
 import { useSyncExternalStore, useCallback } from 'react'
 import { getActiveModels, type ModelInfo } from '../api'
+import { getSDKClientAsync } from '../api/sdk'
+import { serverStore } from '../store/serverStore'
 
 // ============================================
 // Global singleton so every ChatPane shares one models array.
@@ -18,6 +20,7 @@ type Listener = () => void
 
 let _state: ModelsState = { models: [], isLoading: true, error: null }
 let _fetchPromise: Promise<void> | null = null
+let _fetchGeneration = 0
 const _listeners = new Set<Listener>()
 
 function _notify() {
@@ -29,26 +32,43 @@ function _setState(patch: Partial<ModelsState>) {
   _notify()
 }
 
-async function _fetchModels() {
-  if (_fetchPromise) return _fetchPromise
+async function _fetchModels(force = false) {
+  if (_fetchPromise && !force) return _fetchPromise
+
+  const generation = ++_fetchGeneration
 
   _fetchPromise = (async () => {
     _setState({ isLoading: true, error: null })
     try {
+      await getSDKClientAsync()
       const data = await getActiveModels()
-      _setState({ models: data, isLoading: false })
+      if (generation === _fetchGeneration) {
+        _setState({ models: data, isLoading: false })
+      }
     } catch (e) {
-      _setState({ error: e instanceof Error ? e : new Error('Failed to fetch models'), isLoading: false })
+      if (generation === _fetchGeneration) {
+        _setState({ error: e instanceof Error ? e : new Error('Failed to fetch models'), isLoading: false })
+      }
     } finally {
-      _fetchPromise = null
+      if (generation === _fetchGeneration) {
+        _fetchPromise = null
+      }
     }
   })()
 
   return _fetchPromise
 }
 
+export function refreshModels() {
+  return _fetchModels(true)
+}
+
 // First fetch on module load — models are ready before any component mounts.
 _fetchModels()
+
+serverStore.onServerChange(() => {
+  void refreshModels()
+})
 
 function _subscribe(listener: Listener) {
   _listeners.add(listener)
@@ -72,7 +92,7 @@ interface UseModelsResult {
 
 export function useModels(): UseModelsResult {
   const state = useSyncExternalStore(_subscribe, _getSnapshot)
-  const refetch = useCallback(() => _fetchModels(), [])
+  const refetch = useCallback(() => refreshModels(), [])
 
   return {
     models: state.models,

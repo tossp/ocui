@@ -34,13 +34,16 @@ export function DirectoryProvider({ children }: { children: ReactNode }) {
 
   const [pathInfo, setPathInfo] = useState<ApiPath | null>(null)
 
-  // 服务器切换时，重新从 serverStorage 读取（key 前缀已变）
+  // 服务器 ID 切换时切换 per-server 目录；local runtime URL 变化时只刷新 path info。
   useEffect(() => {
-    return serverStore.onServerChange(() => {
-      setSavedDirectories(serverStorage.getJSON<SavedDirectory[]>(STORAGE_KEY_SAVED) ?? [])
-      setRecentProjects(serverStorage.getJSON<RecentProjects>(STORAGE_KEY_RECENT) ?? {})
-      setPathInfo(null) // 重置，等待重新加载
-      setUrlDirectory(undefined) // 清除当前目录选择
+    return serverStore.onServerChange((_, reason) => {
+      if (reason === 'server-switch') {
+        setSavedDirectories(serverStorage.getJSON<SavedDirectory[]>(STORAGE_KEY_SAVED) ?? [])
+        setRecentProjects(serverStorage.getJSON<RecentProjects>(STORAGE_KEY_RECENT) ?? {})
+        setUrlDirectory(undefined)
+      }
+      setPathInfo(null)
+      getPath().then(setPathInfo).catch(handleError('get path info', 'api'))
     })
   }, [setUrlDirectory])
 

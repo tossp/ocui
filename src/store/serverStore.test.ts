@@ -70,4 +70,29 @@ describe('serverStore local runtime URL', () => {
     expect(serverStore.getLocalServerUrl()).toBe('http://127.0.0.1:58231')
     expect(serverStore.getStoredServers().find(server => server.id === 'local')?.url).toBe('http://127.0.0.1:4096')
   })
+
+  it('notifies listeners when the active local runtime URL changes', async () => {
+    const { serverStore } = await import('./serverStore')
+    const listener = vi.fn()
+    serverStore.onServerChange(listener)
+
+    expect(serverStore.setLocalServerRuntimeUrl('http://127.0.0.1:58231')).toBe(true)
+
+    expect(listener).toHaveBeenCalledWith('local', 'local-runtime-url')
+  })
+
+  it('does not notify active endpoint listeners when local URL changes while remote is active', async () => {
+    const { serverStore } = await import('./serverStore')
+    const remote = serverStore.addServer({ name: 'Remote', url: 'http://remote.test' })
+    const listener = vi.fn()
+
+    serverStore.setActiveServer(remote.id)
+    listener.mockClear()
+    serverStore.onServerChange(listener)
+
+    expect(serverStore.setLocalServerRuntimeUrl('http://127.0.0.1:58231')).toBe(true)
+
+    expect(serverStore.getActiveBaseUrl()).toBe('http://remote.test')
+    expect(listener).not.toHaveBeenCalled()
+  })
 })
