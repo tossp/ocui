@@ -1,5 +1,14 @@
 # Changelog
 
+## [v0.6.17] - 2026-06-07
+
+- fix: default changes panel to last turn scope (0c341e9)
+- fix: read metadata.output for real-time bash streaming during execution (5da7b1f)
+- fix(settings): apply mobile viewport height to config editor (d442e66)
+- fix(titlebar): preserve decorum window controls (1892621)
+- fix: remove touchAction:none from FileTreeItem button that broke mobile scrolling (a619d72)
+- fix: replace 92vh with calc(var(--app-height) * 0.92) in mobile SettingsDialog to fix address bar hiding issue (f3558fc)
+
 ## [v0.6.16] - 2026-06-07
 
 - fix(startup): cancel stale local endpoint requests (9c789e5)
