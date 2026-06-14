@@ -150,6 +150,21 @@ describe('messageStore', () => {
     expect(state?.messages[1].info.id).toBe('message-2')
   })
 
+  it('creates a session when starting streaming', () => {
+    messageStore.setStreaming('session-1', true)
+
+    const state = messageStore.getSessionState('session-1')
+    expect(state?.isStreaming).toBe(true)
+    expect(state?.messages).toHaveLength(0)
+    expect(state?.loadState).toBe('idle')
+  })
+
+  it('does not create a session when stopping streaming for a missing session', () => {
+    messageStore.setStreaming('session-1', false)
+
+    expect(messageStore.getSessionState('session-1')).toBeUndefined()
+  })
+
   it('flushes mutable part deltas for multiple sessions in the same frame', () => {
     const rafCallbacks: Array<(time: number) => void> = []
     vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => {

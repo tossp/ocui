@@ -641,7 +641,7 @@ class MessageStore {
   // ============================================
 
   setStreaming(sessionId: string, isStreaming: boolean) {
-    const state = this.sessions.get(sessionId)
+    const state = isStreaming ? this.ensureSession(sessionId) : this.sessions.get(sessionId)
     if (!state) return
     state.isStreaming = isStreaming
     this.notify()
