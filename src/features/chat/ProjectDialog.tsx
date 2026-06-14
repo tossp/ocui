@@ -146,7 +146,7 @@ export function ProjectDialog({ isOpen, onClose, onSelect, initialPath = '' }: P
           if (cancelled || requestId !== requestIdRef.current) return
 
           const fileItems = nodes
-            .filter(n => n.type === 'directory' && !n.name.startsWith('.'))
+            .filter(n => n.type === 'directory')
             .sort((a, b) => a.name.localeCompare(b.name))
             .map(n => ({
               name: n.name,

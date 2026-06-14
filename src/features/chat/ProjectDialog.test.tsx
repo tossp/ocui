@@ -11,6 +11,7 @@ vi.mock('../../components/ui/Dialog', () => ({
 vi.mock('../../api', () => ({
   getPath: vi.fn().mockResolvedValue({ home: '/workspace/project' }),
   listDirectory: vi.fn().mockResolvedValue([
+    { name: '.config', type: 'directory', absolute: '/workspace/project/.config' },
     { name: 'src', type: 'directory', absolute: '/workspace/project/src' },
     { name: 'docs', type: 'directory', absolute: '/workspace/project/docs' },
   ]),
@@ -25,6 +26,7 @@ describe('ProjectDialog', () => {
     render(<ProjectDialog isOpen={true} onClose={vi.fn()} onSelect={vi.fn()} />)
 
     expect(await screen.findByDisplayValue('/workspace/project/')).toBeInTheDocument()
+    expect(await screen.findByText('.config')).toBeInTheDocument()
     expect(await screen.findByText('src')).toBeInTheDocument()
     expect(await screen.findByText('docs')).toBeInTheDocument()
 
