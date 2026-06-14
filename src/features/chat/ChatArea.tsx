@@ -55,7 +55,6 @@ const LOAD_MORE_WHEEL_COOLDOWN_MS = 90
 const LOAD_MORE_DEFER_MS = 100
 const PENDING_SCROLL_TARGET_KEEPALIVE_MS = 900
 const RESIZE_PREMEASURE_PAUSE_MS = 420
-const ACTIVE_MESSAGE_ANCHOR_MAX_OFFSET_PX = 96
 
 type LoadMoreAnchorSnapshot = {
   messageId: string
@@ -94,40 +93,6 @@ function captureLoadMoreAnchor(root: HTMLElement, pageCountBefore = 0): LoadMore
   return best
 }
 
-function findViewportAnchorMessageId(root: HTMLElement): string | null {
-  const rootRect = root.getBoundingClientRect()
-  const anchorOffset = Math.min(ACTIVE_MESSAGE_ANCHOR_MAX_OFFSET_PX, rootRect.height * 0.35)
-  const anchorY = rootRect.top + anchorOffset
-  const candidates = root.querySelectorAll<HTMLElement>('[data-message-id]')
-
-  let bestId: string | null = null
-  let bestDistance = Number.POSITIVE_INFINITY
-  let bestTop = Number.POSITIVE_INFINITY
-
-  for (const element of candidates) {
-    const messageId = element.getAttribute('data-message-id')
-    if (!messageId) continue
-
-    const rect = element.getBoundingClientRect()
-    if (rect.bottom <= rootRect.top || rect.top >= rootRect.bottom) continue
-
-    const visibleTop = Math.max(rect.top, rootRect.top)
-    const visibleBottom = Math.min(rect.bottom, rootRect.bottom)
-    const distance =
-      anchorY >= visibleTop && anchorY <= visibleBottom
-        ? 0
-        : Math.min(Math.abs(visibleTop - anchorY), Math.abs(visibleBottom - anchorY))
-
-    if (distance < bestDistance || (distance === bestDistance && visibleTop < bestTop)) {
-      bestId = messageId
-      bestDistance = distance
-      bestTop = visibleTop
-    }
-  }
-
-  return bestId
-}
-
 interface ChatAreaProps {
   messages: Message[]
   pageRecords?: StableChatPage[]
@@ -150,7 +115,6 @@ interface ChatAreaProps {
   retryStatus?: RetryStatusInlineData | null
   bottomPadding?: number
   onVisibleMessageIdsChange?: (ids: string[]) => void
-  onActiveMessageIdChange?: (messageId: string | null) => void
   onAtBottomChange?: (atBottom: boolean) => void
 }
 
@@ -187,7 +151,6 @@ export const ChatArea = memo(
         retryStatus = null,
         bottomPadding = 0,
         onVisibleMessageIdsChange,
-        onActiveMessageIdChange,
         onAtBottomChange,
       },
       ref,
@@ -216,8 +179,6 @@ export const ChatArea = memo(
       const pendingScrollClearTimerRef = useRef<number | null>(null)
       const pendingAnchorClearRafRef = useRef<number | null>(null)
       const pendingSessionResetRafRef = useRef<number | null>(null)
-      const activeMessageRafRef = useRef<number | null>(null)
-      const activeMessageIdRef = useRef<string | null>(null)
       const resizePremeasurePauseTimerRef = useRef<number | null>(null)
       const lastScrollRootSizeRef = useRef({ width: 0, height: 0 })
       const measuredPageHeightKeysRef = useRef<string[]>([])
@@ -232,28 +193,6 @@ export const ChatArea = memo(
       useEffect(() => {
         loadMoreRef.current = onLoadMore
       }, [onLoadMore])
-
-      const onActiveMessageIdChangeRef = useRef(onActiveMessageIdChange)
-      useEffect(() => {
-        onActiveMessageIdChangeRef.current = onActiveMessageIdChange
-      }, [onActiveMessageIdChange])
-
-      const syncActiveMessageId = useCallback(() => {
-        const root = scrollRef.current
-        const nextId = root ? findViewportAnchorMessageId(root) : null
-        if (activeMessageIdRef.current === nextId) return
-        activeMessageIdRef.current = nextId
-        onActiveMessageIdChangeRef.current?.(nextId)
-      }, [])
-
-      const scheduleActiveMessageSync = useCallback(() => {
-        if (!onActiveMessageIdChangeRef.current) return
-        if (activeMessageRafRef.current !== null) return
-        activeMessageRafRef.current = requestAnimationFrame(() => {
-          activeMessageRafRef.current = null
-          syncActiveMessageId()
-        })
-      }, [syncActiveMessageId])
 
       const loadMoreBlockedRef = useRef(true)
 
@@ -457,7 +396,6 @@ export const ChatArea = memo(
           if (scrollSnapshotRafRef.current !== null) cancelAnimationFrame(scrollSnapshotRafRef.current)
           if (pendingAnchorClearRafRef.current !== null) cancelAnimationFrame(pendingAnchorClearRafRef.current)
           if (pendingSessionResetRafRef.current !== null) cancelAnimationFrame(pendingSessionResetRafRef.current)
-          if (activeMessageRafRef.current !== null) cancelAnimationFrame(activeMessageRafRef.current)
         }
       }, [clearPendingLoadMoreTimer, clearPendingScrollTimer, clearResizePremeasurePauseTimer])
 
@@ -508,14 +446,13 @@ export const ChatArea = memo(
           }
 
           setViewportHeight(prev => (Math.abs(prev - nextSize.height) < 1 ? prev : nextSize.height))
-          scheduleActiveMessageSync()
         }
 
         syncViewport()
         const observer = new ResizeObserver(syncViewport)
         observer.observe(root)
         return () => observer.disconnect()
-      }, [clearResizePremeasurePauseTimer, scheduleActiveMessageSync, scrollRoot])
+      }, [clearResizePremeasurePauseTimer, scrollRoot])
 
       useEffect(() => {
         const root = scrollRef.current
@@ -531,7 +468,6 @@ export const ChatArea = memo(
 
           if (!atBottom) loadMoreBlockedRef.current = false
           updateScrollOffsetSnapshot()
-          scheduleActiveMessageSync()
         }
 
         const onWheel = () => {
@@ -541,12 +477,11 @@ export const ChatArea = memo(
         root.addEventListener('scroll', onScroll, { passive: true })
         root.addEventListener('wheel', onWheel, { passive: true })
         updateScrollOffsetSnapshot()
-        scheduleActiveMessageSync()
         return () => {
           root.removeEventListener('scroll', onScroll)
           root.removeEventListener('wheel', onWheel)
         }
-      }, [atBottomThreshold, onAtBottomChange, scheduleActiveMessageSync, updateScrollOffsetSnapshot])
+      }, [atBottomThreshold, onAtBottomChange, updateScrollOffsetSnapshot])
 
       const prevSessionIdRef = useRef(sessionId)
       useEffect(() => {
@@ -564,18 +499,15 @@ export const ChatArea = memo(
         clearPendingLoadMoreTimer()
         settlingScrollMessageIdRef.current = null
         clearPendingScrollTimer()
-        activeMessageIdRef.current = null
         resetSessionViewState()
         onAtBottomChange?.(true)
         onVisibleMessageIdsChange?.([])
-        onActiveMessageIdChange?.(null)
 
         requestAnimationFrame(() => {
           const root = scrollRef.current
           if (!root) return
           root.scrollTop = 0
           updateScrollOffsetSnapshot()
-          scheduleActiveMessageSync()
           animate(root, { opacity: [0, 1] }, { duration: 0.2, ease: 'easeOut' })
         })
       }, [
@@ -583,10 +515,8 @@ export const ChatArea = memo(
         clearPendingLoadMoreAnchorMessage,
         clearPendingScrollTimer,
         onAtBottomChange,
-        onActiveMessageIdChange,
         onVisibleMessageIdsChange,
         resetSessionViewState,
-        scheduleActiveMessageSync,
         sessionId,
         updateScrollOffsetSnapshot,
         visibleMessages,
@@ -599,10 +529,9 @@ export const ChatArea = memo(
           if (root && isAtBottomRef.current) {
             root.scrollTop = 0
             updateScrollOffsetSnapshot()
-            scheduleActiveMessageSync()
           }
         })
-      }, [loadState, scheduleActiveMessageSync, updateScrollOffsetSnapshot])
+      }, [loadState, updateScrollOffsetSnapshot])
 
       const tryLoadMore = useCallback(() => {
         if (isLoadingRef.current) return
@@ -739,10 +668,7 @@ export const ChatArea = memo(
                 changed = true
               }
             }
-            if (changed) {
-              onVisibleIdsChangeRef.current?.(Array.from(visibleIds))
-              scheduleActiveMessageSync()
-            }
+            if (changed) onVisibleIdsChangeRef.current?.(Array.from(visibleIds))
           },
           { root, rootMargin: '100% 0px' },
         )
@@ -751,7 +677,7 @@ export const ChatArea = memo(
         elements.forEach(element => observer.observe(element))
 
         return () => observer.disconnect()
-      }, [activePages, expandedPageRange.endIndex, expandedPageRange.startIndex, scheduleActiveMessageSync])
+      }, [activePages, expandedPageRange.endIndex, expandedPageRange.startIndex])
 
       useEffect(() => {
         if (!pendingScrollMessageId) return
