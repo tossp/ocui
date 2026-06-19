@@ -66,19 +66,27 @@ interface DroppedPathInfo {
 
 type TauriDropPosition = Extract<DragDropEvent, { type: 'drop' }>['position']
 
-function getDropClientPoint(position: TauriDropPosition): { x: number; y: number } {
+function getDropClientPoints(position: TauriDropPosition): Array<{ x: number; y: number }> {
+  const directPoint = { x: position.x, y: position.y }
   const scale = window.devicePixelRatio || 1
-  return {
-    x: position.x / scale,
-    y: position.y / scale,
-  }
+
+  if (scale === 1) return [directPoint]
+
+  return [
+    directPoint,
+    {
+      x: position.x / scale,
+      y: position.y / scale,
+    },
+  ]
 }
 
 function isPointInsideElement(position: TauriDropPosition, element: HTMLElement | null): boolean {
   if (!element) return false
-  const { x, y } = getDropClientPoint(position)
   const rect = element.getBoundingClientRect()
-  return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom
+  return getDropClientPoints(position).some(
+    ({ x, y }) => x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom,
+  )
 }
 
 function getMentionPathForDroppedPath(absolutePath: string, rootPath: string): string {
