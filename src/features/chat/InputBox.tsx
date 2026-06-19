@@ -34,7 +34,7 @@ import { useChatViewport } from './chatViewport'
 import type { ApiAgent } from '../../api/client'
 import type { ModelInfo, FileCapabilities } from '../../api'
 import type { Command } from '../../api/command'
-import { isTauri } from '../../utils/tauri'
+import { getDesktopPlatform, isTauri } from '../../utils/tauri'
 import {
   getInternalDragSnapshot,
   isPointInsideElement as isInternalPointInsideElement,
@@ -1086,8 +1086,11 @@ function InputBoxComponent({
     [handleTauriExternalDrop],
   )
 
+  // macOS 上用 Rust WindowEvent::DragDrop 转发的 file-drop-* 事件（保底路径）
+  // 其他平台用 Tauri 标准 onDragDropEvent API
+  // 两条路径互斥，避免同一 drop 被处理两次
   useEffect(() => {
-    if (!isTauri()) return
+    if (!isTauri() || getDesktopPlatform() === 'macos') return
 
     let disposed = false
     let unlisten: (() => void) | null = null
@@ -1114,9 +1117,9 @@ function InputBoxComponent({
     }
   }, [handleTauriDragDropEvent])
 
-  // Rust 端 WindowEvent::DragDrop 转发的 file-drop-* 事件（macOS 保底路径）
+  // Rust 端 WindowEvent::DragDrop 转发的 file-drop-* 事件（仅 macOS，其他平台不用）
   useEffect(() => {
-    if (!isTauri()) return
+    if (!isTauri() || getDesktopPlatform() !== 'macos') return
 
     let disposed = false
     const cleanupFns: (() => void)[] = []
