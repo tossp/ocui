@@ -820,8 +820,8 @@ export const ChatPane = memo(function ChatPane({
       </div>
 
       <OutlineIndex
-        messages={renderedMessages}
         sourceEntries={chatPageViewModel.outlineSourceEntries}
+        ownerByMessageId={chatPageViewModel.outlineOwnerByMessageId}
         visibleMessageIds={visibleMessageIds}
         currentHighlightEnabled={outlineCurrentHighlight}
         onScrollToMessageId={handleOutlineScrollToMessage}
