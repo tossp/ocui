@@ -1,8 +1,10 @@
 import type { ReactNode } from 'react'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MessageRenderer } from './MessageRenderer'
 import type { Message } from '../../types/message'
+
+let mockRenderUserMarkdown = false
 
 vi.mock('motion/mini', () => ({
   animate: () => Promise.resolve(),
@@ -15,11 +17,16 @@ vi.mock('../../hooks', () => ({
 vi.mock('../../hooks/useTheme', () => ({
   useTheme: () => ({
     collapseUserMessages: false,
+    renderUserMarkdown: mockRenderUserMarkdown,
     stepFinishDisplay: { turnDuration: false },
     descriptiveToolSteps: false,
     inlineToolRequests: false,
     immersiveMode: false,
   }),
+}))
+
+vi.mock('../../components/MarkdownRenderer', () => ({
+  MarkdownRenderer: ({ content }: { content: string }) => <div data-testid="user-markdown">{content}</div>,
 }))
 
 vi.mock('../../components/ui', () => ({
@@ -90,7 +97,25 @@ function createUserMessage(): Message {
   }
 }
 
+function createUserTextMessage(text: string): Message {
+  const message = createUserMessage()
+  message.parts = [
+    {
+      id: 'text-user-1',
+      sessionID: 'session-1',
+      messageID: 'user-1',
+      type: 'text',
+      text,
+    },
+  ]
+  return message
+}
+
 describe('MessageRenderer assistant fork', () => {
+  beforeEach(() => {
+    mockRenderUserMarkdown = false
+  })
+
   it('passes the explicit fork target id when forking an assistant message', async () => {
     const onFork = vi.fn()
     const message = createAssistantMessage()
@@ -138,5 +163,20 @@ describe('MessageRenderer assistant fork', () => {
     render(<MessageRenderer message={message} />)
 
     expect(screen.getByText('History compacted')).toBeInTheDocument()
+  })
+
+  it('keeps user text plain by default', () => {
+    render(<MessageRenderer message={createUserTextMessage('Use **bold** text')} />)
+
+    expect(screen.queryByTestId('user-markdown')).toBeNull()
+    expect(screen.getByText('Use **bold** text')).toBeInTheDocument()
+  })
+
+  it('renders user text through markdown when enabled', () => {
+    mockRenderUserMarkdown = true
+
+    render(<MessageRenderer message={createUserTextMessage('Use **bold** text')} />)
+
+    expect(screen.getByTestId('user-markdown')).toHaveTextContent('Use **bold** text')
   })
 })

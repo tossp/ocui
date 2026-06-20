@@ -109,6 +109,7 @@ const DEFAULT_STEP_FINISH_DISPLAY: StepFinishDisplay = {
 const DEFAULT_COMPLETED_AT_FORMAT: CompletedAtFormat = 'time'
 
 const DEFAULT_REASONING_DISPLAY_MODE: ReasoningDisplayMode = 'capsule'
+const DEFAULT_RENDER_USER_MARKDOWN = false
 const DEFAULT_DIFF_STYLE: DiffStyle = 'markers'
 const DEFAULT_DESCRIPTIVE_TOOL_STEPS = false
 const DEFAULT_INLINE_TOOL_REQUESTS = false
@@ -140,6 +141,8 @@ export interface ThemeState {
   activeCustomCSSSnippetId: string | null
   /** 是否自动折叠长用户消息 */
   collapseUserMessages: boolean
+  /** 是否将用户消息渲染为 Markdown */
+  renderUserMarkdown: boolean
   /** step-finish 信息栏显示开关 */
   stepFinishDisplay: StepFinishDisplay
   /** 完成时刻显示格式 */
@@ -190,6 +193,7 @@ const STORAGE_KEY_CUSTOM_CSS = 'theme-custom-css'
 const STORAGE_KEY_CUSTOM_CSS_SNIPPETS = 'theme-custom-css-snippets'
 const STORAGE_KEY_ACTIVE_CUSTOM_CSS_SNIPPET_ID = 'theme-active-custom-css-snippet-id'
 const STORAGE_KEY_COLLAPSE_USER_MESSAGES = 'collapse-user-messages'
+const STORAGE_KEY_RENDER_USER_MARKDOWN = 'render-user-markdown'
 const STORAGE_KEY_STEP_FINISH_DISPLAY = 'step-finish-display'
 const STORAGE_KEY_COMPLETED_AT_FORMAT = 'completed-at-format'
 const STORAGE_KEY_REASONING_DISPLAY_MODE = 'reasoning-display-mode'
@@ -258,6 +262,9 @@ class ThemeStore {
       : null
     const savedCollapse = localStorage.getItem(STORAGE_KEY_COLLAPSE_USER_MESSAGES)
     const collapseUserMessages = savedCollapse === null ? true : savedCollapse === 'true'
+    const savedRenderUserMarkdown = localStorage.getItem(STORAGE_KEY_RENDER_USER_MARKDOWN)
+    const renderUserMarkdown =
+      savedRenderUserMarkdown === null ? DEFAULT_RENDER_USER_MARKDOWN : savedRenderUserMarkdown === 'true'
     const savedReasoningDisplay = localStorage.getItem(STORAGE_KEY_REASONING_DISPLAY_MODE)
     const reasoningDisplayMode: ReasoningDisplayMode =
       savedReasoningDisplay === 'italic' || savedReasoningDisplay === 'markdown'
@@ -341,6 +348,7 @@ class ThemeStore {
       customCSSSnippets,
       activeCustomCSSSnippetId,
       collapseUserMessages,
+      renderUserMarkdown,
       stepFinishDisplay,
       completedAtFormat,
       reasoningDisplayMode,
@@ -385,6 +393,9 @@ class ThemeStore {
   }
   get collapseUserMessages() {
     return this.state.collapseUserMessages
+  }
+  get renderUserMarkdown() {
+    return this.state.renderUserMarkdown
   }
   get stepFinishDisplay() {
     return this.state.stepFinishDisplay
@@ -564,6 +575,13 @@ class ThemeStore {
     if (this.state.collapseUserMessages === enabled) return
     this.state = { ...this.state, collapseUserMessages: enabled }
     localStorage.setItem(STORAGE_KEY_COLLAPSE_USER_MESSAGES, String(enabled))
+    this.emit()
+  }
+
+  setRenderUserMarkdown(enabled: boolean) {
+    if (this.state.renderUserMarkdown === enabled) return
+    this.state = { ...this.state, renderUserMarkdown: enabled }
+    localStorage.setItem(STORAGE_KEY_RENDER_USER_MARKDOWN, String(enabled))
     this.emit()
   }
 
@@ -916,6 +934,8 @@ function normalizeThemeBackup(raw: unknown): ThemeBackup {
     customCSSSnippets,
     activeCustomCSSSnippetId,
     collapseUserMessages: typeof parsed?.collapseUserMessages === 'boolean' ? parsed.collapseUserMessages : true,
+    renderUserMarkdown:
+      typeof parsed?.renderUserMarkdown === 'boolean' ? parsed.renderUserMarkdown : DEFAULT_RENDER_USER_MARKDOWN,
     stepFinishDisplay:
       parsed?.stepFinishDisplay && typeof parsed.stepFinishDisplay === 'object'
         ? { ...DEFAULT_STEP_FINISH_DISPLAY, ...(parsed.stepFinishDisplay as Partial<StepFinishDisplay>) }
@@ -983,6 +1003,7 @@ export function importThemeBackup(raw: unknown): void {
     localStorage.removeItem(STORAGE_KEY_ACTIVE_CUSTOM_CSS_SNIPPET_ID)
   }
   localStorage.setItem(STORAGE_KEY_COLLAPSE_USER_MESSAGES, String(backup.collapseUserMessages))
+  localStorage.setItem(STORAGE_KEY_RENDER_USER_MARKDOWN, String(backup.renderUserMarkdown))
   localStorage.setItem(STORAGE_KEY_STEP_FINISH_DISPLAY, JSON.stringify(backup.stepFinishDisplay))
   localStorage.setItem(STORAGE_KEY_COMPLETED_AT_FORMAT, backup.completedAtFormat)
   localStorage.setItem(STORAGE_KEY_REASONING_DISPLAY_MODE, backup.reasoningDisplayMode)

@@ -4,6 +4,7 @@ import { diffLines } from 'diff'
 import { animate } from 'motion/mini'
 import { ChevronDownIcon, ChevronRightIcon, SplitIcon, SpinnerIcon, UndoIcon } from '../../components/Icons'
 import { CopyButton, SmoothHeight } from '../../components/ui'
+import { MarkdownRenderer } from '../../components/MarkdownRenderer'
 import { useDelayedRender } from '../../hooks'
 import { useTheme } from '../../hooks/useTheme'
 import {
@@ -122,16 +123,19 @@ const expandedMessages = new Set<string>()
 const CollapsibleUserText = memo(function CollapsibleUserText({
   text,
   collapseEnabled,
+  renderMarkdown,
   messageId,
 }: {
   text: string
   collapseEnabled: boolean
+  renderMarkdown: boolean
   messageId: string
 }) {
   const { t } = useTranslation('message')
-  const contentRef = useRef<HTMLParagraphElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
+  const overflowCacheKey = `${messageId}:${renderMarkdown ? 'markdown' : 'plain'}`
   const [expanded, setExpanded] = useState(() => expandedMessages.has(messageId))
-  const [isOverflow, setIsOverflow] = useState(() => overflowStateCache.get(messageId) ?? false)
+  const [isOverflow, setIsOverflow] = useState(() => overflowStateCache.get(overflowCacheKey) ?? false)
 
   useLayoutEffect(() => {
     const el = contentRef.current
@@ -144,7 +148,7 @@ const CollapsibleUserText = memo(function CollapsibleUserText({
       if (!Number.isFinite(lineHeight) || lineHeight <= 0) return
       const collapsedHeight = lineHeight * COLLAPSE_PREVIEW_LINES
       const next = el.scrollHeight > collapsedHeight + 1
-      overflowStateCache.set(messageId, next)
+      overflowStateCache.set(overflowCacheKey, next)
       setIsOverflow(prev => (prev === next ? prev : next))
     }
 
@@ -157,7 +161,7 @@ const CollapsibleUserText = memo(function CollapsibleUserText({
       disposed = true
       resizeObserver.disconnect()
     }
-  }, [text, messageId])
+  }, [text, overflowCacheKey])
 
   const showCollapse = collapseEnabled && isOverflow
   const isCollapsed = collapseEnabled && !expanded
@@ -165,15 +169,17 @@ const CollapsibleUserText = memo(function CollapsibleUserText({
   return (
     <div className="px-4 py-2.5 bg-bg-300 rounded-2xl max-w-full">
       <div className="relative">
-        <p
+        <div
           ref={contentRef}
-          className={`m-0 whitespace-pre-wrap break-words text-[length:var(--fs-base)] text-text-100 leading-relaxed${
+          className={`m-0 break-words text-[length:var(--fs-base)] text-text-100 leading-relaxed${
+            renderMarkdown ? '' : ' whitespace-pre-wrap'
+          }${
             isCollapsed ? ' overflow-hidden' : ''
           }`}
           style={isCollapsed ? { maxHeight: `${COLLAPSE_PREVIEW_LINES}lh` } : undefined}
         >
-          {text}
-        </p>
+          {renderMarkdown ? <MarkdownRenderer content={text} /> : text}
+        </div>
         {/* 底部渐变遮罩 */}
         {showCollapse && isCollapsed && (
           <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-bg-300 to-transparent pointer-events-none" />
@@ -261,7 +267,7 @@ const UserMessageView = memo(function UserMessageView({
   const { parts, info } = message
   const [showSystemContext, setShowSystemContext] = useState(false)
   const shouldRenderSystemContext = useDelayedRender(showSystemContext)
-  const { collapseUserMessages } = useTheme()
+  const { collapseUserMessages, renderUserMarkdown } = useTheme()
 
   const wrapperRef = useEntryGrowAnimation(info.time.created)
 
@@ -280,7 +286,12 @@ const UserMessageView = memo(function UserMessageView({
       <div className="flex flex-col gap-1 items-end w-full">
         {/* 消息文本 */}
         {messageText && (
-          <CollapsibleUserText text={messageText} collapseEnabled={collapseUserMessages} messageId={info.id} />
+          <CollapsibleUserText
+            text={messageText}
+            collapseEnabled={collapseUserMessages}
+            renderMarkdown={renderUserMarkdown}
+            messageId={info.id}
+          />
         )}
 
         {/* 用户附件 */}

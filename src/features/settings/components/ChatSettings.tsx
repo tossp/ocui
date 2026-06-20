@@ -9,7 +9,14 @@ import type { PathMode } from '../../../utils/directoryUtils'
 export function ChatSettings() {
   const { t } = useTranslation(['settings'])
   const { pathMode, setPathMode, effectiveStyle, detectedStyle, isAutoMode } = usePathMode()
-  const { externalFileDropMode, setExternalFileDropMode, outlineCurrentHighlight, setOutlineCurrentHighlight } = useTheme()
+  const {
+    externalFileDropMode,
+    setExternalFileDropMode,
+    outlineCurrentHighlight,
+    setOutlineCurrentHighlight,
+    renderUserMarkdown,
+    setRenderUserMarkdown,
+  } = useTheme()
   const [collapseUserMessages, setCollapseUserMessages] = useState(themeStore.collapseUserMessages)
   const [stepFinishDisplay, setStepFinishDisplay] = useState(themeStore.stepFinishDisplay)
   const [completedAtFormat, setCompletedAtFormat] = useState(themeStore.completedAtFormat)
@@ -21,6 +28,10 @@ export function ChatSettings() {
     const v = !collapseUserMessages
     setCollapseUserMessages(v)
     themeStore.setCollapseUserMessages(v)
+  }
+
+  const handleRenderUserMarkdownToggle = () => {
+    setRenderUserMarkdown(!renderUserMarkdown)
   }
 
   const handleReasoningDisplayModeChange = (mode: ReasoningDisplayMode) => {
@@ -79,6 +90,14 @@ export function ChatSettings() {
           onClick={handleCollapseToggle}
         >
           <Toggle enabled={collapseUserMessages} onChange={handleCollapseToggle} />
+        </SettingRow>
+
+        <SettingRow
+          label={t('chat.renderUserMarkdown')}
+          description={t('chat.renderUserMarkdownDesc')}
+          onClick={handleRenderUserMarkdownToggle}
+        >
+          <Toggle enabled={renderUserMarkdown} onChange={handleRenderUserMarkdownToggle} />
         </SettingRow>
 
         <SettingRow

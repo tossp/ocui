@@ -148,6 +148,10 @@ export function useTheme() {
     themeStore.setCollapseUserMessages(enabled)
   }, [])
 
+  const setRenderUserMarkdown = useCallback((enabled: boolean) => {
+    themeStore.setRenderUserMarkdown(enabled)
+  }, [])
+
   // ---- Step Finish Display ----
 
   const setStepFinishDisplay = useCallback((display: Partial<StepFinishDisplay>) => {
@@ -252,6 +256,8 @@ export function useTheme() {
     // 折叠长用户消息
     collapseUserMessages: state.collapseUserMessages,
     setCollapseUserMessages,
+    renderUserMarkdown: state.renderUserMarkdown,
+    setRenderUserMarkdown,
 
     // step-finish 信息栏显示
     stepFinishDisplay: state.stepFinishDisplay,
