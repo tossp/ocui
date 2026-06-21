@@ -1,5 +1,21 @@
 # Changelog
 
+## [v0.6.19] - 2026-06-21
+
+- perf: move outline fisheye animation to CSS variables (cebf4b8)
+- perf: stabilize outline index during streaming (38648e0)
+- fix: hide dialog close button on mobile (60016c0)
+- fix: refactor Android status bar to top-chrome self-extend (e4735da)
+- feat(chat): render user messages as markdown (5f9f2d3)
+- fix: make Android status bar fully transparent (7d03f6c)
+- fix: stabilize mobile pager depth transform (8117762)
+- feat: add mobile pager depth transform (d7c9b98)
+- fix: improve mobile pager accessibility (0493f6c)
+- fix: polish mobile pager depth (9a1a890)
+- fix: round mobile pager separators (2a3bb8c)
+- fix: harden mobile pager state sync (cb7a161)
+- feat: add mobile snap panel pager (39cb451)
+
 ## [v0.6.18] - 2026-06-19
 
 - chore: upgrade ajv to v8 for build compatibility (2c5830f)
