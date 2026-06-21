@@ -16,7 +16,8 @@
 // Touch 版本：触摸 tick 列激活鱼眼 + 震动 + overlay 居中标题
 // ============================================
 
-import { memo, useMemo, useRef, useEffect, useCallback, useState } from 'react'
+import { memo, useMemo, useRef, useEffect, useLayoutEffect, useCallback } from 'react'
+import type { CSSProperties } from 'react'
 import type { Message } from '../types/message'
 import { useChatViewport } from '../features/chat/chatViewport'
 import { buildOutlineSourceEntries, truncateOutlineLabel, type OutlineSourceEntry } from './outlineIndexModel'
@@ -42,11 +43,20 @@ interface OutlineIndexProps {
 }
 
 interface FisheyeConfig {
-  influenceRadius: number
   tickWidth: { min: number; max: number }
   tickHeight: number
   margin: { min: number; max: number }
   labelThreshold: number
+  /** CSS 声明式鱼眼参数（从稳态数值拟合得到，使纯 CSS transform 1:1 复刻原 JS-per-frame 效果）。
+   *  strength: s = cos(clamp(dist/strengthRadius,0,1)*90deg)^2
+   *  纵向位移: delta = -shiftAmp * sin(clamp(dy/shiftRadius,-1,1)*90deg) */
+  css: {
+    strengthRadius: number
+    shiftAmp: number
+    shiftRadius: number
+    /** lerp(0.18) 平滑的 CSS transition 等价时长（秒）。 */
+    ease: number
+  }
 }
 
 interface VisualConfig {
@@ -69,37 +79,22 @@ interface FisheyeProps {
   ownerVisibleIndex: number
 }
 
-// ─── Fisheye Math ───────────────────────────
-
-const LERP_SPEED = 0.18
-const EPSILON = 0.005
-const HALF_PI = Math.PI / 2
-
-function cosineStrength(dist: number, radius: number): number {
-  return dist >= radius ? 0 : Math.cos((dist / radius) * HALF_PI)
-}
-
-function smoothStep(current: number, target: number): number {
-  const next = current + (target - current) * LERP_SPEED
-  return Math.abs(next) < EPSILON && target === 0 ? 0 : next
-}
-
 // ─── Fisheye Presets ────────────────────────
 
 const DESKTOP_FISHEYE: FisheyeConfig = {
-  influenceRadius: 55,
   tickWidth: { min: 8, max: 22 },
   tickHeight: 2.5,
   margin: { min: 4, max: 14 },
   labelThreshold: 0.65,
+  css: { strengthRadius: 30, shiftAmp: 28.5, shiftRadius: 30, ease: 0.3 },
 }
 
 const COMPACT_FISHEYE: FisheyeConfig = {
-  influenceRadius: 45,
   tickWidth: { min: 6, max: 20 },
   tickHeight: 2.5,
   margin: { min: 3, max: 16 },
   labelThreshold: 0.6,
+  css: { strengthRadius: 18, shiftAmp: 27.5, shiftRadius: 18, ease: 0.3 },
 }
 
 // ─── Visual Presets ─────────────────────────
@@ -128,27 +123,48 @@ const COMPACT_VISUAL: VisualConfig = {
   maxEntries: 30,
 }
 
-// ─── Fisheye Engine ─────────────────────────
+// ─── Fisheye Engine (CSS-variable driven) ───────────────────────────
+//
+// 鱼眼视觉（tick 放大 scaleX + 纵向撑开 translateY + label 弹出）全部由 CSS 声明式计算：
+// 交互时主线程每帧只在 rail 容器上写一个 --oi-cursor-y 变量（和 --oi-active 0/1），
+// 每个 item 用自身静止中心 --oi-cy 与之做 calc 推导出 transform。CSS transform/opacity
+// 跑在合成线程，主线程被流式渲染占用时动画依旧丝滑（不再是每帧 JS 遍历写 style）。
+//
+// 数学与原 JS-per-frame 稳态等价（数值拟合，误差<2%）：
+//   cy       = viewportCenterY + (index - (count-1)/2) * (tickHeight + 2*marginMin)
+//   dist     = |cursorY - cy|
+//   strength = cos(clamp(dist/strengthRadius, 0, 1) * 90deg)^2 → 驱动 tick scaleX、label
+//   shift    = -shiftAmp * sin(clamp((cursorY-cy)/shiftRadius, -1, 1) * 90deg) → item translateY
+// strength/shift 各乘 --oi-active，保证静止（未交互）时基线为 0，撑开关于光标上下对称。
 
-interface CachedItem {
-  el: HTMLElement
-  tick: HTMLElement
-  label: HTMLElement
+function syncRailCenter(rail: HTMLElement | null): number {
+  if (!rail) return 0
+  const rect = rail.getBoundingClientRect()
+  const center = rect.top + rect.height / 2
+  rail.style.setProperty('--oi-rail-center-y', String(center))
+  return center
 }
 
-const ITEM_SEL = '[data-oi-item]'
-const TICK_ATTR = 'data-oi-tick'
-const LABEL_ATTR = 'data-oi-label'
+function activateRail(rail: HTMLElement, cursorY: number) {
+  rail.style.setProperty('--oi-cursor-y', String(cursorY))
+  rail.style.setProperty('--oi-active', '1')
+}
 
-function queryCachedItems(container: HTMLElement | null): CachedItem[] {
-  if (!container) return []
-  return Array.from(container.querySelectorAll<HTMLElement>(ITEM_SEL))
-    .map(el => ({
-      el,
-      tick: el.querySelector<HTMLElement>(`[${TICK_ATTR}]`)!,
-      label: el.querySelector<HTMLElement>(`[${LABEL_ATTR}]`)!,
-    }))
-    .filter(item => item.tick && item.label)
+function deactivateRail(rail: HTMLElement | null) {
+  rail?.style.setProperty('--oi-active', '0')
+}
+
+/** 根据光标 Y 与 rail 静态几何，算最近 item 下标（用于选中 / overlay 标题 / 触觉反馈）。
+ *  不读 DOM、不写样式；中心点公式与 CSS --oi-cy 完全一致。 */
+function nearestIndexFromY(count: number, cursorY: number, railCenterY: number, fisheye: FisheyeConfig): number {
+  if (count <= 0 || typeof window === 'undefined') return -1
+  const step = fisheye.tickHeight + fisheye.margin.min * 2
+  const mid = (count - 1) / 2
+  const index = Math.round((cursorY - railCenterY) / step + mid)
+  if (index < 0 || index >= count) return -1
+
+  const centerY = railCenterY + (index - mid) * step
+  return Math.abs(cursorY - centerY) <= fisheye.css.strengthRadius ? index : -1
 }
 
 /** 从 entries 中找偏置后的可见索引。
@@ -171,88 +187,6 @@ function findBiasedVisibleIndex(entries: OutlineEntry[], ownerVisibleIds?: Set<s
   return second !== -1 ? second : first
 }
 
-function applyTickVisual(tick: HTMLElement, state: 'focused' | 'visible' | 'default') {
-  if (state === 'focused') {
-    tick.style.backgroundColor = 'hsl(var(--accent-brand))'
-    tick.style.boxShadow = '0 0 4px hsl(var(--accent-brand) / 0.5)'
-    return
-  }
-  if (state === 'visible') {
-    tick.style.backgroundColor = 'hsl(var(--text-100))'
-    tick.style.boxShadow = '0 0 3px hsl(var(--text-100) / 0.3)'
-    return
-  }
-  tick.style.backgroundColor = 'hsl(var(--border-300))'
-  tick.style.boxShadow = 'none'
-}
-
-function applyVisibleTickHighlight(items: CachedItem[], visibleIndex: number) {
-  for (let i = 0; i < items.length; i++) {
-    applyTickVisual(items[i].tick, i === visibleIndex ? 'visible' : 'default')
-  }
-}
-
-function applyFisheye(
-  items: CachedItem[],
-  cursorY: number | null,
-  strengths: number[],
-  config: FisheyeConfig,
-  visibleIndex: number,
-): { alive: boolean; focusIndex: number; maxStrength: number } {
-  let alive = false
-  let focusIndex = -1
-  let maxStrength = 0
-
-  // Pass 1: 计算 strength，找 focusIndex
-  for (let i = 0; i < items.length; i++) {
-    let target = 0
-    if (cursorY !== null) {
-      const rect = items[i].el.getBoundingClientRect()
-      target = cosineStrength(Math.abs(cursorY - (rect.top + rect.height / 2)), config.influenceRadius)
-    }
-    const s = smoothStep(strengths[i] ?? 0, target)
-    strengths[i] = s
-    if (Math.abs(s - target) > EPSILON) alive = true
-    if (s > maxStrength) {
-      maxStrength = s
-      focusIndex = i
-    }
-  }
-
-  // Pass 2: 应用视觉
-  // 优先级：focused（鼠标悬停）> firstVisible（territory 内偏置后的 user prompt）> 默认
-  for (let i = 0; i < items.length; i++) {
-    const { el, tick, label } = items[i]
-    const s = strengths[i]
-    const focused = i === focusIndex && maxStrength > 0.3
-
-    tick.style.width = `${config.tickWidth.min + s * (config.tickWidth.max - config.tickWidth.min)}px`
-    if (focused) {
-      applyTickVisual(tick, 'focused')
-    } else if (i === visibleIndex) {
-      applyTickVisual(tick, 'visible')
-    } else {
-      applyTickVisual(tick, 'default')
-    }
-
-    const m = config.margin.min + s * (config.margin.max - config.margin.min)
-    el.style.marginTop = `${m}px`
-    el.style.marginBottom = `${m}px`
-
-    if (s > config.labelThreshold) {
-      const t = Math.min(1, (s - config.labelThreshold) / (1 - config.labelThreshold))
-      label.style.opacity = `${t}`
-      label.style.transform = `translateX(${(1 - t) * 10}px)`
-      label.style.visibility = 'visible'
-    } else {
-      label.style.opacity = '0'
-      label.style.transform = 'translateX(10px)'
-      label.style.visibility = 'hidden'
-    }
-  }
-
-  return { alive, focusIndex, maxStrength }
-}
 
 function formatEntries(entries: OutlineSourceEntry[], visual: VisualConfig): OutlineEntry[] {
   return entries.map(entry => ({
@@ -299,33 +233,111 @@ interface TickRailProps {
   visual: VisualConfig
 }
 
+const TICK_COLORS = {
+  focused: { bg: 'hsl(var(--accent-brand))', shadow: '0 0 4px hsl(var(--accent-brand) / 0.5)' },
+  visible: { bg: 'hsl(var(--text-100))', shadow: '0 0 3px hsl(var(--text-100) / 0.3)' },
+  default: { bg: 'hsl(var(--border-300))', shadow: 'none' },
+} as const
+
+/** 给单个 tick 上色（focused/visible/default）。仅在 focusIndex/visibleIndex 变化时调用，
+ *  颜色变化只触发 paint、不触发 layout，且非每帧执行。 */
+function paintTick(tick: HTMLElement | null, state: keyof typeof TICK_COLORS) {
+  if (!tick) return
+  tick.style.backgroundColor = TICK_COLORS[state].bg
+  tick.style.boxShadow = TICK_COLORS[state].shadow
+}
+
+/** 重新着色所有 tick：focus 优先 > visible > default。仅在 focus/visible 下标变化时调用。 */
+function repaintTicks(ticks: HTMLElement[], focusIndex: number, visibleIndex: number) {
+  for (let i = 0; i < ticks.length; i++) {
+    const state = i === focusIndex ? 'focused' : i === visibleIndex ? 'visible' : 'default'
+    paintTick(ticks[i], state)
+  }
+}
+
+/** 构建 item 的 CSS 变量声明式样式：纵向撑开 translateY 由 --oi-cursor-y/--oi-cy/--oi-active 推导，
+ *  全部交给合成线程，交互时主线程每帧只需更新容器的 --oi-cursor-y。 */
+function buildItemStyle(css: FisheyeConfig['css'], marginMin: number): CSSProperties {
+  return {
+    marginTop: `${marginMin}px`,
+    marginBottom: `${marginMin}px`,
+    // 静止中心（viewport 像素数，unitless）：rail 垂直居中，item 以固定 step 排列。
+    // 不读 DOM，CSS 与 nearestIndexFromY 使用同一套几何公式。
+    '--oi-cy': 'calc(var(--oi-rail-center-y, 0) + (var(--oi-index, 0) - var(--oi-mid, 0)) * var(--oi-step, 1))',
+    // 距离（相对静止中心）；adist 取绝对值
+    '--oi-dy': 'calc(var(--oi-cursor-y, 0) - var(--oi-cy, 0))',
+    '--oi-adist': 'max(var(--oi-dy), calc(-1 * var(--oi-dy)))',
+    '--oi-t': `clamp(0, calc(var(--oi-adist) / ${css.strengthRadius}), 1)`,
+    // strength = cos(t*90deg)^pow（pow=2 → 平方），乘 --oi-active 保证静止基线为 0
+    '--oi-c1': 'cos(calc(var(--oi-t) * 90deg))',
+    '--oi-s': 'calc(var(--oi-active, 0) * var(--oi-c1) * var(--oi-c1))',
+    // 纵向位移闭式解：-active * amp * sin(clamp(dy/shiftRadius, -1, 1) * 90deg)
+    '--oi-u': `clamp(-1, calc(var(--oi-dy) / ${css.shiftRadius}), 1)`,
+    '--oi-shift': `calc(-1 * var(--oi-active, 0) * ${css.shiftAmp} * sin(calc(var(--oi-u) * 90deg)))`,
+    transform: 'translateY(calc(var(--oi-shift) * 1px))',
+    transition: `transform ${css.ease}s cubic-bezier(0, 0, 0.2, 1)`,
+    willChange: 'transform',
+  } as CSSProperties
+}
+
+/** tick 样式：base width 设为 tickWidth.max，scaleX 按 strength 缩到 (min/max .. 1)。
+ *  transform-origin 右对齐 → 与原 width 模型左向生长一致。 */
+function buildTickStyle(fisheye: FisheyeConfig): CSSProperties {
+  const { tickWidth, tickHeight, css } = fisheye
+  return {
+    width: `${tickWidth.max}px`,
+    height: `${tickHeight}px`,
+    backgroundColor: TICK_COLORS.default.bg,
+    transformOrigin: 'right center',
+    transform: `scaleX(calc((${tickWidth.min} + var(--oi-s, 0) * ${tickWidth.max - tickWidth.min}) / ${tickWidth.max}))`,
+    transition: `transform ${css.ease}s cubic-bezier(0, 0, 0.2, 1)`,
+    willChange: 'transform',
+  } as CSSProperties
+}
+
+/** label 样式：opacity/translateX 由 strength 推导（声明式）。scaleX 不改变布局盒，
+ *  故无需补偿 tick 宽度位移。 */
+function buildLabelStyle(fisheye: FisheyeConfig): CSSProperties {
+  const { labelThreshold, css } = fisheye
+  return {
+    // lt = clamp(0, (s - threshold)/(1-threshold), 1)
+    '--oi-lt': `clamp(0, calc((var(--oi-s, 0) - ${labelThreshold}) / ${1 - labelThreshold}), 1)`,
+    opacity: 'var(--oi-lt)',
+    transform: 'translateX(calc((1 - var(--oi-lt)) * 10px))',
+    transition: `opacity ${css.ease}s cubic-bezier(0, 0, 0.2, 1), transform ${css.ease}s cubic-bezier(0, 0, 0.2, 1)`,
+    willChange: 'opacity, transform',
+  } as CSSProperties
+}
+
+function buildRailVars(entriesLength: number, fisheye: FisheyeConfig): CSSProperties {
+  return {
+    '--oi-mid': String((entriesLength - 1) / 2),
+    '--oi-step': String(fisheye.tickHeight + fisheye.margin.min * 2),
+  } as CSSProperties
+}
+
 function TickRail({ entries, visual }: TickRailProps) {
+  const itemStyle = buildItemStyle(visual.fisheye.css, visual.fisheye.margin.min)
+  const tickStyle = buildTickStyle(visual.fisheye)
+  const labelStyle = buildLabelStyle(visual.fisheye)
   return (
     <>
-      {entries.map(entry => (
+      {entries.map((entry, index) => (
         <div
           key={entry.messageId}
           data-oi-item
           className="relative flex items-center justify-end cursor-pointer"
-          style={{ marginTop: `${visual.fisheye.margin.min}px`, marginBottom: `${visual.fisheye.margin.min}px` }}
+          style={{ ...itemStyle, '--oi-index': String(index) } as CSSProperties}
           title={entry.fullTitle}
         >
           <div
             data-oi-label
             className={`absolute right-full mr-2.5 whitespace-nowrap pointer-events-none ${visual.labelClassName}`}
-            style={{ opacity: 0, transform: 'translateX(10px)', visibility: 'hidden' }}
+            style={labelStyle}
           >
             {entry.railLabel}
           </div>
-          <div
-            data-oi-tick
-            className="rounded-full shrink-0"
-            style={{
-              width: `${visual.fisheye.tickWidth.min}px`,
-              height: `${visual.fisheye.tickHeight}px`,
-              backgroundColor: 'hsl(var(--border-300))',
-            }}
-          />
+          <div data-oi-tick className="rounded-full shrink-0" style={tickStyle} />
         </div>
       ))}
     </>
@@ -389,66 +401,52 @@ export const OutlineIndex = memo(function OutlineIndex({
 const PointerFisheye = memo(function PointerFisheye({ entries, onSelect, visual, ownerVisibleIndex }: FisheyeProps) {
   const zoneRef = useRef<HTMLDivElement>(null)
   const railRef = useRef<HTMLDivElement>(null)
-  const cursorYRef = useRef<number | null>(null)
-  const strengthsRef = useRef<number[]>([])
-  const rafIdRef = useRef(0)
   const hoveringRef = useRef(false)
-  const cachedRef = useRef<CachedItem[] | null>(null)
   const focusIdxRef = useRef(-1)
+  // tick 元素缓存（只用于低频颜色重绘；entries 变化时清空）
+  const ticksRef = useRef<HTMLElement[]>([])
+  const railCenterRef = useRef(0)
   const entriesRef = useRef(entries)
-  entriesRef.current = entries
+  const onSelectRef = useRef(onSelect)
   const ownerVisibleIndexRef = useRef(ownerVisibleIndex)
-  ownerVisibleIndexRef.current = ownerVisibleIndex
-  // 追踪 rAF 是否正在运行
-  const loopRunningRef = useRef(false)
+  const fisheyeRef = useRef(visual.fisheye)
+  useEffect(() => {
+    entriesRef.current = entries
+    onSelectRef.current = onSelect
+    ownerVisibleIndexRef.current = ownerVisibleIndex
+    fisheyeRef.current = visual.fisheye
+  })
 
   useEffect(() => {
-    strengthsRef.current = entries.map(() => 0)
-    cachedRef.current = null
+    ticksRef.current = []
     focusIdxRef.current = -1
   }, [entries])
 
-  const getItems = useCallback(() => {
-    cachedRef.current ??= queryCachedItems(railRef.current)
-    return cachedRef.current
+  useLayoutEffect(() => {
+    railCenterRef.current = syncRailCenter(railRef.current)
+  }, [entries, visual])
+
+  useEffect(() => {
+    const onResize = () => {
+      railCenterRef.current = syncRailCenter(railRef.current)
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
   }, [])
 
-  /** 根据 ownerVisibleIds 更新 tick DOM 颜色 */
-  const applyVisibleTicks = useCallback(() => {
-    applyVisibleTickHighlight(getItems(), ownerVisibleIndexRef.current)
-  }, [getItems])
+  /** 缓存 tick 元素列表（不读 layout，entries 变化时清空）。 */
+  const getTicks = useCallback(() => {
+    if (ticksRef.current.length === 0 && railRef.current) {
+      ticksRef.current = Array.from(railRef.current.querySelectorAll<HTMLElement>('[data-oi-tick]'))
+    }
+    return ticksRef.current
+  }, [])
 
-  // 当 ownerVisibleIds 变化时更新 tick，仅 loop 未激活时生效
+  // visible 高亮：仅在 ownerVisibleIndex 变化且未交互时更新 tick 颜色（低频、非热路径）
   useEffect(() => {
-    const raf = requestAnimationFrame(() => {
-      if (loopRunningRef.current) return
-      applyVisibleTicks()
-    })
-    return () => cancelAnimationFrame(raf)
-  }, [ownerVisibleIndex, applyVisibleTicks, entries])
-
-  const loop = useCallback(
-    function tick() {
-      loopRunningRef.current = true
-      const { alive, focusIndex } = applyFisheye(getItems(), cursorYRef.current, strengthsRef.current, visual.fisheye, ownerVisibleIndexRef.current)
-      focusIdxRef.current = focusIndex
-      if (hoveringRef.current || alive) {
-        rafIdRef.current = requestAnimationFrame(tick)
-      } else {
-        loopRunningRef.current = false
-        rafIdRef.current = requestAnimationFrame(() => {
-          applyVisibleTicks()
-          rafIdRef.current = 0
-        })
-      }
-    },
-    [getItems, visual.fisheye, applyVisibleTicks],
-  )
-
-  const kick = useCallback(() => {
-    cancelAnimationFrame(rafIdRef.current)
-    rafIdRef.current = requestAnimationFrame(loop)
-  }, [loop])
+    if (hoveringRef.current) return
+    repaintTicks(getTicks(), -1, ownerVisibleIndex)
+  }, [ownerVisibleIndex, entries, getTicks])
 
   const setZoneActive = useCallback((active: boolean) => {
     const z = zoneRef.current
@@ -457,21 +455,39 @@ const PointerFisheye = memo(function PointerFisheye({ entries, onSelect, visual,
 
   const deactivate = useCallback(() => {
     hoveringRef.current = false
-    cursorYRef.current = null
     focusIdxRef.current = -1
     setZoneActive(false)
-    kick()
-  }, [kick, setZoneActive])
+    const rail = railRef.current
+    if (rail) rail.style.setProperty('--oi-active', '0')
+    // 恢复 visible 高亮
+    repaintTicks(getTicks(), -1, ownerVisibleIndexRef.current)
+  }, [setZoneActive, getTicks])
 
-  const onTickEnter = useCallback(() => {
+  const onTickEnter = useCallback((e: React.MouseEvent) => {
     hoveringRef.current = true
     setZoneActive(true)
-    kick()
-  }, [kick, setZoneActive])
+    const rail = railRef.current
+    if (!rail) return
+    ticksRef.current = getTicks()
+    activateRail(rail, e.clientY)
+    const next = nearestIndexFromY(entriesRef.current.length, e.clientY, railCenterRef.current, fisheyeRef.current)
+    focusIdxRef.current = next
+    repaintTicks(ticksRef.current, next, ownerVisibleIndexRef.current)
+  }, [setZoneActive, getTicks])
 
   const onZoneMove = useCallback((e: React.MouseEvent) => {
-    cursorYRef.current = e.clientY
-  }, [])
+    const rail = railRef.current
+    if (!rail) return
+    // 主线程每帧唯一的工作：写一个变量。其余 transform 交给合成线程。
+    rail.style.setProperty('--oi-cursor-y', String(e.clientY))
+    // 算最近焦点（纯数值），仅在变化时重新着色（paint-only，非每帧）
+    const next = nearestIndexFromY(entriesRef.current.length, e.clientY, railCenterRef.current, fisheyeRef.current)
+    if (next !== focusIdxRef.current) {
+      if (ticksRef.current.length === 0) ticksRef.current = getTicks()
+      focusIdxRef.current = next
+      repaintTicks(ticksRef.current, next, ownerVisibleIndexRef.current)
+    }
+  }, [getTicks])
   const onZoneLeave = useCallback(() => deactivate(), [deactivate])
 
   const onZoneClick = useCallback(() => {
@@ -479,11 +495,9 @@ const PointerFisheye = memo(function PointerFisheye({ entries, onSelect, visual,
     const cur = entriesRef.current
     if (idx >= 0 && idx < cur.length) {
       deactivate()
-      onSelect(cur[idx].messageId)
+      onSelectRef.current(cur[idx].messageId)
     }
-  }, [onSelect, deactivate])
-
-  useEffect(() => () => cancelAnimationFrame(rafIdRef.current), [])
+  }, [deactivate])
 
   return (
     <div
@@ -501,6 +515,7 @@ const PointerFisheye = memo(function PointerFisheye({ entries, onSelect, visual,
           pointerEvents: 'auto',
           paddingRight: `${visual.rightOffset}px`,
           paddingLeft: `${visual.hitPadLeft}px`,
+          ...buildRailVars(entries.length, visual.fisheye),
         }}
         onMouseEnter={onTickEnter}
       >
@@ -513,49 +528,55 @@ const PointerFisheye = memo(function PointerFisheye({ entries, onSelect, visual,
 // ─── TouchFisheye ───────────────────────────
 
 const TouchFisheye = memo(function TouchFisheye({ entries, onSelect, visual, ownerVisibleIndex }: FisheyeProps) {
-  const [overlayVisible, setOverlayVisible] = useState(false)
   const railRef = useRef<HTMLDivElement>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
-  const touchYRef = useRef<number | null>(null)
-  const strengthsRef = useRef<number[]>([])
-  const rafIdRef = useRef(0)
+  const backdropRef = useRef<HTMLDivElement>(null)
   const touchingRef = useRef(false)
   const prevFocusRef = useRef(-1)
-  const cachedRef = useRef<CachedItem[] | null>(null)
-  const loopRunningRef = useRef(false)
+  // tick 元素缓存（只用于低频颜色重绘；entries 变化时清空）
+  const ticksRef = useRef<HTMLElement[]>([])
+  const railCenterRef = useRef(0)
 
   const entriesRef = useRef(entries)
-  entriesRef.current = entries
   const onSelectRef = useRef(onSelect)
-  onSelectRef.current = onSelect
-  const visualRef = useRef(visual)
-  visualRef.current = visual
   const ownerVisibleIndexRef = useRef(ownerVisibleIndex)
-  ownerVisibleIndexRef.current = ownerVisibleIndex
+  const fisheyeRef = useRef(visual.fisheye)
+  useEffect(() => {
+    entriesRef.current = entries
+    onSelectRef.current = onSelect
+    ownerVisibleIndexRef.current = ownerVisibleIndex
+    fisheyeRef.current = visual.fisheye
+  })
 
   useEffect(() => {
-    strengthsRef.current = entries.map(() => 0)
-    cachedRef.current = null
+    ticksRef.current = []
+    prevFocusRef.current = -1
   }, [entries])
 
-  const getItems = useCallback(() => {
-    cachedRef.current ??= queryCachedItems(railRef.current)
-    return cachedRef.current
+  useLayoutEffect(() => {
+    railCenterRef.current = syncRailCenter(railRef.current)
+  }, [entries, visual])
+
+  useEffect(() => {
+    const onResize = () => {
+      railCenterRef.current = syncRailCenter(railRef.current)
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
   }, [])
 
-  /** 根据 ownerVisibleIds 更新 tick DOM 颜色 */
-  const applyVisibleTicks = useCallback(() => {
-    applyVisibleTickHighlight(getItems(), ownerVisibleIndexRef.current)
-  }, [getItems])
+  const getTicks = useCallback(() => {
+    if (ticksRef.current.length === 0 && railRef.current) {
+      ticksRef.current = Array.from(railRef.current.querySelectorAll<HTMLElement>('[data-oi-tick]'))
+    }
+    return ticksRef.current
+  }, [])
 
-  // 当 ownerVisibleIds 变化时更新 tick，仅 loop 未激活时生效
+  // visible 高亮：仅在 ownerVisibleIndex 变化且未交互时更新（低频、非热路径）
   useEffect(() => {
-    const raf = requestAnimationFrame(() => {
-      if (loopRunningRef.current) return
-      applyVisibleTicks()
-    })
-    return () => cancelAnimationFrame(raf)
-  }, [ownerVisibleIndex, applyVisibleTicks, entries])
+    if (touchingRef.current) return
+    repaintTicks(getTicks(), -1, ownerVisibleIndex)
+  }, [ownerVisibleIndex, entries, getTicks])
 
   const vibrate = useCallback(() => {
     try {
@@ -571,56 +592,6 @@ const TouchFisheye = memo(function TouchFisheye({ entries, onSelect, visual, own
     }
   }, [])
 
-  const loop = useCallback(
-    function tick() {
-      loopRunningRef.current = true
-      const { alive, focusIndex, maxStrength } = applyFisheye(
-        getItems(),
-        touchYRef.current,
-        strengthsRef.current,
-        visualRef.current.fisheye,
-        ownerVisibleIndexRef.current,
-      )
-
-      if (focusIndex >= 0 && maxStrength > 0.5 && focusIndex !== prevFocusRef.current) {
-        prevFocusRef.current = focusIndex
-        vibrate()
-        const el = overlayRef.current
-        if (el) {
-          el.textContent = entriesRef.current[focusIndex]?.overlayLabel ?? ''
-          el.style.opacity = '1'
-          el.style.transform = 'translateY(0px)'
-        }
-      }
-      if ((focusIndex < 0 || maxStrength <= 0.5) && !touchingRef.current) {
-        const el = overlayRef.current
-        if (el) {
-          el.style.opacity = '0'
-          el.style.transform = 'translateY(4px)'
-        }
-      }
-
-      if (touchingRef.current || alive) {
-        rafIdRef.current = requestAnimationFrame(tick)
-      } else {
-        loopRunningRef.current = false
-        setOverlayVisible(false)
-        rafIdRef.current = requestAnimationFrame(() => {
-          applyVisibleTicks()
-          rafIdRef.current = 0
-        })
-      }
-    },
-    [getItems, vibrate, applyVisibleTicks],
-  )
-
-  // 用 ref 包 kick，供原生事件回调读取最新闭包
-  const kickRef = useRef(() => {})
-  kickRef.current = () => {
-    cancelAnimationFrame(rafIdRef.current)
-    rafIdRef.current = requestAnimationFrame(loop)
-  }
-
   useEffect(() => {
     const el = railRef.current
     if (!el) return
@@ -629,13 +600,39 @@ const TouchFisheye = memo(function TouchFisheye({ entries, onSelect, visual, own
       e.preventDefault()
       touchingRef.current = true
       prevFocusRef.current = -1
-      touchYRef.current = e.touches[0].clientY
-      setOverlayVisible(true)
-      kickRef.current()
+      const y = e.touches[0].clientY
+      ticksRef.current = getTicks()
+      activateRail(el, y)
+      // 直接用 ref 显示遮罩，不触发 React 重渲染
+      if (backdropRef.current) backdropRef.current.style.display = 'flex'
+      updateFocus(y)
     }
     const onMove = (e: TouchEvent) => {
       e.preventDefault()
-      touchYRef.current = e.touches[0].clientY
+      const y = e.touches[0].clientY
+      // 主线程每帧唯一的工作：写一个变量
+      el.style.setProperty('--oi-cursor-y', String(y))
+      updateFocus(y)
+    }
+    // 算焦点 + 触觉 + overlay 标题（仅在焦点变化时，paint-only）
+    const updateFocus = (y: number) => {
+      const next = nearestIndexFromY(entriesRef.current.length, y, railCenterRef.current, fisheyeRef.current)
+      if (next === prevFocusRef.current) return
+      prevFocusRef.current = next
+      if (ticksRef.current.length === 0) ticksRef.current = getTicks()
+      repaintTicks(ticksRef.current, next, ownerVisibleIndexRef.current)
+      const ov = overlayRef.current
+      if (next >= 0) {
+        vibrate()
+        if (ov) {
+          ov.textContent = entriesRef.current[next]?.overlayLabel ?? ''
+          ov.style.opacity = '1'
+          ov.style.transform = 'translateY(0px)'
+        }
+      } else if (ov) {
+        ov.style.opacity = '0'
+        ov.style.transform = 'translateY(4px)'
+      }
     }
     const onEnd = () => {
       const idx = prevFocusRef.current
@@ -643,14 +640,15 @@ const TouchFisheye = memo(function TouchFisheye({ entries, onSelect, visual, own
       if (idx >= 0 && idx < cur.length) onSelectRef.current(cur[idx].messageId)
 
       touchingRef.current = false
-      touchYRef.current = null
       prevFocusRef.current = -1
+      deactivateRail(el)
       const title = overlayRef.current
       if (title) {
         title.style.opacity = '0'
         title.style.transform = 'translateY(4px)'
       }
-      kickRef.current()
+      if (backdropRef.current) backdropRef.current.style.display = 'none'
+      repaintTicks(getTicks(), -1, ownerVisibleIndexRef.current)
     }
 
     el.addEventListener('touchstart', onStart, { passive: false })
@@ -663,31 +661,30 @@ const TouchFisheye = memo(function TouchFisheye({ entries, onSelect, visual, own
       el.removeEventListener('touchend', onEnd)
       el.removeEventListener('touchcancel', onEnd)
     }
-  }, [])
-
-  useEffect(() => () => cancelAnimationFrame(rafIdRef.current), [])
+  }, [getTicks, vibrate])
 
   return (
     <div>
-      {overlayVisible && (
-        <div className="absolute inset-0 z-[14] bg-bg-100/40 backdrop-blur-sm flex items-start justify-center pointer-events-none"
-          style={{ paddingTop: `calc(30% + var(--app-safe-top, 0px))` }}>
-          <div
-            ref={overlayRef}
-            className={`px-5 py-2 max-w-[75vw] text-center ${visual.overlayClassName}`}
-            style={{
-              opacity: 0,
-              transform: 'translateY(4px)',
-              transition: 'opacity 0.15s ease-out, transform 0.15s ease-out',
-            }}
-          />
-        </div>
-      )}
+      <div
+        ref={backdropRef}
+        className="absolute inset-0 z-[14] bg-bg-100/40 backdrop-blur-sm flex items-start justify-center pointer-events-none"
+        style={{ display: 'none', paddingTop: `calc(30% + var(--app-safe-top, 0px))` }}
+      >
+        <div
+          ref={overlayRef}
+          className={`px-5 py-2 max-w-[75vw] text-center ${visual.overlayClassName}`}
+          style={{
+            opacity: 0,
+            transform: 'translateY(4px)',
+            transition: 'opacity 0.15s ease-out, transform 0.15s ease-out',
+          }}
+        />
+      </div>
 
       <div
         ref={railRef}
         className="absolute top-1/2 -translate-y-1/2 z-[15] flex flex-col items-end pl-4 py-4 select-none"
-        style={{ right: `${visual.rightOffset}px` }}
+        style={{ right: `${visual.rightOffset}px`, ...buildRailVars(entries.length, visual.fisheye) }}
       >
         <TickRail entries={entries} visual={visual} />
       </div>
