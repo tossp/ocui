@@ -13,5 +13,5 @@ export function useDelayedRender(show: boolean, delayMs: number = 320): boolean 
     return () => clearTimeout(timer)
   }, [show, delayMs])
 
-  return shouldRender
+  return show || shouldRender
 }
