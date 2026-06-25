@@ -10,7 +10,13 @@ import {
   useRef,
   useState,
 } from 'react'
-import { Streamdown, defaultRehypePlugins, type Components, type CustomRendererProps, type PluginConfig } from 'streamdown'
+import {
+  Streamdown,
+  defaultRehypePlugins,
+  type Components,
+  type CustomRendererProps,
+  type PluginConfig,
+} from 'streamdown'
 import { createMathPlugin } from '@streamdown/math'
 import { CodeBlock } from './CodeBlock'
 import { HandIcon, RetryIcon, ZoomInIcon, ZoomOutIcon } from './Icons'
@@ -19,6 +25,7 @@ import { useTheme } from '../hooks/useTheme'
 import { useInputCapabilities } from '../hooks/useInputCapabilities'
 import { detectLanguage } from '../utils/languageUtils'
 import { isTauri } from '../utils/tauri'
+import { splitMarkdownStream } from './markdownStream'
 
 interface MarkdownRendererProps {
   content: string
@@ -650,6 +657,28 @@ const markdownRehypePlugins = [
   defaultRehypePlugins.harden,
 ]
 
+const MarkdownStreamBlock = memo(function MarkdownStreamBlock({
+  src,
+  components,
+  isAnimating,
+}: {
+  src: string
+  components: Components
+  isAnimating: boolean
+}) {
+  return (
+    <Streamdown
+      components={components}
+      isAnimating={isAnimating}
+      controls={false}
+      plugins={markdownPlugins}
+      rehypePlugins={markdownRehypePlugins}
+    >
+      {src}
+    </Streamdown>
+  )
+})
+
 // ─── Main Renderer ─────────────────────────────────────────────
 
 export const MarkdownRenderer = memo(function MarkdownRenderer({
@@ -659,6 +688,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
   variant = 'default',
 }: MarkdownRendererProps) {
   const isReasoning = variant === 'reasoning'
+  const streamBlocks = useMemo(() => splitMarkdownStream(content, isStreaming), [content, isStreaming])
 
   const components = useMemo<Components>(
     () => ({
@@ -903,15 +933,14 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
     <div
       className={`markdown-content ${isReasoning ? 'text-[length:var(--fs-sm)] leading-5 text-text-400' : 'text-[length:var(--fs-base)] leading-relaxed text-text-100'} break-words min-w-0 overflow-hidden ${className}`}
     >
-      <Streamdown
-        components={components}
-        isAnimating={isStreaming}
-        controls={false}
-        plugins={markdownPlugins}
-        rehypePlugins={markdownRehypePlugins}
-      >
-        {content}
-      </Streamdown>
+      {streamBlocks.map(block => (
+        <MarkdownStreamBlock
+          key={block.key}
+          src={block.src}
+          components={components}
+          isAnimating={isStreaming && block.mode === 'live'}
+        />
+      ))}
     </div>
   )
 })
