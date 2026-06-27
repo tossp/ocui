@@ -281,9 +281,7 @@ export const ContentBlock = memo(function ContentBlock({
             </span>
           )}
           {fileName && (
-            <span
-              className={`text-text-500 truncate font-mono leading-4 min-w-0 flex-1 ${hideLabel ? '' : 'ml-0.5'}`}
-            >
+            <span className={`text-text-500 truncate font-mono leading-4 min-w-0 flex-1 ${hideLabel ? '' : 'ml-0.5'}`}>
               {fileName}
             </span>
           )}
@@ -359,7 +357,7 @@ export const ContentBlock = memo(function ContentBlock({
                   data={diffViewerData}
                 />
               ) : content?.trim() ? (
-                <CodePreview code={content} language={lang} maxHeight={maxHeight} />
+                <CodePreview code={content} language={lang} maxHeight={maxHeight} isVisible={showBody} />
               ) : null}
             </div>
           )}

@@ -14,6 +14,7 @@ interface CodeMirrorReadonlyProps {
   lineHeight: number
   maxHeight?: number
   isResizing?: boolean
+  isVisible?: boolean
   showLineNumbers?: boolean
   className?: string
   extraExtensions?: Extension[]
@@ -27,6 +28,7 @@ export function CodeMirrorReadonly({
   lineHeight,
   maxHeight,
   isResizing = false,
+  isVisible = true,
   showLineNumbers = true,
   className = '',
   extraExtensions = [],
@@ -73,6 +75,24 @@ export function CodeMirrorReadonly({
     if (!view) return
     dispatchShikiTokens(view, tokensRef.current)
   }, [tokensRef, tokensVersion])
+
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view || !isVisible) return
+
+    let secondFrameId: number | null = null
+    const firstFrameId = requestAnimationFrame(() => {
+      view.requestMeasure()
+      secondFrameId = requestAnimationFrame(() => view.requestMeasure())
+    })
+    const transitionTimerId = window.setTimeout(() => view.requestMeasure(), 320)
+
+    return () => {
+      cancelAnimationFrame(firstFrameId)
+      if (secondFrameId !== null) cancelAnimationFrame(secondFrameId)
+      clearTimeout(transitionTimerId)
+    }
+  }, [isVisible])
 
   const handleKeyDownCapture = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {

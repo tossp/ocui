@@ -9,10 +9,18 @@ interface CodePreviewProps {
   language: string
   maxHeight?: number
   isResizing?: boolean
+  isVisible?: boolean
   wordWrap?: boolean
 }
 
-export function CodePreview({ code, language, maxHeight, isResizing = false, wordWrap }: CodePreviewProps) {
+export function CodePreview({
+  code,
+  language,
+  maxHeight,
+  isResizing = false,
+  isVisible = true,
+  wordWrap,
+}: CodePreviewProps) {
   const { codeWordWrap, codeFontScale } = useSyncExternalStore(themeStore.subscribe, themeStore.getSnapshot)
   const resolvedWordWrap = wordWrap ?? codeWordWrap
   const { tokensRef, version } = useSyntaxHighlightRef(code, {
@@ -29,6 +37,7 @@ export function CodePreview({ code, language, maxHeight, isResizing = false, wor
       lineHeight={codeLineHeight(codeFontScale)}
       maxHeight={maxHeight}
       isResizing={isResizing}
+      isVisible={isVisible}
     />
   )
 }
