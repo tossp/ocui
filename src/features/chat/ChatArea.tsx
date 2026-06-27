@@ -41,7 +41,6 @@ import {
   computeAnchorRestoreScrollDelta,
   buildTurnDurationMap,
   computeExpandedPageRange,
-  expandSelectionWithNearbyStalePages,
   expandSelectionWithPageKeys,
   seedMeasuredPageHeightsFromPreviousPages,
   type ChatPage,
@@ -94,10 +93,6 @@ function captureLoadMoreAnchor(root: HTMLElement, pageCountBefore = 0): LoadMore
   }
 
   return best
-}
-
-function getPageMeasurementSignature(page: ChatPage): string {
-  return `${page.estimatedHeight}:${page.messageIds.join('|')}`
 }
 
 interface ChatAreaProps {
@@ -173,7 +168,6 @@ export const ChatArea = memo(
       const [scrollOffsetFromBottom, setScrollOffsetFromBottom] = useState(0)
       const [viewportHeight, setViewportHeight] = useState(0)
       const [measuredPageHeights, setMeasuredPageHeights] = useState<Record<string, number>>({})
-      const [staleMeasuredPageKeys, setStaleMeasuredPageKeys] = useState<ReadonlySet<string>>(() => new Set())
       const [pendingScrollMessageId, setPendingScrollMessageId] = useState<string | null>(null)
       const [pendingLoadMoreAnchorMessageId, setPendingLoadMoreAnchorMessageId] = useState<string | null>(null)
       const scrollSnapshotRafRef = useRef<number | null>(null)
@@ -184,9 +178,7 @@ export const ChatArea = memo(
       const pendingAnchorClearRafRef = useRef<number | null>(null)
       const pendingSessionResetRafRef = useRef<number | null>(null)
       const lastScrollRootSizeRef = useRef({ width: 0, height: 0 })
-      const measuredPageHeightKeysRef = useRef<string[]>([])
       const previousActivePagesRef = useRef<{ sessionId?: string | null; pages: StableChatPage[] }>({ pages: [] })
-      const pageMeasurementSignaturesRef = useRef<Map<string, string>>(new Map())
       const lastStreamingPageKeysRef = useRef<ReadonlySet<string>>(new Set())
       const settlingScrollMessageIdRef = useRef<string | null>(null)
       const loadMoreRequestIdRef = useRef(0)
@@ -243,39 +235,9 @@ export const ChatArea = memo(
             measuredPageHeights: current,
           })
           if (seeded === current) return current
-          measuredPageHeightKeysRef.current = Object.keys(seeded)
           return seeded
         })
       }, [activePages, sessionId])
-
-      useLayoutEffect(() => {
-        const previousSignatures = pageMeasurementSignaturesRef.current
-        const nextSignatures = new Map<string, string>()
-        const staleKeys: string[] = []
-
-        for (const page of activePages) {
-          const signature = getPageMeasurementSignature(page)
-          const previousSignature = previousSignatures.get(page.key)
-          nextSignatures.set(page.key, signature)
-          if (previousSignature != null && previousSignature !== signature && measuredPageHeights[page.key] != null) {
-            staleKeys.push(page.key)
-          }
-        }
-
-        pageMeasurementSignaturesRef.current = nextSignatures
-        if (staleKeys.length === 0) return
-
-        setStaleMeasuredPageKeys(previous => {
-          let changed = false
-          const next = new Set(previous)
-          for (const key of staleKeys) {
-            if (next.has(key)) continue
-            next.add(key)
-            changed = true
-          }
-          return changed ? next : previous
-        })
-      }, [activePages, measuredPageHeights])
 
       const pendingTargetPageIndex = useMemo(
         () =>
@@ -321,19 +283,15 @@ export const ChatArea = memo(
         lastStreamingPageKeysRef.current = streamingPageKeys
       }, [streamingPageKeys])
 
-      const renderPageSelection = useMemo(() => {
-        const withStreamingPages = expandSelectionWithPageKeys({
-          pages: activePages,
-          expandedPageSelection,
-          pageKeys: streamingPageKeys,
-        })
-        return expandSelectionWithNearbyStalePages({
-          pages: activePages,
-          expandedPageSelection: withStreamingPages,
-          stalePageKeys: staleMeasuredPageKeys,
-          radius: 1,
-        })
-      }, [activePages, expandedPageSelection, staleMeasuredPageKeys, streamingPageKeys])
+      const renderPageSelection = useMemo(
+        () =>
+          expandSelectionWithPageKeys({
+            pages: activePages,
+            expandedPageSelection,
+            pageKeys: streamingPageKeys,
+          }),
+        [activePages, expandedPageSelection, streamingPageKeys],
+      )
 
       const renderSegments = useMemo(
         () =>
@@ -370,11 +328,8 @@ export const ChatArea = memo(
         pendingSessionResetRafRef.current = requestAnimationFrame(() => {
           pendingSessionResetRafRef.current = null
           setIsLoadingMore(false)
-          measuredPageHeightKeysRef.current = []
           setMeasuredPageHeights({})
-          setStaleMeasuredPageKeys(new Set())
           setPendingScrollMessageId(null)
-          pageMeasurementSignaturesRef.current.clear()
         })
       }, [])
 
@@ -416,15 +371,11 @@ export const ChatArea = memo(
         const syncViewport = () => {
           const nextSize = { width: root.clientWidth, height: root.clientHeight }
           const previousSize = lastScrollRootSizeRef.current
-          const hasPreviousSize = previousSize.width > 0 || previousSize.height > 0
           const widthChanged = Math.abs(previousSize.width - nextSize.width) >= 1
           const heightChanged = Math.abs(previousSize.height - nextSize.height) >= 1
 
           if (widthChanged || heightChanged) {
             lastScrollRootSizeRef.current = nextSize
-            if (hasPreviousSize) {
-              setStaleMeasuredPageKeys(new Set(measuredPageHeightKeysRef.current))
-            }
           }
 
           setViewportHeight(prev => (Math.abs(prev - nextSize.height) < 1 ? prev : nextSize.height))
@@ -694,13 +645,6 @@ export const ChatArea = memo(
             pendingLayoutAnchorRef.current = captureLoadMoreAnchor(root)
           }
           const next = { ...previous, [pageKey]: nextHeight }
-          measuredPageHeightKeysRef.current = Object.keys(next)
-          return next
-        })
-        setStaleMeasuredPageKeys(previous => {
-          if (!previous.has(pageKey)) return previous
-          const next = new Set(previous)
-          next.delete(pageKey)
           return next
         })
       }, [])
