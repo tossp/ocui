@@ -483,6 +483,24 @@ body {
   stroke: currentColor;
 }
 
+/* Streaming Markdown is rendered in stable/live chunks. Without this, Tailwind
+ * first:/last: margin utilities run per chunk root and make adjacent blocks too tight. */
+.markdown-content .markdown-stream-block-not-first > :first-child > :first-child {
+  margin-top: 1rem;
+}
+
+.markdown-content .markdown-stream-block-not-last > :last-child > :last-child {
+  margin-bottom: 1rem;
+}
+
+.markdown-content.text-\[length\:var\(--fs-sm\)\] .markdown-stream-block-not-first > :first-child > :first-child {
+  margin-top: 0.5rem;
+}
+
+.markdown-content.text-\[length\:var\(--fs-sm\)\] .markdown-stream-block-not-last > :last-child > :last-child {
+  margin-bottom: 0.5rem;
+}
+
 /* Theme View Transition (Circular Reveal) */
 ::view-transition-old(root),
 ::view-transition-new(root) {

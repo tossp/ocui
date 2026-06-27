@@ -8,15 +8,32 @@ describe('splitMarkdownStream', () => {
     ])
   })
 
-  it('keeps regular streaming markdown as one live block', () => {
+  it('keeps incomplete single-block streaming markdown as one live block', () => {
     expect(splitMarkdownStream('hello **world', true)).toEqual([
       expect.objectContaining({ src: 'hello **world', mode: 'live' }),
     ])
   })
 
+  it('splits stable paragraphs from the live tail while streaming', () => {
+    expect(splitMarkdownStream('first paragraph\n\nsecond **live', true)).toEqual([
+      expect.objectContaining({ src: 'first paragraph\n\n', mode: 'full' }),
+      expect.objectContaining({ src: 'second **live', mode: 'live' }),
+    ])
+  })
+
+  it('keeps the stable paragraph key while only the live tail grows', () => {
+    const first = splitMarkdownStream('first paragraph\n\nsecond', true)
+    const next = splitMarkdownStream('first paragraph\n\nsecond grows', true)
+
+    expect(first[0].key).toBe(next[0].key)
+    expect(first[0].src).toBe(next[0].src)
+    expect(first[1].key).toBe(next[1].key)
+    expect(first[1].src).not.toBe(next[1].src)
+  })
+
   it('splits stable content from an unfinished trailing code fence while streaming', () => {
     expect(splitMarkdownStream('before\n\n```ts\nconst x = 1', true)).toEqual([
-      expect.objectContaining({ src: 'before\n\n', mode: 'live' }),
+      expect.objectContaining({ src: 'before\n\n', mode: 'full' }),
       expect.objectContaining({ src: '```ts\nconst x = 1', mode: 'live' }),
     ])
   })
@@ -31,9 +48,10 @@ describe('splitMarkdownStream', () => {
     expect(first[1].src).not.toBe(next[1].src)
   })
 
-  it('keeps completed code fences in one live block while streaming', () => {
+  it('splits stable content before a completed code fence while streaming', () => {
     expect(splitMarkdownStream('before\n\n```ts\nconst x = 1\n```', true)).toEqual([
-      expect.objectContaining({ src: 'before\n\n```ts\nconst x = 1\n```', mode: 'live' }),
+      expect.objectContaining({ src: 'before\n\n', mode: 'full' }),
+      expect.objectContaining({ src: '```ts\nconst x = 1\n```', mode: 'live' }),
     ])
   })
 

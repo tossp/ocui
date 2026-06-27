@@ -39,6 +39,12 @@ function getTrailingOpenFenceStart(markdown: string) {
   return openFence?.start
 }
 
+function findStablePrefixEnd(markdown: string) {
+  const boundary = markdown.lastIndexOf('\n\n')
+  if (boundary <= 0) return 0
+  return boundary + 2
+}
+
 export function splitMarkdownStream(markdown: string, isStreaming: boolean): MarkdownStreamBlock[] {
   if (!isStreaming) return [{ key: `full:${hashString(markdown)}`, src: markdown, mode: 'full' }]
   if (!markdown) return [{ key: 'live:empty', src: '', mode: 'live' }]
@@ -46,13 +52,23 @@ export function splitMarkdownStream(markdown: string, isStreaming: boolean): Mar
 
   const fenceStart = getTrailingOpenFenceStart(markdown)
   if (fenceStart == null || fenceStart <= 0) {
-    return [{ key: `live:${hashString(markdown)}`, src: markdown, mode: 'live' }]
+    const stablePrefixEnd = findStablePrefixEnd(markdown)
+    if (stablePrefixEnd <= 0 || stablePrefixEnd >= markdown.length) {
+      return [{ key: `live:${hashString(markdown)}`, src: markdown, mode: 'live' }]
+    }
+
+    const stableHead = markdown.slice(0, stablePrefixEnd)
+    const liveTail = markdown.slice(stablePrefixEnd)
+    return [
+      { key: `stable:${hashString(stableHead)}`, src: stableHead, mode: 'full' },
+      { key: `live-tail:${stablePrefixEnd}`, src: liveTail, mode: 'live' },
+    ]
   }
 
   const stableHead = markdown.slice(0, fenceStart)
   const liveTail = markdown.slice(fenceStart)
   return [
-    { key: `stable:${hashString(stableHead)}`, src: stableHead, mode: 'live' },
+    { key: `stable:${hashString(stableHead)}`, src: stableHead, mode: 'full' },
     { key: `live-code:${fenceStart}`, src: liveTail, mode: 'live' },
   ]
 }

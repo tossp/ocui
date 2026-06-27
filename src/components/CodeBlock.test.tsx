@@ -12,6 +12,9 @@ type HighlightMockOutput = { output: { content: string; color?: string }[][] | n
 const useSyntaxHighlightMock = vi.fn((_code: string, _options: unknown): HighlightMockOutput => ({
   output: [[{ content: 'highlighted', color: '#fff' }]],
 }))
+const useStreamingSyntaxHighlightMock = vi.fn((_code: string, _options: unknown): HighlightMockOutput => ({
+  output: null,
+}))
 const useInViewMock = vi.fn(() => ({ ref: vi.fn(), inView: false }))
 const themeSnapshot = { codeWordWrap: false }
 
@@ -21,6 +24,7 @@ vi.mock('../hooks/useInputCapabilities', () => ({
 
 vi.mock('../hooks/useSyntaxHighlight', () => ({
   useSyntaxHighlight: (code: string, options: unknown) => useSyntaxHighlightMock(code, options),
+  useStreamingSyntaxHighlight: (code: string, options: unknown) => useStreamingSyntaxHighlightMock(code, options),
 }))
 
 vi.mock('../hooks/useInView', () => ({
@@ -53,6 +57,8 @@ describe('CodeBlock', () => {
     })
     useSyntaxHighlightMock.mockClear()
     useSyntaxHighlightMock.mockReturnValue({ output: [[{ content: 'highlighted', color: '#fff' }]] })
+    useStreamingSyntaxHighlightMock.mockClear()
+    useStreamingSyntaxHighlightMock.mockReturnValue({ output: null })
     useInViewMock.mockReset()
     useInViewMock.mockReturnValue({ ref: vi.fn(), inView: false })
   })
@@ -146,6 +152,22 @@ describe('CodeBlock', () => {
     expect(useSyntaxHighlightMock).toHaveBeenCalledWith(
       'const value = 1',
       expect.objectContaining({ delayMs: 0, enabled: true, lang: 'ts', mode: 'tokens' }),
+    )
+  })
+
+  it('uses incremental streaming highlighting instead of full tokenization', () => {
+    useStreamingSyntaxHighlightMock.mockReturnValue({ output: [[{ content: 'streamed', color: '#fff' }]] })
+
+    render(<CodeBlock code="const value = 1" language="ts" forceHighlight streamingHighlight />)
+
+    expect(screen.getByText('streamed')).toBeInTheDocument()
+    expect(useSyntaxHighlightMock).toHaveBeenCalledWith(
+      'const value = 1',
+      expect.objectContaining({ enabled: false, lang: 'ts', mode: 'tokens' }),
+    )
+    expect(useStreamingSyntaxHighlightMock).toHaveBeenCalledWith(
+      'const value = 1',
+      expect.objectContaining({ enabled: true, lang: 'ts' }),
     )
   })
 })
