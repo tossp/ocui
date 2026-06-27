@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.6.22] - 2026-06-27
+
+- fix: stabilize streaming markdown highlights (a973d79)
+
 ## [v0.6.21] - 2026-06-27
 
 - fix: remeasure CodeMirror layout after collapse-to-expand animation (d6e5d5c)
