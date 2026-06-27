@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
+import { EditorView } from '@codemirror/view'
 import { describe, expect, it, vi } from 'vitest'
 import { CodePreview } from './CodePreview'
 
@@ -40,6 +41,12 @@ describe('CodePreview', () => {
     expect(container.querySelector('.cm-content')).toHaveAttribute('contenteditable', 'true')
   })
 
+  it('disables editable focus for constrained inline previews', () => {
+    const { container } = render(<CodePreview code={'first line\nsecond line'} language="text" maxHeight={120} />)
+
+    expect(container.querySelector('.cm-content')).toHaveAttribute('contenteditable', 'false')
+  })
+
   it('opens CodeMirror search from the preview Ctrl+F fallback', () => {
     const { container } = render(<CodePreview code={'first line\nsecond line'} language="text" />)
 
@@ -51,5 +58,38 @@ describe('CodePreview', () => {
     expect(screen.getByRole('button', { name: 'Match whole word' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Clear search' })).toBeInTheDocument()
     expect(screen.getByText('No results')).toBeInTheDocument()
+  })
+
+  it('requests a CodeMirror measure when becoming visible again', async () => {
+    vi.useFakeTimers()
+    const requestMeasureSpy = vi.spyOn(EditorView.prototype, 'requestMeasure')
+
+    try {
+      const { rerender } = render(<CodePreview code={'first line\nsecond line'} language="text" isVisible={false} />)
+
+      await act(async () => {
+        await Promise.resolve()
+      })
+      requestMeasureSpy.mockClear()
+
+      rerender(<CodePreview code={'first line\nsecond line'} language="text" isVisible />)
+
+      await act(async () => {
+        vi.advanceTimersByTime(16)
+        await Promise.resolve()
+      })
+
+      expect(requestMeasureSpy).toHaveBeenCalled()
+
+      await act(async () => {
+        vi.advanceTimersByTime(320)
+        await Promise.resolve()
+      })
+
+      expect(requestMeasureSpy.mock.calls.length).toBeGreaterThanOrEqual(2)
+    } finally {
+      requestMeasureSpy.mockRestore()
+      vi.useRealTimers()
+    }
   })
 })

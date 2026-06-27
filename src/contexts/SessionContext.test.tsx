@@ -129,11 +129,15 @@ describe('SessionProvider', () => {
     vi.useRealTimers()
   })
 
-  it('does not refetch on reconnect while the latest request is still pending', async () => {
+  it('queues a reconnect refresh while the latest request is still pending', async () => {
     const firstRequest = createDeferred<Array<{ id: string; directory: string }>>()
     const secondRequest = createDeferred<Array<{ id: string; directory: string }>>()
+    const thirdRequest = createDeferred<Array<{ id: string; directory: string }>>()
 
-    getSessionsMock.mockImplementationOnce(() => firstRequest.promise).mockImplementationOnce(() => secondRequest.promise)
+    getSessionsMock
+      .mockImplementationOnce(() => firstRequest.promise)
+      .mockImplementationOnce(() => secondRequest.promise)
+      .mockImplementationOnce(() => thirdRequest.promise)
 
     render(
       <SessionProvider>
@@ -175,6 +179,45 @@ describe('SessionProvider', () => {
       await Promise.resolve()
       await Promise.resolve()
     })
+
+    expect(getSessionsMock).toHaveBeenCalledTimes(3)
+
+    await act(async () => {
+      thirdRequest.resolve([{ id: 'session-3', directory: '/workspace/demo' }])
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(latestContext?.sessions.map(session => session.id)).toEqual(['session-3'])
+  })
+
+  it('retries the initial session list fetch after a startup failure', async () => {
+    getSessionsMock
+      .mockRejectedValueOnce(new Error('service not ready'))
+      .mockResolvedValueOnce([{ id: 'session-1', directory: '/workspace/demo' }])
+
+    render(
+      <SessionProvider>
+        <SessionContextProbe />
+      </SessionProvider>,
+    )
+
+    await act(async () => {
+      vi.runOnlyPendingTimers()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(getSessionsMock).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      vi.advanceTimersByTime(500)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(getSessionsMock).toHaveBeenCalledTimes(2)
+    expect(latestContext?.sessions.map(session => session.id)).toEqual(['session-1'])
   })
 
   it('removes deleted sessions from context and clears runtime state', async () => {
@@ -209,7 +252,9 @@ describe('SessionProvider', () => {
     const staleRequest = createDeferred<Array<{ id: string; directory: string }>>()
     const freshRequest = createDeferred<Array<{ id: string; directory: string }>>()
 
-    getSessionsMock.mockImplementationOnce(() => staleRequest.promise).mockImplementationOnce(() => freshRequest.promise)
+    getSessionsMock
+      .mockImplementationOnce(() => staleRequest.promise)
+      .mockImplementationOnce(() => freshRequest.promise)
 
     render(
       <SessionProvider>

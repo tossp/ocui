@@ -30,7 +30,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const searchRef = useRef(search)
   const isLoadingMoreRef = useRef(false) // 防止并发 loadMore
   const isFetchingRef = useRef(false) // 防止 onReconnected 密集触发时重复请求
-  const fetchSessionsRef = useRef<() => Promise<void>>(() => Promise.resolve())
+  const queuedReconnectRefreshRef = useRef(false)
+  const retryTimerRef = useRef<number | null>(null)
+  const fetchSessionsRef = useRef<
+    (params?: SessionListParams & { append?: boolean; retryAttempt?: number }) => Promise<void>
+  >(() => Promise.resolve())
   const currentLimitRef = useRef(30) // 当前 limit，loadMore 时递增
 
   // 保持 ref 同步
@@ -46,8 +50,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // 注意：directory 传给 getSessions 时使用正斜杠格式
   // http 层的 fetchWithBothSlashesAndMerge 会处理两种斜杠格式的兼容
   const fetchSessions = useCallback(
-    async (params: SessionListParams & { append?: boolean } = {}) => {
-      const { append = false, ...queryParams } = params
+    async (params: SessionListParams & { append?: boolean; retryAttempt?: number } = {}) => {
+      const { append = false, retryAttempt = 0, ...queryParams } = params
       const requestId = ++requestIdRef.current
       isFetchingRef.current = true
 
@@ -89,8 +93,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         setHasMore(data.length >= currentLimitRef.current)
       } catch (e) {
         if (requestId === requestIdRef.current && !append) {
-          setSessions([])
-          setHasMore(false)
+          if (retryAttempt < 3) {
+            if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
+            retryTimerRef.current = window.setTimeout(() => {
+              if (requestId !== requestIdRef.current) return
+              void fetchSessions({ ...queryParams, retryAttempt: retryAttempt + 1 })
+            }, [500, 1500, 3000][retryAttempt])
+          } else {
+            setSessions([])
+            setHasMore(false)
+          }
         }
         sessionErrorHandler('fetch sessions', e)
       } finally {
@@ -98,6 +110,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           isFetchingRef.current = false
           setIsLoading(false)
           setIsLoadingMore(false)
+          if (queuedReconnectRefreshRef.current) {
+            queuedReconnectRefreshRef.current = false
+            setSessions([])
+            void fetchSessionsRef.current({ search: searchRef.current || undefined })
+          }
         }
       }
     },
@@ -127,6 +144,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
     return () => {
       if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
     }
   }, [fetchSessions, search, currentDirectory])
 
@@ -186,7 +204,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         setSessions(prev => prev.filter(s => s.id !== sessionId))
       },
       onReconnected: reason => {
-        if (reason === 'server-switch' || isFetchingRef.current) return
+        if (reason === 'server-switch') return
+        if (isFetchingRef.current) {
+          queuedReconnectRefreshRef.current = true
+          return
+        }
         setSessions([])
         fetchSessionsRef.current()
       },

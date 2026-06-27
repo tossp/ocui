@@ -339,6 +339,57 @@ export function buildExpandedPageSelection(
   return selection
 }
 
+export function expandSelectionWithPageKeys(options: {
+  pages: ChatPage[]
+  expandedPageSelection: ExpandedPageSelection
+  pageKeys: ReadonlySet<string>
+}): ExpandedPageSelection {
+  const { pages, expandedPageSelection, pageKeys } = options
+  if (pages.length === 0 || pageKeys.size === 0) return expandedPageSelection
+
+  let nextSelection = expandedPageSelection
+  for (let index = 0; index < pages.length; index += 1) {
+    if (!pageKeys.has(pages[index].key) || nextSelection.has(index)) continue
+    if (nextSelection === expandedPageSelection) nextSelection = new Set(expandedPageSelection)
+    nextSelection.add(index)
+  }
+
+  return nextSelection
+}
+
+export function expandSelectionWithNearbyStalePages(options: {
+  pages: ChatPage[]
+  expandedPageSelection: ExpandedPageSelection
+  stalePageKeys: ReadonlySet<string>
+  radius?: number
+}): ExpandedPageSelection {
+  const { pages, expandedPageSelection, stalePageKeys } = options
+  const radius = options.radius ?? 1
+  if (pages.length === 0 || expandedPageSelection.size === 0 || stalePageKeys.size === 0 || radius < 1) {
+    return expandedPageSelection
+  }
+
+  let minExpandedIndex = Number.POSITIVE_INFINITY
+  let maxExpandedIndex = Number.NEGATIVE_INFINITY
+  for (const index of expandedPageSelection) {
+    minExpandedIndex = Math.min(minExpandedIndex, index)
+    maxExpandedIndex = Math.max(maxExpandedIndex, index)
+  }
+  if (!Number.isFinite(minExpandedIndex) || !Number.isFinite(maxExpandedIndex)) return expandedPageSelection
+
+  const startIndex = Math.max(0, minExpandedIndex - radius)
+  const endIndex = Math.min(pages.length - 1, maxExpandedIndex + radius)
+  let nextSelection = expandedPageSelection
+
+  for (let index = startIndex; index <= endIndex; index += 1) {
+    if (!stalePageKeys.has(pages[index].key) || nextSelection.has(index)) continue
+    if (nextSelection === expandedPageSelection) nextSelection = new Set(expandedPageSelection)
+    nextSelection.add(index)
+  }
+
+  return nextSelection
+}
+
 export type PagePremeasureDirection = 'older' | 'newer' | 'idle'
 
 export function computePremeasureMessageBudget(viewportHeight: number): number {

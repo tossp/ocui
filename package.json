@@ -1,6 +1,6 @@
 {
   "name": "opencodeui",
-  "version": "0.6.20",
+  "version": "0.6.21",
   "description": "A third-party web frontend for OpenCode",
   "license": "GPL-3.0-only",
   "type": "module",
@@ -52,6 +52,7 @@
     "react-dom": "^19.2.0",
     "react-i18next": "^17.0.1",
     "shiki": "^4.0.2",
+    "shiki-stream": "^0.1.4",
     "streamdown": "^2.5.0"
   },
   "devDependencies": {

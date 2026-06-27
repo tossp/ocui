@@ -7,6 +7,8 @@ import {
   computeAnchorRestoreScrollDelta,
   computeExpandedPageRange,
   computePremeasureMessageBudget,
+  expandSelectionWithNearbyStalePages,
+  expandSelectionWithPageKeys,
   findPageToPremeasure,
   findPagesToPremeasure,
   findMessageSequenceOffset,
@@ -14,6 +16,8 @@ import {
   seedMeasuredPageHeightsFromPreviousPages,
 } from './chatPageModel'
 import { buildVisibleMessageEntries, getVisibleMessageForkTargetId } from './chatAreaVisibility'
+import { buildChatPageViewModel } from './useChatPageViewModel'
+import { arePageBlockPropsEqual } from './ChatArea'
 import type { Message, MessageError, Part, ToolPart, ReasoningPart } from '../../types/message'
 
 function createUserMessage(id: string, created: number): Message {
@@ -31,7 +35,13 @@ function createUserMessage(id: string, created: number): Message {
   }
 }
 
-function createAssistantMessage(id: string, parts: Part[], created = 1, completed?: number, error?: MessageError): Message {
+function createAssistantMessage(
+  id: string,
+  parts: Part[],
+  created = 1,
+  completed?: number,
+  error?: MessageError,
+): Message {
   return {
     info: {
       id,
@@ -74,6 +84,48 @@ function createToolPart(id: string, messageID: string): ToolPart {
       metadata: {},
       time: { start: 1, end: 2 },
     },
+  }
+}
+
+function createTextPart(id: string, messageID: string, text: string): Part {
+  return {
+    id,
+    sessionID: 'session-1',
+    messageID,
+    type: 'text',
+    text,
+  }
+}
+
+function createPage(messages: Message[]) {
+  return {
+    key: messages.map(message => message.info.id).join(':'),
+    rows: [
+      {
+        key: messages.map(message => message.info.id).join(':'),
+        messages,
+        messageIds: messages.map(message => message.info.id),
+        estimatedHeight: 160,
+      },
+    ],
+    messageIds: messages.map(message => message.info.id),
+    estimatedHeight: 160,
+  }
+}
+
+function createPageBlockProps(page = createPage([createAssistantMessage('assistant-1', [], 1, 2)])) {
+  return {
+    page,
+    messageMaxWidthClass: 'max-w-2xl',
+    messagePaddingClass: 'px-5',
+    registerMessage: () => undefined,
+    onUndo: () => undefined,
+    onFork: () => undefined,
+    canUndo: true,
+    turnDurationMap: new Map<string, number>(),
+    forkTargetIdMap: new Map<string, string | undefined>(),
+    allowStreamingLayoutAnimation: false,
+    onMeasuredHeightChange: () => undefined,
   }
 }
 
@@ -149,6 +201,142 @@ describe('buildVisibleMessageEntries', () => {
     const entries = buildVisibleMessageEntries([message])
 
     expect(entries).toHaveLength(0)
+  })
+})
+
+describe('buildChatPageViewModel', () => {
+  it('reuses unchanged visible messages, pages, and maps during streaming updates', () => {
+    const messages = Array.from({ length: 12 }, (_unused, index) => [
+      {
+        ...createUserMessage(`user-${index}`, index * 2 + 1),
+        parts: [createTextPart(`user-text-${index}`, `user-${index}`, `prompt ${index}`)],
+      },
+      createAssistantMessage(
+        `assistant-${index}`,
+        [createTextPart(`text-${index}`, `assistant-${index}`, index === 11 ? 'hello' : `old ${index}`)],
+        index * 2 + 2,
+        index === 11 ? undefined : index * 2 + 3,
+      ),
+    ]).flat()
+    const first = buildChatPageViewModel(messages)
+    const streamingMessage = messages[messages.length - 1]
+    const nextMessages = [
+      ...messages.slice(0, -1),
+      {
+        ...streamingMessage,
+        parts: [{ ...streamingMessage.parts[0], text: 'hello world' }],
+      },
+    ]
+
+    const next = buildChatPageViewModel(nextMessages, first)
+
+    expect(first.pageRecords.length).toBeGreaterThan(1)
+    expect(next.visibleMessages[0]).toBe(first.visibleMessages[0])
+    expect(next.visibleMessages[1]).toBe(first.visibleMessages[1])
+    expect(next.visibleMessages.at(-1)).not.toBe(first.visibleMessages.at(-1))
+    expect(next.pageRecords[1]).toBe(first.pageRecords[1])
+    expect(next.forkTargetIdMap).toBe(first.forkTargetIdMap)
+    expect(next.turnDurationMap).toBe(first.turnDurationMap)
+  })
+
+  it('keeps the newest page key stable when appending a new turn', () => {
+    const messages = Array.from({ length: 8 }, (_unused, index) => [
+      {
+        ...createUserMessage(`user-${index}`, index * 2 + 1),
+        parts: [createTextPart(`user-text-${index}`, `user-${index}`, `prompt ${index}`)],
+      },
+      createAssistantMessage(
+        `assistant-${index}`,
+        [createTextPart(`text-${index}`, `assistant-${index}`, `answer ${index}`)],
+        index * 2 + 2,
+        index * 2 + 3,
+      ),
+    ]).flat()
+    const first = buildChatPageViewModel(messages)
+    const nextMessages = [
+      ...messages,
+      {
+        ...createUserMessage('user-next', 100),
+        parts: [createTextPart('user-text-next', 'user-next', '# large markdown prompt')],
+      },
+    ]
+
+    const next = buildChatPageViewModel(nextMessages, first)
+
+    expect(next.pageRecords[0].key).toBe(first.pageRecords[0].key)
+    expect(next.pageRecords[0].messageIds).toContain(first.pageRecords[0].messageIds[0])
+  })
+
+  it('keeps new history pages when there is no previous page match', () => {
+    const messages = Array.from({ length: 12 }, (_unused, index) => [
+      {
+        ...createUserMessage(`user-${index}`, index * 2 + 1),
+        parts: [createTextPart(`user-text-${index}`, `user-${index}`, `prompt ${index}`)],
+      },
+      createAssistantMessage(
+        `assistant-${index}`,
+        [createTextPart(`text-${index}`, `assistant-${index}`, `answer ${index}`)],
+        index * 2 + 2,
+        index * 2 + 3,
+      ),
+    ]).flat()
+    const first = buildChatPageViewModel(messages)
+    const olderMessages = Array.from({ length: 12 }, (_unused, index) => [
+      {
+        ...createUserMessage(`older-user-${index}`, index * 2 + 1),
+        parts: [createTextPart(`older-user-text-${index}`, `older-user-${index}`, `older prompt ${index}`)],
+      },
+      createAssistantMessage(
+        `older-assistant-${index}`,
+        [createTextPart(`older-text-${index}`, `older-assistant-${index}`, `older answer ${index}`)],
+        index * 2 + 2,
+        index * 2 + 3,
+      ),
+    ]).flat()
+
+    const next = buildChatPageViewModel([...olderMessages, ...messages], first)
+
+    expect(next.pageRecords.length).toBeGreaterThan(first.pageRecords.length)
+    expect(new Set(next.pageRecords.map(page => page.key)).size).toBe(next.pageRecords.length)
+  })
+})
+
+describe('arePageBlockPropsEqual', () => {
+  it('ignores unrelated global map changes for the same page', () => {
+    const page = createPage([createAssistantMessage('assistant-1', [], 1, 2)])
+    const previous = createPageBlockProps(page)
+    const next = {
+      ...previous,
+      turnDurationMap: new Map([['assistant-other', 500]]),
+      forkTargetIdMap: new Map([['assistant-other', 'fork-other']]),
+    }
+
+    expect(arePageBlockPropsEqual(previous, next)).toBe(true)
+  })
+
+  it('detects derived value changes for messages in the page', () => {
+    const page = createPage([createAssistantMessage('assistant-1', [], 1, 2)])
+    const previous = createPageBlockProps(page)
+    const next = {
+      ...previous,
+      turnDurationMap: new Map([['assistant-1', 500]]),
+    }
+
+    expect(arePageBlockPropsEqual(previous, next)).toBe(false)
+  })
+
+  it('ignores streaming animation prop changes for non-streaming pages only', () => {
+    const stablePage = createPage([createAssistantMessage('assistant-1', [], 1, 2)])
+    const stablePrevious = createPageBlockProps(stablePage)
+    expect(arePageBlockPropsEqual(stablePrevious, { ...stablePrevious, allowStreamingLayoutAnimation: true })).toBe(
+      true,
+    )
+
+    const streamingMessage = { ...createAssistantMessage('assistant-2', []), isStreaming: true }
+    const streamingPrevious = createPageBlockProps(createPage([streamingMessage]))
+    expect(
+      arePageBlockPropsEqual(streamingPrevious, { ...streamingPrevious, allowStreamingLayoutAnimation: true }),
+    ).toBe(false)
   })
 })
 
@@ -295,6 +483,37 @@ describe('buildPageRenderSegments', () => {
   })
 })
 
+describe('lightweight render selection', () => {
+  const pages = [
+    { key: 'page-0', rows: [], messageIds: ['m0'], estimatedHeight: 100 },
+    { key: 'page-1', rows: [], messageIds: ['m1'], estimatedHeight: 110 },
+    { key: 'page-2', rows: [], messageIds: ['m2'], estimatedHeight: 120 },
+    { key: 'page-3', rows: [], messageIds: ['m3'], estimatedHeight: 130 },
+    { key: 'page-4', rows: [], messageIds: ['m4'], estimatedHeight: 140 },
+  ]
+
+  it('expands only stale pages near the active selection', () => {
+    const selection = expandSelectionWithNearbyStalePages({
+      pages,
+      expandedPageSelection: buildExpandedPageSelection({ startIndex: 1, endIndex: 1 }),
+      stalePageKeys: new Set(['page-2', 'page-4']),
+      radius: 1,
+    })
+
+    expect(Array.from(selection)).toEqual([1, 2])
+  })
+
+  it('expands explicit page keys without widening unrelated pages', () => {
+    const selection = expandSelectionWithPageKeys({
+      pages,
+      expandedPageSelection: buildExpandedPageSelection({ startIndex: 1, endIndex: 1 }),
+      pageKeys: new Set(['page-4']),
+    })
+
+    expect(Array.from(selection)).toEqual([1, 4])
+  })
+})
+
 describe('findPageToPremeasure', () => {
   const pages = [
     { key: 'page-0', rows: [], messageIds: ['m0'], estimatedHeight: 100 },
@@ -431,7 +650,12 @@ describe('reconcileStableChatPages', () => {
       createUserMessage('user-3', 9),
       createAssistantMessage('assistant-4', [], 10, 11),
     ]
-    const currentPages = reconcileStableChatPages({ currentPages: [], nextMessages: currentMessages, allocateKey: alloc, pageMessageCount: 2 })
+    const currentPages = reconcileStableChatPages({
+      currentPages: [],
+      nextMessages: currentMessages,
+      allocateKey: alloc,
+      pageMessageCount: 2,
+    })
 
     const nextMessages = [
       createUserMessage('user-1', 1),
@@ -451,9 +675,18 @@ describe('reconcileStableChatPages', () => {
       createUserMessage('user-2', 4),
       createAssistantMessage('assistant-2', [], 5, 6),
     ]
-    const currentPages = reconcileStableChatPages({ currentPages: [], nextMessages: currentMessages, allocateKey: alloc, pageMessageCount: 2 })
+    const currentPages = reconcileStableChatPages({
+      currentPages: [],
+      nextMessages: currentMessages,
+      allocateKey: alloc,
+      pageMessageCount: 2,
+    })
 
-    const nextMessages = [...currentMessages, createUserMessage('user-3', 7), createAssistantMessage('assistant-3', [], 8, 9)]
+    const nextMessages = [
+      ...currentMessages,
+      createUserMessage('user-3', 7),
+      createAssistantMessage('assistant-3', [], 8, 9),
+    ]
     const nextPages = reconcileStableChatPages({ currentPages, nextMessages, allocateKey: alloc, pageMessageCount: 2 })
 
     // 老的第二页 key 应该保住，避免整段历史一起重切

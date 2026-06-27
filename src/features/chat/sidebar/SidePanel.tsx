@@ -22,13 +22,7 @@ import {
   CloseIcon,
   SpinnerIcon,
 } from '../../../components/Icons'
-import {
-  useDirectory,
-  useSessionStats,
-  useKeybindingLabel,
-  useGitWorkspaceCatalog,
-  useVcsInfo,
-} from '../../../hooks'
+import { useDirectory, useSessionStats, useKeybindingLabel, useGitWorkspaceCatalog, useVcsInfo } from '../../../hooks'
 import { useSessionContext } from '../../../contexts/useSessionContext'
 import { useLayoutStore, useMessageStore, childSessionStore } from '../../../store'
 import { useBusySessions, useBusyCount } from '../../../store/activeSessionStore'
@@ -328,7 +322,10 @@ export function SidePanel({
     [pinnedEntries, sessionLookup],
   )
   const unavailablePinnedEntries = useMemo(
-    () => pinnedEntries.filter(entry => unavailablePinnedSessionIds.has(entry.sessionId) && !sessionLookup.has(entry.sessionId)),
+    () =>
+      pinnedEntries.filter(
+        entry => unavailablePinnedSessionIds.has(entry.sessionId) && !sessionLookup.has(entry.sessionId),
+      ),
     [pinnedEntries, sessionLookup, unavailablePinnedSessionIds],
   )
 
@@ -401,11 +398,14 @@ export function SidePanel({
   // ---- 子 session 展示数据 ----
   const rootSessionIds = useMemo(() => new Set(sessions.map(s => s.id)), [sessions])
 
-  const findParentId = useCallback((id: string) => {
-    const s = sessionLookup.get(id)
-    if (s?.parentID) return s.parentID
-    return childSessionStore.getSessionInfo(id)?.parentID
-  }, [sessionLookup])
+  const findParentId = useCallback(
+    (id: string) => {
+      const s = sessionLookup.get(id)
+      if (s?.parentID) return s.parentID
+      return childSessionStore.getSessionInfo(id)?.parentID
+    },
+    [sessionLookup],
+  )
 
   // 开关开 → 拉 /children 全量：选中的 root 或选中子 session 时保持其父展开
   const expandedChildSessionIds = useMemo(() => {
@@ -585,6 +585,7 @@ export function SidePanel({
 
     return list
   }, [folderProjectGroups, currentDirectory, currentProject])
+  const canShowFolderRecents = sidebarFolderRecents && !search && folderProjects.length > 0
 
   const workspaceDirectoriesByProjectId = useMemo(() => {
     const map = new Map<string, string[]>()
@@ -1030,8 +1031,14 @@ export function SidePanel({
                             {itemLabel}
                           </div>
                         </div>
-                        <div className={`text-[length:var(--fs-xxs)] text-text-400 truncate opacity-70 ${isGlobal ? '' : 'font-mono'}`}>
-                          {isGlobal ? t('sidebar.globalProjectHint') : project.worktree ? getParentPath(project.worktree) : ''}
+                        <div
+                          className={`text-[length:var(--fs-xxs)] text-text-400 truncate opacity-70 ${isGlobal ? '' : 'font-mono'}`}
+                        >
+                          {isGlobal
+                            ? t('sidebar.globalProjectHint')
+                            : project.worktree
+                              ? getParentPath(project.worktree)
+                              : ''}
                         </div>
                       </div>
                     </button>
@@ -1193,7 +1200,7 @@ export function SidePanel({
           {/* Recents Tab */}
           {sidebarTab === 'recents' && (
             <div ref={recentsSelectionRootRef} className="flex-1 overflow-hidden">
-              {sidebarFolderRecents && !search ? (
+              {canShowFolderRecents ? (
                 <FolderRecentList
                   projects={folderProjects}
                   {...commonFolderRecentListProps}
@@ -1281,8 +1288,8 @@ export function SidePanel({
                           {t('common:clear')}
                         </button>
                       </div>
-                  </div>
-                )}
+                    </div>
+                  )}
 
                   {/* Notification history */}
                   {notifications.map((entry: NotificationEntry) => {

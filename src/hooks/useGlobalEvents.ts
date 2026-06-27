@@ -343,6 +343,22 @@ export function useGlobalEvents(directories?: string[]) {
       void serverStore.checkHealth(activeServerId).catch(() => {})
     }
 
+    const markPermissionReplied = (sessionID: string, requestID: string) => {
+      removePendingByRequestId(pendingPermissions, sessionID, requestID)
+      latePendingRequests.delete(requestID)
+      activeSessionStore.resolvePendingRequest(requestID)
+
+      // Broadcast to ALL consumers regardless of session match.
+      // Each consumer clears its local state by requestID (which is globally unique),
+      // so a no-op for consumers that don't have this request.
+      // This fixes the case where global auto-approve's replyPermission succeeds
+      // but belongsToCurrentSession returns false, leaving stale entries in
+      // pendingPermissionRequests that can never be cleared.
+      for (const { callbacks } of sessionConsumers.values()) {
+        callbacks.onPermissionReplied?.({ sessionID, requestID })
+      }
+    }
+
     refreshRef.current = fetchAndInitialize
 
     const approveGlobalPendingPermissions = () => {
@@ -361,6 +377,7 @@ export function useGlobalEvents(directories?: string[]) {
               const dir = directory ?? activeSessionStore.getSessionMeta(request.sessionID)?.directory
               try {
                 await replyPermission(request.id, 'once', undefined, dir, request.sessionID)
+                if (!disposed) markPermissionReplied(request.sessionID, request.id)
               } catch {
                 autoApproveStore.releaseAutoReply(request.id)
               }
@@ -493,9 +510,13 @@ export function useGlobalEvents(directories?: string[]) {
         if (autoApproveStore.fullAutoMode === 'global') {
           const dir = activeSessionStore.getSessionMeta(request.sessionID)?.directory
           if (autoApproveStore.claimAutoReply(request.id)) {
-            replyPermission(request.id, 'once', undefined, dir, request.sessionID).catch(() => {
-              autoApproveStore.releaseAutoReply(request.id)
-            })
+            replyPermission(request.id, 'once', undefined, dir, request.sessionID)
+              .then(() => {
+                if (!disposed) markPermissionReplied(request.sessionID, request.id)
+              })
+              .catch(() => {
+                autoApproveStore.releaseAutoReply(request.id)
+              })
           }
           return
         }
@@ -533,13 +554,7 @@ export function useGlobalEvents(directories?: string[]) {
       },
 
       onPermissionReplied: data => {
-        removePendingByRequestId(pendingPermissions, data.sessionID, data.requestID)
-        latePendingRequests.delete(data.requestID)
-        activeSessionStore.resolvePendingRequest(data.requestID)
-
-        if (belongsToCurrentSession(data.sessionID)) {
-          dispatchToConsumers(data.sessionID, cb => cb.onPermissionReplied?.(data))
-        }
+        markPermissionReplied(data.sessionID, data.requestID)
       },
 
       // ============================================

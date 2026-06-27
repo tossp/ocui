@@ -34,7 +34,6 @@ import { buildVisibleMessageEntries, getVisibleMessageForkTargetId } from './cha
 import { AT_BOTTOM_THRESHOLD_PX } from '../../constants'
 import { useChatViewport } from './chatViewport'
 import {
-  PREMEASURE_PAGE_RADIUS,
   buildContentKeyedChatPages,
   buildExpandedPageSelection,
   buildPageOffsets,
@@ -42,10 +41,8 @@ import {
   computeAnchorRestoreScrollDelta,
   buildTurnDurationMap,
   computeExpandedPageRange,
-  computePremeasureMessageBudget,
-  findPagesToPremeasure,
+  expandSelectionWithPageKeys,
   seedMeasuredPageHeightsFromPreviousPages,
-  type PagePremeasureDirection,
   type ChatPage,
   type StableChatPage,
 } from './chatPageModel'
@@ -54,7 +51,6 @@ const LOAD_MORE_ROOT_MARGIN = '240px 0px 0px 0px'
 const LOAD_MORE_WHEEL_COOLDOWN_MS = 90
 const LOAD_MORE_DEFER_MS = 100
 const PENDING_SCROLL_TARGET_KEEPALIVE_MS = 900
-const RESIZE_PREMEASURE_PAUSE_MS = 420
 
 type LoadMoreAnchorSnapshot = {
   messageId: string
@@ -67,8 +63,14 @@ const NOOP = () => {}
 
 function pageHasStreamingMessage(page: ChatPage): boolean {
   return page.rows.some(row =>
-    row.messages.some(message => message.isStreaming || (message.info.role === 'assistant' && message.info.time.completed == null)),
+    row.messages.some(
+      message => message.isStreaming || (message.info.role === 'assistant' && message.info.time.completed == null),
+    ),
   )
+}
+
+function pageHasUserMessage(page: ChatPage): boolean {
+  return page.rows.some(row => row.messages.some(message => message.info.role === 'user'))
 }
 
 function captureLoadMoreAnchor(root: HTMLElement, pageCountBefore = 0): LoadMoreAnchorSnapshot | null {
@@ -164,14 +166,10 @@ export const ChatArea = memo(
       const isLoadingRef = useRef(false)
       const [isLoadingMore, setIsLoadingMore] = useState(false)
       const [scrollOffsetFromBottom, setScrollOffsetFromBottom] = useState(0)
-      const [premeasureDirection, setPremeasureDirection] = useState<PagePremeasureDirection>('idle')
       const [viewportHeight, setViewportHeight] = useState(0)
       const [measuredPageHeights, setMeasuredPageHeights] = useState<Record<string, number>>({})
-      const [staleMeasuredPageKeys, setStaleMeasuredPageKeys] = useState<ReadonlySet<string>>(() => new Set())
-      const [forcedPremeasurePageKeys, setForcedPremeasurePageKeys] = useState<ReadonlySet<string>>(() => new Set())
       const [pendingScrollMessageId, setPendingScrollMessageId] = useState<string | null>(null)
       const [pendingLoadMoreAnchorMessageId, setPendingLoadMoreAnchorMessageId] = useState<string | null>(null)
-      const [isResizePremeasurePaused, setIsResizePremeasurePaused] = useState(false)
       const scrollSnapshotRafRef = useRef<number | null>(null)
       const pendingLoadMoreAnchorRef = useRef<LoadMoreAnchorSnapshot | null>(null)
       const pendingLayoutAnchorRef = useRef<LoadMoreAnchorSnapshot | null>(null)
@@ -179,9 +177,7 @@ export const ChatArea = memo(
       const pendingScrollClearTimerRef = useRef<number | null>(null)
       const pendingAnchorClearRafRef = useRef<number | null>(null)
       const pendingSessionResetRafRef = useRef<number | null>(null)
-      const resizePremeasurePauseTimerRef = useRef<number | null>(null)
       const lastScrollRootSizeRef = useRef({ width: 0, height: 0 })
-      const measuredPageHeightKeysRef = useRef<string[]>([])
       const previousActivePagesRef = useRef<{ sessionId?: string | null; pages: StableChatPage[] }>({ pages: [] })
       const lastStreamingPageKeysRef = useRef<ReadonlySet<string>>(new Set())
       const settlingScrollMessageIdRef = useRef<string | null>(null)
@@ -239,14 +235,15 @@ export const ChatArea = memo(
             measuredPageHeights: current,
           })
           if (seeded === current) return current
-          measuredPageHeightKeysRef.current = Object.keys(seeded)
           return seeded
         })
       }, [activePages, sessionId])
 
       const pendingTargetPageIndex = useMemo(
         () =>
-          pendingScrollMessageId == null ? -1 : activePages.findIndex(page => page.messageIds.includes(pendingScrollMessageId)),
+          pendingScrollMessageId == null
+            ? -1
+            : activePages.findIndex(page => page.messageIds.includes(pendingScrollMessageId)),
         [activePages, pendingScrollMessageId],
       )
 
@@ -283,69 +280,28 @@ export const ChatArea = memo(
       }, [activePages])
 
       useLayoutEffect(() => {
-        if (streamingPageKeys.size > 0) {
-          lastStreamingPageKeysRef.current = streamingPageKeys
-          return
-        }
-
-        const completedKeys = lastStreamingPageKeysRef.current
-        if (completedKeys.size === 0) return
-
-        lastStreamingPageKeysRef.current = new Set()
-        setForcedPremeasurePageKeys(previous => {
-          const next = new Set(previous)
-          for (const key of completedKeys) next.add(key)
-          return next
-        })
+        lastStreamingPageKeysRef.current = streamingPageKeys
       }, [streamingPageKeys])
+
+      const renderPageSelection = useMemo(
+        () =>
+          expandSelectionWithPageKeys({
+            pages: activePages,
+            expandedPageSelection,
+            pageKeys: streamingPageKeys,
+          }),
+        [activePages, expandedPageSelection, streamingPageKeys],
+      )
 
       const renderSegments = useMemo(
         () =>
           buildPageRenderSegments({
             pages: activePages,
-            expandedPageSelection,
+            expandedPageSelection: renderPageSelection,
             measuredPageHeights,
           }),
-        [activePages, expandedPageSelection, measuredPageHeights],
+        [activePages, measuredPageHeights, renderPageSelection],
       )
-
-      const pagesToPremeasure = useMemo(() => {
-        if (isResizePremeasurePaused) return []
-        return findPagesToPremeasure({
-          pages: activePages,
-          expandedPageRange,
-          measuredPageHeights,
-          stalePageKeys: staleMeasuredPageKeys,
-          direction: premeasureDirection,
-          radius: PREMEASURE_PAGE_RADIUS,
-          messageBudget: computePremeasureMessageBudget(viewportHeight),
-        })
-      }, [activePages, expandedPageRange, isResizePremeasurePaused, measuredPageHeights, premeasureDirection, staleMeasuredPageKeys, viewportHeight])
-
-      const forcedPagesToPremeasure = useMemo(() => {
-        if (streamingPageKeys.size === 0 && forcedPremeasurePageKeys.size === 0) return []
-
-        const pagesToForce: StableChatPage[] = []
-        for (let index = 0; index < activePages.length; index++) {
-          const page = activePages[index]
-          if (expandedPageSelection.has(index)) continue
-          if (streamingPageKeys.has(page.key) || forcedPremeasurePageKeys.has(page.key)) pagesToForce.push(page)
-        }
-        return pagesToForce
-      }, [activePages, expandedPageSelection, forcedPremeasurePageKeys, streamingPageKeys])
-
-      const effectivePagesToPremeasure = useMemo(() => {
-        if (forcedPagesToPremeasure.length === 0) return pagesToPremeasure
-
-        const seen = new Set(pagesToPremeasure.map(page => page.key))
-        const merged = [...pagesToPremeasure]
-        for (const page of forcedPagesToPremeasure) {
-          if (seen.has(page.key)) continue
-          seen.add(page.key)
-          merged.push(page)
-        }
-        return merged
-      }, [forcedPagesToPremeasure, pagesToPremeasure])
 
       const clearPendingLoadMoreTimer = useCallback(() => {
         if (pendingLoadMoreTimerRef.current === null) return
@@ -357,12 +313,6 @@ export const ChatArea = memo(
         if (pendingScrollClearTimerRef.current === null) return
         window.clearTimeout(pendingScrollClearTimerRef.current)
         pendingScrollClearTimerRef.current = null
-      }, [])
-
-      const clearResizePremeasurePauseTimer = useCallback(() => {
-        if (resizePremeasurePauseTimerRef.current === null) return
-        window.clearTimeout(resizePremeasurePauseTimerRef.current)
-        resizePremeasurePauseTimerRef.current = null
       }, [])
 
       const clearPendingLoadMoreAnchorMessage = useCallback(() => {
@@ -378,13 +328,8 @@ export const ChatArea = memo(
         pendingSessionResetRafRef.current = requestAnimationFrame(() => {
           pendingSessionResetRafRef.current = null
           setIsLoadingMore(false)
-          measuredPageHeightKeysRef.current = []
           setMeasuredPageHeights({})
-          setStaleMeasuredPageKeys(new Set())
-          setForcedPremeasurePageKeys(new Set())
           setPendingScrollMessageId(null)
-          setPremeasureDirection('idle')
-          setIsResizePremeasurePaused(false)
         })
       }, [])
 
@@ -392,12 +337,11 @@ export const ChatArea = memo(
         return () => {
           clearPendingLoadMoreTimer()
           clearPendingScrollTimer()
-          clearResizePremeasurePauseTimer()
           if (scrollSnapshotRafRef.current !== null) cancelAnimationFrame(scrollSnapshotRafRef.current)
           if (pendingAnchorClearRafRef.current !== null) cancelAnimationFrame(pendingAnchorClearRafRef.current)
           if (pendingSessionResetRafRef.current !== null) cancelAnimationFrame(pendingSessionResetRafRef.current)
         }
-      }, [clearPendingLoadMoreTimer, clearPendingScrollTimer, clearResizePremeasurePauseTimer])
+      }, [clearPendingLoadMoreTimer, clearPendingScrollTimer])
 
       const setScrollContainerRef = useCallback((node: HTMLDivElement | null) => {
         scrollRef.current = node
@@ -415,7 +359,6 @@ export const ChatArea = memo(
           setScrollOffsetFromBottom(prev => {
             const delta = nextOffset - prev
             if (Math.abs(delta) < 1) return prev
-            setPremeasureDirection(delta > 0 ? 'older' : 'newer')
             return nextOffset
           })
         })
@@ -428,21 +371,11 @@ export const ChatArea = memo(
         const syncViewport = () => {
           const nextSize = { width: root.clientWidth, height: root.clientHeight }
           const previousSize = lastScrollRootSizeRef.current
-          const hasPreviousSize = previousSize.width > 0 || previousSize.height > 0
           const widthChanged = Math.abs(previousSize.width - nextSize.width) >= 1
           const heightChanged = Math.abs(previousSize.height - nextSize.height) >= 1
 
           if (widthChanged || heightChanged) {
             lastScrollRootSizeRef.current = nextSize
-            if (hasPreviousSize) {
-              setIsResizePremeasurePaused(true)
-              clearResizePremeasurePauseTimer()
-              resizePremeasurePauseTimerRef.current = window.setTimeout(() => {
-                resizePremeasurePauseTimerRef.current = null
-                setStaleMeasuredPageKeys(new Set(measuredPageHeightKeysRef.current))
-                setIsResizePremeasurePaused(false)
-              }, RESIZE_PREMEASURE_PAUSE_MS)
-            }
           }
 
           setViewportHeight(prev => (Math.abs(prev - nextSize.height) < 1 ? prev : nextSize.height))
@@ -452,7 +385,7 @@ export const ChatArea = memo(
         const observer = new ResizeObserver(syncViewport)
         observer.observe(root)
         return () => observer.disconnect()
-      }, [clearResizePremeasurePauseTimer, scrollRoot])
+      }, [scrollRoot])
 
       useEffect(() => {
         const root = scrollRef.current
@@ -694,7 +627,13 @@ export const ChatArea = memo(
           settlingScrollMessageIdRef.current = null
           setPendingScrollMessageId(current => (current === pendingScrollMessageId ? null : current))
         }, PENDING_SCROLL_TARGET_KEEPALIVE_MS)
-      }, [activePages, clearPendingScrollTimer, expandedPageRange.endIndex, expandedPageRange.startIndex, pendingScrollMessageId])
+      }, [
+        activePages,
+        clearPendingScrollTimer,
+        expandedPageRange.endIndex,
+        expandedPageRange.startIndex,
+        pendingScrollMessageId,
+      ])
 
       const updateMeasuredPageHeight = useCallback((pageKey: string, nextHeight: number) => {
         if (nextHeight <= 0) return
@@ -702,23 +641,10 @@ export const ChatArea = memo(
           const current = previous[pageKey] ?? null
           if (current !== null && Math.abs(current - nextHeight) < 1) return previous
           const root = scrollRef.current
-          if (root && !isAtBottomRef.current) {
+          if (root && !isAtBottomRef.current && current !== null && Math.abs(current - nextHeight) >= 1) {
             pendingLayoutAnchorRef.current = captureLoadMoreAnchor(root)
           }
           const next = { ...previous, [pageKey]: nextHeight }
-          measuredPageHeightKeysRef.current = Object.keys(next)
-          return next
-        })
-        setForcedPremeasurePageKeys(previous => {
-          if (!previous.has(pageKey)) return previous
-          const next = new Set(previous)
-          next.delete(pageKey)
-          return next
-        })
-        setStaleMeasuredPageKeys(previous => {
-          if (!previous.has(pageKey)) return previous
-          const next = new Set(previous)
-          next.delete(pageKey)
           return next
         })
       }, [])
@@ -779,27 +705,6 @@ export const ChatArea = memo(
 
       return (
         <div className="h-full overflow-hidden contain-strict relative">
-          {effectivePagesToPremeasure.length > 0 && (
-            <div
-              className="absolute left-0 right-0 top-0 pointer-events-none opacity-0"
-              style={{ visibility: 'hidden', contain: 'layout style paint' }}
-              aria-hidden="true"
-            >
-              {effectivePagesToPremeasure.map(page => (
-                <PageMeasureBlock
-                  key={page.key}
-                  page={page}
-                  messageMaxWidthClass={messageMaxWidthClass}
-                  messagePaddingClass={messagePaddingClass}
-                  turnDurationMap={localTurnDurationMap}
-                  forkTargetIdMap={localForkTargetIdMap}
-                  allowStreamingLayoutAnimation={false}
-                  onMeasuredHeightChange={updateMeasuredPageHeight}
-                />
-              ))}
-            </div>
-          )}
-
           {loadState === 'loading' && visibleMessages.length === 0 && (
             <div className="absolute inset-0 z-10 flex items-center justify-center">
               <div className="flex flex-col items-center gap-3 text-text-400 session-loading-indicator">
@@ -905,7 +810,43 @@ interface PageBlockProps {
   onMeasuredHeightChange: (pageKey: string, nextHeight: number) => void
 }
 
-function usePageHeightMeasurement(pageKey: string, onMeasuredHeightChange: (pageKey: string, nextHeight: number) => void) {
+interface PageDerivedValueProps {
+  page: ChatPage
+  turnDurationMap: Map<string, number>
+  forkTargetIdMap: Map<string, string | undefined>
+}
+
+function pageMessageDerivedValuesEqual(previous: PageDerivedValueProps, next: PageDerivedValueProps) {
+  return previous.page.messageIds.every(messageId => {
+    return (
+      previous.turnDurationMap.get(messageId) === next.turnDurationMap.get(messageId) &&
+      previous.forkTargetIdMap.get(messageId) === next.forkTargetIdMap.get(messageId)
+    )
+  })
+}
+
+export function arePageBlockPropsEqual(previous: PageBlockProps, next: PageBlockProps) {
+  if (previous.page !== next.page) return false
+  if (previous.messageMaxWidthClass !== next.messageMaxWidthClass) return false
+  if (previous.messagePaddingClass !== next.messagePaddingClass) return false
+  if (previous.registerMessage !== next.registerMessage) return false
+  if (previous.onUndo !== next.onUndo && pageHasUserMessage(next.page)) return false
+  if (previous.onFork !== next.onFork) return false
+  if (previous.canUndo !== next.canUndo && pageHasUserMessage(next.page)) return false
+  if (
+    previous.allowStreamingLayoutAnimation !== next.allowStreamingLayoutAnimation &&
+    (pageHasStreamingMessage(previous.page) || pageHasStreamingMessage(next.page))
+  ) {
+    return false
+  }
+  if (previous.onMeasuredHeightChange !== next.onMeasuredHeightChange) return false
+  return pageMessageDerivedValuesEqual(previous, next)
+}
+
+function usePageHeightMeasurement(
+  pageKey: string,
+  onMeasuredHeightChange: (pageKey: string, nextHeight: number) => void,
+) {
   const wrapperRef = useRef<HTMLDivElement | null>(null)
 
   const measure = useCallback(() => {
@@ -957,15 +898,19 @@ const PageBlock = memo(function PageBlock({
             <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
               <div className={`min-w-0 group ${!isUser ? 'w-full' : ''} flex flex-col gap-2`}>
                 {row.messages.map(message => (
-                  <RenderedMessageItem key={message.info.id} messageId={message.info.id} registerMessage={registerMessage}>
+                  <RenderedMessageItem
+                    key={message.info.id}
+                    messageId={message.info.id}
+                    registerMessage={registerMessage}
+                  >
                     <MessageRenderer
                       message={message}
-                      allowStreamingLayoutAnimation={allowStreamingLayoutAnimation}
+                      allowStreamingLayoutAnimation={message.isStreaming ? allowStreamingLayoutAnimation : false}
                       turnDuration={turnDurationMap.get(message.info.id)}
-                      onUndo={onUndo}
+                      onUndo={message.info.role === 'user' ? onUndo : undefined}
                       onFork={onFork}
                       forkMessageId={forkTargetIdMap.get(message.info.id)}
-                      canUndo={canUndo}
+                      canUndo={message.info.role === 'user' ? canUndo : undefined}
                       onEnsureParts={NOOP}
                     />
                   </RenderedMessageItem>
@@ -977,57 +922,7 @@ const PageBlock = memo(function PageBlock({
       })}
     </div>
   )
-})
-
-interface PageMeasureBlockProps {
-  page: ChatPage
-  messageMaxWidthClass: string
-  messagePaddingClass: string
-  turnDurationMap: Map<string, number>
-  forkTargetIdMap: Map<string, string | undefined>
-  allowStreamingLayoutAnimation: boolean
-  onMeasuredHeightChange: (pageKey: string, nextHeight: number) => void
-}
-
-const PageMeasureBlock = memo(function PageMeasureBlock({
-  page,
-  messageMaxWidthClass,
-  messagePaddingClass,
-  turnDurationMap,
-  forkTargetIdMap,
-  allowStreamingLayoutAnimation,
-  onMeasuredHeightChange,
-}: PageMeasureBlockProps) {
-  const wrapperRef = usePageHeightMeasurement(page.key, onMeasuredHeightChange)
-
-  return (
-    <div ref={wrapperRef} className="shrink-0" data-page-measure-key={page.key}>
-      {page.rows.map(row => {
-        const isUser = row.messages[0].info.role === 'user'
-        return (
-          <div key={row.key} className={`w-full ${messageMaxWidthClass} mx-auto ${messagePaddingClass} py-3`}>
-            <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-              <div className={`min-w-0 group ${!isUser ? 'w-full' : ''} flex flex-col gap-2`}>
-                {row.messages.map(message => (
-                  <div key={message.info.id}>
-                    <MessageRenderer
-                      message={message}
-                      allowStreamingLayoutAnimation={allowStreamingLayoutAnimation}
-                      turnDuration={turnDurationMap.get(message.info.id)}
-                      onFork={undefined}
-                      forkMessageId={forkTargetIdMap.get(message.info.id)}
-                      onEnsureParts={NOOP}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )
-      })}
-    </div>
-  )
-})
+}, arePageBlockPropsEqual)
 
 const CollapsedPagesBlock = memo(function CollapsedPagesBlock({ height }: { height: number }) {
   return <div className="shrink-0" style={{ height: `${height}px`, overflowAnchor: 'none' }} aria-hidden="true" />

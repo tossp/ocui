@@ -485,6 +485,10 @@ describe('useGlobalEvents', () => {
   })
 
   it('approves already waiting permissions when global full auto pending sweep is enabled', async () => {
+    const consumerRepliedMock = vi.fn()
+    const unregister = registerSessionConsumer('pane-global', 'background-session', {
+      onPermissionReplied: consumerRepliedMock,
+    })
     autoApproveStoreMock.fullAutoMode = 'global'
     autoApproveStoreMock.approvePendingOnFullAuto = true
     getPendingPermissionsMock.mockResolvedValue([
@@ -509,6 +513,47 @@ describe('useGlobalEvents', () => {
       )
     })
     expect(autoApproveStoreMock.claimAutoReply).toHaveBeenCalledWith('perm-global')
+    await waitFor(() => {
+      expect(consumerRepliedMock).toHaveBeenCalledWith({ sessionID: 'background-session', requestID: 'perm-global' })
+    })
+    expect(activeSessionStoreMock.resolvePendingRequest).toHaveBeenCalledWith('perm-global')
+
+    unregister()
+  })
+
+  it('broadcasts permission replied events to consumers even when the current session does not match', async () => {
+    const consumerRepliedMock = vi.fn()
+    const unregister = registerSessionConsumer('pane-mismatch', 'other-session', {
+      onPermissionReplied: consumerRepliedMock,
+    })
+    autoApproveStoreMock.fullAutoMode = 'global'
+    autoApproveStoreMock.approvePendingOnFullAuto = true
+    getPendingPermissionsMock.mockResolvedValue([
+      {
+        id: 'perm-mismatch',
+        sessionID: 'background-session',
+        permission: 'bash',
+        patterns: ['npm test'],
+      },
+    ])
+    activeSessionStoreMock.getSessionMeta.mockReturnValue({ title: 'Background', directory: '/workspace' })
+
+    renderHook(() => useGlobalEvents(['/workspace']))
+
+    await waitFor(() => {
+      expect(replyPermissionMock).toHaveBeenCalledWith(
+        'perm-mismatch',
+        'once',
+        undefined,
+        '/workspace',
+        'background-session',
+      )
+    })
+    await waitFor(() => {
+      expect(consumerRepliedMock).toHaveBeenCalledWith({ sessionID: 'background-session', requestID: 'perm-mismatch' })
+    })
+
+    unregister()
   })
 
   it('does not approve already waiting permissions when the pending sweep is disabled', async () => {

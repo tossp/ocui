@@ -69,9 +69,11 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
   const searchRef = useRef(search)
   // 防止 onReconnected 密集触发时重复请求
   const isFetchingRef = useRef(false)
-  const fetchSessionsRef = useRef<(params?: SessionListParams & { append?: boolean }) => Promise<void>>(() =>
-    Promise.resolve(),
-  )
+  const queuedReconnectRefreshRef = useRef(false)
+  const retryTimerRef = useRef<number | null>(null)
+  const fetchSessionsRef = useRef<
+    (params?: SessionListParams & { append?: boolean; retryAttempt?: number }) => Promise<void>
+  >(() => Promise.resolve())
 
   useEffect(() => {
     searchRef.current = search
@@ -86,10 +88,10 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
   // append 仅用于控制 loading 状态：true 时用 isLoadingMore，false 时用 isLoading
   // 数据始终全量替换（递增 limit 策略）
   const fetchSessions = useCallback(
-    async (params: SessionListParams & { append?: boolean } = {}) => {
+    async (params: SessionListParams & { append?: boolean; retryAttempt?: number } = {}) => {
       if (!enabled) return
 
-      const { append = false, ...queryParams } = params
+      const { append = false, retryAttempt = 0, ...queryParams } = params
       const requestId = ++requestIdRef.current
       isFetchingRef.current = true
 
@@ -121,14 +123,27 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
         if (requestId !== requestIdRef.current) return
         setError(e instanceof Error ? e : new Error('Failed to fetch sessions'))
         if (!append) {
-          setSessions([])
-          setHasMore(false)
+          if (retryAttempt < 3) {
+            if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
+            retryTimerRef.current = window.setTimeout(() => {
+              if (requestId !== requestIdRef.current) return
+              void fetchSessions({ ...queryParams, retryAttempt: retryAttempt + 1 })
+            }, [500, 1500, 3000][retryAttempt])
+          } else {
+            setSessions([])
+            setHasMore(false)
+          }
         }
       } finally {
         if (requestId === requestIdRef.current) {
           isFetchingRef.current = false
           setIsLoading(false)
           setIsLoadingMore(false)
+          if (queuedReconnectRefreshRef.current) {
+            queuedReconnectRefreshRef.current = false
+            setSessions([])
+            void fetchSessionsRef.current({ search: searchRef.current || undefined })
+          }
         }
       }
     },
@@ -163,6 +178,9 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
     return () => {
       if (searchTimerRef.current) {
         clearTimeout(searchTimerRef.current)
+      }
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current)
       }
     }
   }, [search, fetchSessions, enabled, pageSize])
@@ -216,7 +234,11 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
         setSessions(prev => prev.filter(item => item.id !== sessionId))
       },
       onReconnected: reason => {
-        if (reason === 'server-switch' || isFetchingRef.current) return
+        if (reason === 'server-switch') return
+        if (isFetchingRef.current) {
+          queuedReconnectRefreshRef.current = true
+          return
+        }
         setSessions([])
         void fetchSessionsRef.current({ search: searchRef.current || undefined })
       },

@@ -4,29 +4,14 @@ export function useDelayedRender(show: boolean, delayMs: number = 320): boolean 
   const [shouldRender, setShouldRender] = useState(show)
 
   useEffect(() => {
-    let frameId: number | null = null
-
     if (show) {
-      frameId = requestAnimationFrame(() => {
-        setShouldRender(true)
-      })
-
-      return () => {
-        if (frameId !== null) {
-          cancelAnimationFrame(frameId)
-        }
-      }
+      setShouldRender(true)
+      return
     }
 
     const timer = setTimeout(() => setShouldRender(false), delayMs)
-
-    return () => {
-      clearTimeout(timer)
-      if (frameId !== null) {
-        cancelAnimationFrame(frameId)
-      }
-    }
+    return () => clearTimeout(timer)
   }, [show, delayMs])
 
-  return shouldRender
+  return show || shouldRender
 }

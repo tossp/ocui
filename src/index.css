@@ -338,9 +338,9 @@ body,
     'Segoe UI Emoji';
   --font-sans: var(--font-ui-sans);
   --font-ui-serif: 'Georgia', 'Noto Serif', serif;
-  --font-mono: 'SFMono-Regular', 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono',
-    'Noto Sans Mono', 'Ubuntu Mono', 'Noto Sans Mono CJK SC', 'WenQuanYi Micro Hei Mono',
-    'Noto Sans CJK SC', ui-monospace, monospace;
+  --font-mono: 'Fira Code', 'Noto Sans Mono CJK SC', 'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular',
+    'SF Mono', Menlo, Consolas, 'Liberation Mono', 'Noto Sans Mono', 'Ubuntu Mono',
+    'WenQuanYi Micro Hei Mono', 'DejaVu Sans Mono', 'Noto Sans CJK SC', ui-monospace, monospace;
 }
 
 :root[data-mode='dark'] {
@@ -365,6 +365,15 @@ body,
  * 实际颜色由 themeStore.ts 通过注入 <style> 标签动态控制。
  */
 :root {
+  --font-ui-sans:
+    system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', 'Liberation Sans', sans-serif, 'Apple Color Emoji',
+    'Segoe UI Emoji';
+  --font-sans: var(--font-ui-sans);
+  --font-ui-serif: 'Georgia', 'Noto Serif', serif;
+  --font-mono: 'Fira Code', 'Noto Sans Mono CJK SC', 'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular',
+    'SF Mono', Menlo, Consolas, 'Liberation Mono', 'Noto Sans Mono', 'Ubuntu Mono',
+    'WenQuanYi Micro Hei Mono', 'DejaVu Sans Mono', 'Noto Sans CJK SC', ui-monospace, monospace;
+
   /* Background - 灰调晨雾 */
   --bg-000: 150 10% 99%;
   --bg-100: 150 12% 96%;
@@ -472,6 +481,24 @@ body {
 .markdown-content .katex svg {
   fill: currentColor;
   stroke: currentColor;
+}
+
+/* Streaming Markdown is rendered in stable/live chunks. Without this, Tailwind
+ * first:/last: margin utilities run per chunk root and make adjacent blocks too tight. */
+.markdown-content .markdown-stream-block-not-first > :first-child > :first-child {
+  margin-top: 1rem;
+}
+
+.markdown-content .markdown-stream-block-not-last > :last-child > :last-child {
+  margin-bottom: 1rem;
+}
+
+.markdown-content.text-\[length\:var\(--fs-sm\)\] .markdown-stream-block-not-first > :first-child > :first-child {
+  margin-top: 0.5rem;
+}
+
+.markdown-content.text-\[length\:var\(--fs-sm\)\] .markdown-stream-block-not-last > :last-child > :last-child {
+  margin-bottom: 0.5rem;
 }
 
 /* Theme View Transition (Circular Reveal) */

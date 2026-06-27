@@ -1,5 +1,25 @@
 # Changelog
 
+## [v0.6.21] - 2026-06-27
+
+- fix: remeasure CodeMirror layout after collapse-to-expand animation (d6e5d5c)
+- fix: stabilize recent sessions on startup (a4e88f7)
+- fix: avoid expanding stale chat pages on resize (69ee821)
+- fix: smooth streaming markdown updates (664abc4)
+- fix: optimize streaming markdown rendering (f88b68e)
+- fix: reduce chat virtualization reflow work (4e520cf)
+- fix: ensure auto-approved permission state is always cleared (f657827)
+- fix: clear replied permission requests locally (45aced2)
+- fix: optimize streaming markdown rendering (665ebf4)
+- fix: stabilize chat stream render props (c5a6dc6)
+- fix: reduce streaming chat re-renders (ec71fb1)
+- fix: prefer verified terminal mono fonts (78ecf8d)
+- fix: stabilize mobile keyboard focus (570f74a)
+- fix: avoid blank CodeMirror content when expanding collapsed inputs (da64f85)
+- fix: respect user scroll position in sub-session auto-scroll (a795405)
+- fix: expand accordion content immediately, not one frame late (a08014f)
+- fix: break infinite re-render cycle when moving terminal between panels (73d998d)
+
 ## [v0.6.20] - 2026-06-22
 
 - fix: bottom panel tabs should not have top safe-area padding (34a6d98)

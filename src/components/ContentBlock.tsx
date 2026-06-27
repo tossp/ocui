@@ -17,6 +17,7 @@ import { CodePreview } from './CodePreview'
 import { detectLanguage } from '../utils/languageUtils'
 import { ViewModeSwitch } from './FullscreenViewer'
 import { extractContentFromUnifiedDiff } from '../utils/diffUtils'
+import { useDelayedRender } from '../hooks/useDelayedRender'
 import { useResponsiveMaxHeight } from '../hooks/useResponsiveMaxHeight'
 import { useFullscreenLayer } from '../contexts'
 
@@ -243,6 +244,7 @@ export const ContentBlock = memo(function ContentBlock({
 
   // 是否展开内容区
   const showBody = (hasContent && !collapsed) || (isLoading && !hasContent)
+  const shouldRenderContent = useDelayedRender(showBody)
 
   // 容器样式
   const containerClass = isError
@@ -279,9 +281,7 @@ export const ContentBlock = memo(function ContentBlock({
             </span>
           )}
           {fileName && (
-            <span
-              className={`text-text-500 truncate font-mono leading-4 min-w-0 flex-1 ${hideLabel ? '' : 'ml-0.5'}`}
-            >
+            <span className={`text-text-500 truncate font-mono leading-4 min-w-0 flex-1 ${hideLabel ? '' : 'ml-0.5'}`}>
               {fileName}
             </span>
           )}
@@ -343,7 +343,7 @@ export const ContentBlock = memo(function ContentBlock({
       >
         <div className="overflow-hidden">
           {/* Content */}
-          {hasContent && (
+          {shouldRenderContent && hasContent && (
             <div ref={contentRef} className="relative group/content">
               {content && <CopyButton text={content} position="absolute" groupName="content" />}
 
@@ -357,7 +357,7 @@ export const ContentBlock = memo(function ContentBlock({
                   data={diffViewerData}
                 />
               ) : content?.trim() ? (
-                <CodePreview code={content} language={lang} maxHeight={maxHeight} />
+                <CodePreview code={content} language={lang} maxHeight={maxHeight} isVisible={showBody} />
               ) : null}
             </div>
           )}

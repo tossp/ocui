@@ -153,6 +153,8 @@ export function useChatSession({
   const perSessionState = perSessionStateRaw ?? EMPTY_SESSION_STATE
 
   const messages = perSessionState.messages
+  const messagesRef = useRef(messages)
+  messagesRef.current = messages
   const isStreaming = perSessionState.isStreaming
   const sessionDirectory = perSessionState.directory
   const canUndo = perSessionState.canUndo
@@ -218,6 +220,10 @@ export function useChatSession({
     isReplying,
   } = usePermissionHandler()
 
+  // Prevent infinite retry loops when auto-approve API calls fail
+  // but the server may have already processed the request (lost response).
+  const autoRetriedIdsRef = useRef(new Set<string>())
+
   // Message animations
   const { registerMessage, registerInputBox, animateUndo, animateRedo } = useMessageAnimation()
 
@@ -238,16 +244,37 @@ export function useChatSession({
       if (!autoApproveStore.claimAutoReply(request.id)) return
 
       void handlePermissionReply(request.id, 'once', effectiveDirectory, request.sessionID).then(success => {
-        if (!success) autoApproveStore.releaseAutoReply(request.id)
+        if (!success) {
+          autoApproveStore.releaseAutoReply(request.id)
+          // Retry once on failure. handlePermissionReply already retries 3× via withRetry,
+          // but the server may have processed the request and the response was lost.
+          // Force effect re-run by creating a new array reference.
+          if (!autoRetriedIdsRef.current.has(request.id)) {
+            autoRetriedIdsRef.current.add(request.id)
+            setPendingPermissionRequests(prev => [...prev])
+          }
+        }
       })
     },
-    [effectiveDirectory, handlePermissionReply],
+    [effectiveDirectory, handlePermissionReply, setPendingPermissionRequests],
   )
+
+  // Clear retry tracking on each auto-approve batch
+  useEffect(() => {
+    autoRetriedIdsRef.current.clear()
+  }, [approvePendingOnFullAuto, fullAutoMode])
 
   useEffect(() => {
     if (!routeSessionId || !approvePendingOnFullAuto || fullAutoMode !== 'session') return
     void refreshPendingRequests(sessionFamily, effectiveDirectory)
-  }, [approvePendingOnFullAuto, effectiveDirectory, fullAutoMode, refreshPendingRequests, routeSessionId, sessionFamily])
+  }, [
+    approvePendingOnFullAuto,
+    effectiveDirectory,
+    fullAutoMode,
+    refreshPendingRequests,
+    routeSessionId,
+    sessionFamily,
+  ])
 
   useEffect(() => {
     if (!approvePendingOnFullAuto || fullAutoMode === 'off' || pendingPermissionRequests.length === 0) return
@@ -378,7 +405,9 @@ export function useChatSession({
         // 应用内 toast 已在 useGlobalEvents 中统一处理
       },
       onPermissionReplied: (data: { sessionID: string; requestID: string }) => {
-        setPendingPermissionRequests(prev => prev.filter(r => r.id !== data.requestID))
+        setPendingPermissionRequests(prev =>
+          prev.some(r => r.id === data.requestID) ? prev.filter(r => r.id !== data.requestID) : prev,
+        )
       },
       onQuestionAsked: (request: import('../api').ApiQuestionRequest) => {
         setPendingQuestionRequests(prev => {
@@ -858,12 +887,13 @@ export function useChatSession({
           // 后端 fork 语义：messageID 指定的消息**不包含**在新 session 里。
           // 要保留这条 assistant 回复，需要传它之后的下一条用户消息 ID；
           // 如果它已经是最末尾，不传 messageID，fork 整个 session。
-          const idx = messages.findIndex(m => m.info.id === targetMessageId)
+          const currentMessages = messagesRef.current
+          const idx = currentMessages.findIndex(m => m.info.id === targetMessageId)
           let forkAtMessageId: string | undefined
           if (idx >= 0) {
-            for (let i = idx + 1; i < messages.length; i++) {
-              if (messages[i].info.role === 'user') {
-                forkAtMessageId = messages[i].info.id
+            for (let i = idx + 1; i < currentMessages.length; i++) {
+              if (currentMessages[i].info.role === 'user') {
+                forkAtMessageId = currentMessages[i].info.id
                 break
               }
             }
@@ -899,7 +929,7 @@ export function useChatSession({
         handleError('fork session', error)
       }
     },
-    [effectiveDirectory, messages, navigateToSession],
+    [effectiveDirectory, navigateToSession],
   )
 
   // Abort handler
@@ -987,15 +1017,16 @@ export function useChatSession({
   // Undo with animation
   const handleUndoWithAnimation = useCallback(
     async (userMessageId: string) => {
-      const messageIndex = messages.findIndex(m => m.info.id === userMessageId)
+      const currentMessages = messagesRef.current
+      const messageIndex = currentMessages.findIndex(m => m.info.id === userMessageId)
       if (messageIndex === -1) return
 
-      const messageIdsToRemove = messages.slice(messageIndex).map(m => m.info.id)
+      const messageIdsToRemove = currentMessages.slice(messageIndex).map(m => m.info.id)
 
       await animateUndo(messageIdsToRemove)
       await handleUndo(userMessageId)
     },
-    [messages, animateUndo, handleUndo],
+    [animateUndo, handleUndo],
   )
 
   // Redo with animation

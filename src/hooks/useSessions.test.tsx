@@ -131,13 +131,15 @@ describe('useSessions', () => {
     expect(result.current.sessions.map(session => session.id)).toEqual(['session-1'])
   })
 
-  it('does not refetch on reconnect while a newer request is still in flight', async () => {
+  it('queues a reconnect refresh while a newer request is still in flight', async () => {
     const firstRequest = createDeferred<ReturnType<typeof makeSession>[]>()
     const secondRequest = createDeferred<ReturnType<typeof makeSession>[]>()
+    const thirdRequest = createDeferred<ReturnType<typeof makeSession>[]>()
 
     getSessionsMock
       .mockImplementationOnce(() => firstRequest.promise)
       .mockImplementationOnce(() => secondRequest.promise)
+      .mockImplementationOnce(() => thirdRequest.promise)
 
     const { result } = renderHook(() => useSessions({ directory: '/workspace/demo' }))
 
@@ -173,13 +175,50 @@ describe('useSessions', () => {
       await Promise.resolve()
       await Promise.resolve()
     })
+
+    expect(getSessionsMock).toHaveBeenCalledTimes(3)
+
+    await act(async () => {
+      thirdRequest.resolve([makeSession('session-3')])
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(result.current.sessions.map(session => session.id)).toEqual(['session-3'])
+  })
+
+  it('retries the initial fetch after a startup failure', async () => {
+    getSessionsMock
+      .mockRejectedValueOnce(new Error('service not ready'))
+      .mockResolvedValueOnce([makeSession('session-1')])
+
+    const { result } = renderHook(() => useSessions({ directory: '/workspace/demo' }))
+
+    await act(async () => {
+      vi.runOnlyPendingTimers()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(getSessionsMock).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      vi.advanceTimersByTime(500)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(getSessionsMock).toHaveBeenCalledTimes(2)
+    expect(result.current.sessions.map(session => session.id)).toEqual(['session-1'])
   })
 
   it('refetches on server endpoint changes even while the old request is in flight', async () => {
     const staleRequest = createDeferred<ReturnType<typeof makeSession>[]>()
     const freshRequest = createDeferred<ReturnType<typeof makeSession>[]>()
 
-    getSessionsMock.mockImplementationOnce(() => staleRequest.promise).mockImplementationOnce(() => freshRequest.promise)
+    getSessionsMock
+      .mockImplementationOnce(() => staleRequest.promise)
+      .mockImplementationOnce(() => freshRequest.promise)
 
     const { result } = renderHook(() => useSessions({ directory: '/workspace/demo' }))
 

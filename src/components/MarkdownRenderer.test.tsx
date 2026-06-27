@@ -22,18 +22,21 @@ vi.mock('./CodeBlock', () => ({
     variant,
     deferHighlight,
     forceHighlight,
+    streamingHighlight,
   }: {
     code: string
     language?: string
     variant?: string
     deferHighlight?: boolean
     forceHighlight?: boolean
+    streamingHighlight?: boolean
   }) => (
     <div
       data-testid="code-block"
       data-variant={variant ?? 'default'}
       data-defer-highlight={String(!!deferHighlight)}
       data-force-highlight={String(!!forceHighlight)}
+      data-streaming-highlight={String(!!streamingHighlight)}
     >
       {`${language ?? 'text'}:${code}`}
     </div>
@@ -133,18 +136,19 @@ describe('MarkdownRenderer', () => {
     expect(block.dataset.variant).toBe('default')
   })
 
-  it('starts code block highlighting while content is streaming', () => {
+  it('uses incremental code block highlighting while content is streaming', () => {
     render(<MarkdownRenderer content={'```ts\nconst x = 1\n```'} isStreaming />)
 
     expect(screen.getByTestId('code-block')).toHaveAttribute('data-defer-highlight', 'false')
     expect(screen.getByTestId('code-block')).toHaveAttribute('data-force-highlight', 'true')
+    expect(screen.getByTestId('code-block')).toHaveAttribute('data-streaming-highlight', 'true')
   })
 
   it('keeps the declared language for an incomplete streaming code fence', () => {
     render(<MarkdownRenderer content={'```ts\nconst x = 1'} isStreaming />)
 
     expect(screen.getByTestId('code-block')).toHaveTextContent('ts:const x = 1')
-    expect(screen.getByTestId('code-block')).toHaveAttribute('data-force-highlight', 'true')
+    expect(screen.getByTestId('code-block')).toHaveAttribute('data-streaming-highlight', 'true')
   })
 
   it('reserves enough marker space for large ordered list numbers', () => {
@@ -186,6 +190,18 @@ describe('MarkdownRenderer', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Reset diagram view' }))
     expect(diagram).toHaveStyle({ transform: 'translate(0px, 0px) scale(1)' })
+  })
+
+  it('marks streaming markdown chunk boundaries for stable spacing', () => {
+    const content = 'first\n\n```ts\nconst a = 1\n```\n\n```ts\nconst b = 2'
+    const { container } = render(<MarkdownRenderer content={content} isStreaming />)
+
+    const chunks = container.querySelectorAll('.markdown-stream-block')
+    expect(chunks.length).toBeGreaterThan(1)
+    expect(chunks[0]).toHaveClass('markdown-stream-block-first')
+    expect(chunks[0]).toHaveClass('markdown-stream-block-not-last')
+    expect(chunks[chunks.length - 1]).toHaveClass('markdown-stream-block-not-first')
+    expect(chunks[chunks.length - 1]).toHaveClass('markdown-stream-block-last')
   })
 
   it('keeps desktop controls for hover-capable touch input', async () => {

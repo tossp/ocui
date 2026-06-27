@@ -10,7 +10,13 @@ import {
   useRef,
   useState,
 } from 'react'
-import { Streamdown, defaultRehypePlugins, type Components, type CustomRendererProps, type PluginConfig } from 'streamdown'
+import {
+  Streamdown,
+  defaultRehypePlugins,
+  type Components,
+  type CustomRendererProps,
+  type PluginConfig,
+} from 'streamdown'
 import { createMathPlugin } from '@streamdown/math'
 import { CodeBlock } from './CodeBlock'
 import { HandIcon, RetryIcon, ZoomInIcon, ZoomOutIcon } from './Icons'
@@ -19,6 +25,7 @@ import { useTheme } from '../hooks/useTheme'
 import { useInputCapabilities } from '../hooks/useInputCapabilities'
 import { detectLanguage } from '../utils/languageUtils'
 import { isTauri } from '../utils/tauri'
+import { splitMarkdownStream } from './markdownStream'
 
 interface MarkdownRendererProps {
   content: string
@@ -650,6 +657,113 @@ const markdownRehypePlugins = [
   defaultRehypePlugins.harden,
 ]
 
+const STREAM_MIN_COMMIT_INTERVAL_MS = 32
+const STREAM_MAX_COMMIT_INTERVAL_MS = 96
+const STREAM_TAIL_SCALE_CHARS = 256
+const STREAM_FLUSH_CHARS_PER_SECOND = 260
+
+function findMarkdownTailLength(content: string) {
+  const boundary = content.lastIndexOf('\n\n')
+  return boundary === -1 ? content.length : content.length - boundary - 2
+}
+
+function useSmoothMarkdownStream(content: string, enabled: boolean) {
+  const [displayedContent, setDisplayedContent] = useState(content)
+  const displayedRef = useRef(content)
+  const targetRef = useRef(content)
+  const rafRef = useRef<number | null>(null)
+  const lastCommitRef = useRef(0)
+
+  const stop = useCallback(() => {
+    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
+    rafRef.current = null
+  }, [])
+
+  useEffect(() => {
+    if (!enabled) {
+      stop()
+      targetRef.current = content
+      displayedRef.current = content
+      setDisplayedContent(content)
+      return
+    }
+
+    targetRef.current = content
+    if (!content.startsWith(displayedRef.current)) {
+      displayedRef.current = content
+      setDisplayedContent(content)
+      return
+    }
+
+    if (rafRef.current !== null) return
+
+    const tick = (timestamp: number) => {
+      const target = targetRef.current
+      const current = displayedRef.current
+      const backlog = target.length - current.length
+      if (backlog <= 0) {
+        rafRef.current = null
+        return
+      }
+
+      const tailLength = findMarkdownTailLength(current)
+      const minInterval = Math.min(
+        STREAM_MAX_COMMIT_INTERVAL_MS,
+        STREAM_MIN_COMMIT_INTERVAL_MS * (1 + tailLength / STREAM_TAIL_SCALE_CHARS),
+      )
+      if (timestamp - lastCommitRef.current < minInterval) {
+        rafRef.current = requestAnimationFrame(tick)
+        return
+      }
+
+      const elapsedSeconds = Math.max(0.016, Math.min((timestamp - lastCommitRef.current) / 1000, 0.12))
+      const nextChars = Math.max(1, Math.ceil(STREAM_FLUSH_CHARS_PER_SECOND * elapsedSeconds))
+      const nextContent = target.slice(0, current.length + Math.min(backlog, nextChars))
+      lastCommitRef.current = timestamp
+      displayedRef.current = nextContent
+      setDisplayedContent(nextContent)
+      rafRef.current = requestAnimationFrame(tick)
+    }
+
+    rafRef.current = requestAnimationFrame(tick)
+    return stop
+  }, [content, enabled, stop])
+
+  return displayedContent
+}
+
+const MarkdownStreamBlock = memo(function MarkdownStreamBlock({
+  src,
+  components,
+  isAnimating,
+  isFirst,
+  isLast,
+}: {
+  src: string
+  components: Components
+  isAnimating: boolean
+  isFirst: boolean
+  isLast: boolean
+}) {
+  return (
+    <div
+      className={`markdown-stream-block ${isFirst ? 'markdown-stream-block-first' : 'markdown-stream-block-not-first'} ${
+        isLast ? 'markdown-stream-block-last' : 'markdown-stream-block-not-last'
+      }`}
+    >
+      <Streamdown
+        components={components}
+        isAnimating={isAnimating}
+        controls={false}
+        plugins={markdownPlugins}
+        rehypePlugins={markdownRehypePlugins}
+      >
+        {src}
+      </Streamdown>
+    </div>
+  )
+})
+
 // ─── Main Renderer ─────────────────────────────────────────────
 
 export const MarkdownRenderer = memo(function MarkdownRenderer({
@@ -659,6 +773,9 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
   variant = 'default',
 }: MarkdownRendererProps) {
   const isReasoning = variant === 'reasoning'
+  const smoothedContent = useSmoothMarkdownStream(content, isStreaming)
+  const renderedContent = isStreaming ? smoothedContent : content
+  const streamBlocks = useMemo(() => splitMarkdownStream(renderedContent, isStreaming), [renderedContent, isStreaming])
 
   const components = useMemo<Components>(
     () => ({
@@ -684,6 +801,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
               variant={isReasoning ? 'reasoning' : 'default'}
               wordwrap={isReasoning}
               forceHighlight={isStreaming}
+              streamingHighlight={isStreaming}
             />
           </div>
         )
@@ -903,15 +1021,16 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
     <div
       className={`markdown-content ${isReasoning ? 'text-[length:var(--fs-sm)] leading-5 text-text-400' : 'text-[length:var(--fs-base)] leading-relaxed text-text-100'} break-words min-w-0 overflow-hidden ${className}`}
     >
-      <Streamdown
-        components={components}
-        isAnimating={isStreaming}
-        controls={false}
-        plugins={markdownPlugins}
-        rehypePlugins={markdownRehypePlugins}
-      >
-        {content}
-      </Streamdown>
+      {streamBlocks.map((block, index) => (
+        <MarkdownStreamBlock
+          key={block.key}
+          src={block.src}
+          components={components}
+          isAnimating={isStreaming && block.mode === 'live'}
+          isFirst={index === 0}
+          isLast={index === streamBlocks.length - 1}
+        />
+      ))}
     </div>
   )
 })

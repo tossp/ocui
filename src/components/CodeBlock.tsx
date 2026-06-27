@@ -1,6 +1,6 @@
 import { memo, useCallback, useDeferredValue, useMemo, useState, useSyncExternalStore } from 'react'
 import { useInputCapabilities } from '../hooks/useInputCapabilities'
-import { useSyntaxHighlight, type HighlightTokens } from '../hooks/useSyntaxHighlight'
+import { useStreamingSyntaxHighlight, useSyntaxHighlight, type HighlightTokens } from '../hooks/useSyntaxHighlight'
 import { themeStore } from '../store/themeStore'
 import { CopyButton } from './ui'
 import { useInView } from '../hooks/useInView'
@@ -45,6 +45,8 @@ interface CodeBlockProps {
   deferHighlight?: boolean
   /** Start highlighting even before in-view observation catches up. */
   forceHighlight?: boolean
+  /** Use incremental Shiki tokenization for streaming code. */
+  streamingHighlight?: boolean
 }
 
 export const CodeBlock = memo(function CodeBlock({
@@ -57,6 +59,7 @@ export const CodeBlock = memo(function CodeBlock({
   wordwrap,
   deferHighlight = false,
   forceHighlight = false,
+  streamingHighlight = false,
 }: CodeBlockProps) {
   const { codeWordWrap } = useSyncExternalStore(themeStore.subscribe, themeStore.getSnapshot)
   const { preferTouchUi } = useInputCapabilities()
@@ -84,14 +87,19 @@ export const CodeBlock = memo(function CodeBlock({
   }, [highlightCode, language])
 
   const shouldHighlight = !deferHighlight && (inView || forceHighlight)
+  const shouldStreamHighlight = shouldHighlight && streamingHighlight
 
   const { output: highlightedTokens } = useSyntaxHighlight(highlightCode, {
     lang: effectiveLanguage,
-    enabled: shouldHighlight,
+    enabled: shouldHighlight && !shouldStreamHighlight,
     delayMs: 0,
     mode: 'tokens',
   })
-  const tokens = deferHighlight ? null : highlightedTokens
+  const { output: streamingTokens } = useStreamingSyntaxHighlight(code, {
+    lang: effectiveLanguage,
+    enabled: shouldStreamHighlight,
+  })
+  const tokens = deferHighlight ? null : streamingTokens ?? highlightedTokens
   const [lastHighlight, setLastHighlight] = useState<{ code: string; tokens: HighlightTokens } | null>(null)
   if (tokens && lastHighlight?.code !== highlightCode) {
     setLastHighlight({ code: highlightCode, tokens })

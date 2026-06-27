@@ -272,6 +272,7 @@ const SubSessionView = memo(function SubSessionView({ sessionId }: SubSessionVie
   const { t } = useTranslation('message')
   const scrollRef = useRef<HTMLDivElement>(null)
   const loadedRef = useRef(false)
+  const isAtBottomRef = useRef(true)
   const subSessionMaxHeight = useResponsiveMaxHeight(0.25, 120, 240)
 
   const sessionState = useSessionState(sessionId)
@@ -310,11 +311,18 @@ const SubSessionView = memo(function SubSessionView({ sessionId }: SubSessionVie
       })
   }, [sessionId])
 
-  // 自动滚动
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    isAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60
+  }, [])
+
+  // 用户不在底部时不强制滚动
   useEffect(() => {
-    if (scrollRef.current && isStreaming) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-    }
+    if (!isStreaming) return
+    const el = scrollRef.current
+    if (!el || !isAtBottomRef.current) return
+    el.scrollTop = el.scrollHeight
   }, [messages, isStreaming])
 
   // 过滤有内容的消息
@@ -340,6 +348,7 @@ const SubSessionView = memo(function SubSessionView({ sessionId }: SubSessionVie
       {/* Messages */}
       <div
         ref={scrollRef}
+        onScroll={handleScroll}
         className="overflow-y-auto custom-scrollbar px-3 py-2 space-y-2"
         style={{ maxHeight: subSessionMaxHeight }}
       >

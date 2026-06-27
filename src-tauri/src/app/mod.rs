@@ -9,6 +9,7 @@ mod dir_state;
 mod service;
 
 use bridge::BridgeState;
+use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::Manager;
 
@@ -22,6 +23,80 @@ use dir_state::OpenDirectoryState;
 use std::sync::Arc;
 #[cfg(not(target_os = "android"))]
 use tauri::Emitter;
+
+#[cfg(not(target_os = "android"))]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SavedWindowState {
+    width: u32,
+    height: u32,
+    x: i32,
+    y: i32,
+    maximized: bool,
+}
+
+#[cfg(not(target_os = "android"))]
+fn window_state_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    let dir = app.path().app_config_dir().ok()?;
+    Some(dir.join("window-state.json"))
+}
+
+#[cfg(not(target_os = "android"))]
+fn load_window_state(app: &tauri::AppHandle) -> Option<SavedWindowState> {
+    let path = window_state_path(app)?;
+    let data = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str(&data).ok()
+}
+
+#[cfg(not(target_os = "android"))]
+fn save_window_state(window: &tauri::Window) {
+    if window.label() != "main" {
+        return;
+    }
+
+    let Ok(size) = window.outer_size() else {
+        return;
+    };
+    let Ok(position) = window.outer_position() else {
+        return;
+    };
+    let maximized = window.is_maximized().unwrap_or(false);
+
+    let state = SavedWindowState {
+        width: size.width,
+        height: size.height,
+        x: position.x,
+        y: position.y,
+        maximized,
+    };
+
+    let app = window.app_handle();
+    let Some(path) = window_state_path(app) else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(data) = serde_json::to_string(&state) {
+        let _ = std::fs::write(path, data);
+    }
+}
+
+#[cfg(not(target_os = "android"))]
+fn restore_window_state(window: &tauri::WebviewWindow) {
+    let app = window.app_handle();
+    let Some(state) = load_window_state(app) else {
+        return;
+    };
+
+    if state.width >= 400 && state.height >= 300 {
+        let _ = window.set_size(tauri::PhysicalSize::new(state.width, state.height));
+    }
+    let _ = window.set_position(tauri::PhysicalPosition::new(state.x, state.y));
+
+    if state.maximized {
+        let _ = window.maximize();
+    }
+}
 
 /// 从命令行参数中提取目录路径
 #[cfg(not(target_os = "android"))]
@@ -214,6 +289,7 @@ pub fn run() {
             {
                 let main_window = create_main_window(&app.handle())?;
                 finish_desktop_window_setup(&main_window);
+                restore_window_state(&main_window);
 
                 #[cfg(debug_assertions)]
                 main_window.open_devtools();
@@ -249,6 +325,8 @@ pub fn run() {
         .on_window_event(|window, event| {
             match event {
                 tauri::WindowEvent::CloseRequested { api, .. } => {
+                    save_window_state(window);
+
                     // 只在最后一个窗口关闭时询问是否停止服务
                     let is_last = window.app_handle().webview_windows().len() <= 1;
                     if is_last {
@@ -280,6 +358,8 @@ pub fn run() {
                     }
                 }
                 tauri::WindowEvent::Destroyed => {
+                    save_window_state(window);
+
                     #[cfg(target_os = "macos")]
                     if let Ok(mut states) = fullscreen_state().lock() {
                         states.remove(window.label());
