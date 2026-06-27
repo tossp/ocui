@@ -144,6 +144,13 @@ describe('MarkdownRenderer', () => {
     expect(screen.getByTestId('code-block')).toHaveAttribute('data-streaming-highlight', 'true')
   })
 
+  it('only uses streaming code highlighting for the live markdown block', () => {
+    render(<MarkdownRenderer content={'```ts\nconst stable = 1\n```\n\nlive tail'} isStreaming />)
+
+    expect(screen.getByTestId('code-block')).toHaveAttribute('data-force-highlight', 'false')
+    expect(screen.getByTestId('code-block')).toHaveAttribute('data-streaming-highlight', 'false')
+  })
+
   it('keeps the declared language for an incomplete streaming code fence', () => {
     render(<MarkdownRenderer content={'```ts\nconst x = 1'} isStreaming />)
 
@@ -294,7 +301,8 @@ describe('MarkdownRenderer', () => {
   })
 
   it('renders Windows absolute path links without blocked indicator', () => {
-    const filePath = 'G:/projects/koishi_projects/koishi-new/external/chatluna/packages/core/src/commands/conversation.ts'
+    const filePath =
+      'G:/projects/koishi_projects/koishi-new/external/chatluna/packages/core/src/commands/conversation.ts'
     render(<MarkdownRenderer content={`[conversation.ts](${filePath})`} />)
 
     const link = screen.getByRole('link', { name: 'conversation.ts' })

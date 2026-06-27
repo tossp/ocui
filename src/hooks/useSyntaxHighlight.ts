@@ -363,7 +363,7 @@ function mergeStableTokenLines(previousLines: HighlightTokens, nextLines: Highli
 export function useStreamingSyntaxHighlight(
   code: string,
   options: HighlightOptions = {},
-): { output: HighlightTokens | null; isLoading: boolean } {
+): { output: HighlightTokens | null; highlightedCode: string; isLoading: boolean } {
   const { lang = 'text', theme, enabled = true } = options
   const normalizedLang = normalizeLanguage(lang)
   const isDark = useIsDarkMode()
@@ -372,24 +372,27 @@ export function useStreamingSyntaxHighlight(
     return getShikiTheme(isDark)
   }, [theme, isDark])
 
-  const [output, setOutput] = useState<HighlightTokens | null>(null)
+  const [outputState, setOutputState] = useState<{ code: string; tokens: HighlightTokens } | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const tokenizerRef = useRef<ShikiStreamTokenizer | null>(null)
   const previousTextRef = useRef('')
   const latestTextRef = useRef(code)
   const linesRef = useRef<HighlightTokens>([[]])
+  const outputStateRef = useRef<{ code: string; tokens: HighlightTokens } | null>(null)
   const tokenizerKeyRef = useRef('')
 
   useEffect(() => {
     latestTextRef.current = code
   }, [code])
 
-  const publishTokens = useCallback((tokens: FlatShikiToken[]) => {
+  const publishTokens = useCallback((tokens: FlatShikiToken[], tokenCode: string) => {
     const nextLines = splitStreamingTokensIntoLines(tokens)
     const merged = mergeStableTokenLines(linesRef.current, nextLines)
-    if (merged === linesRef.current) return
+    if (merged === linesRef.current && outputStateRef.current?.code === tokenCode) return
     linesRef.current = merged
-    setOutput(merged)
+    const nextState = { code: tokenCode, tokens: merged }
+    outputStateRef.current = nextState
+    setOutputState(nextState)
   }, [])
 
   const updateTokens = useCallback(
@@ -409,7 +412,7 @@ export function useStreamingSyntaxHighlight(
       previousTextRef.current = nextText
 
       if (chunk) await tokenizer.enqueue(chunk)
-      publishTokens([...tokenizer.tokensStable, ...tokenizer.tokensUnstable] as FlatShikiToken[])
+      publishTokens([...tokenizer.tokensStable, ...tokenizer.tokensUnstable] as FlatShikiToken[], nextText)
     },
     [publishTokens],
   )
@@ -421,7 +424,8 @@ export function useStreamingSyntaxHighlight(
       tokenizerKeyRef.current = ''
       previousTextRef.current = ''
       linesRef.current = [[]]
-      setOutput(null)
+      outputStateRef.current = null
+      setOutputState(null)
       setIsLoading(false)
       return
     }
@@ -476,7 +480,7 @@ export function useStreamingSyntaxHighlight(
     }
   }, [code, enabled, updateTokens])
 
-  return { output, isLoading }
+  return { output: outputState?.tokens ?? null, highlightedCode: outputState?.code ?? '', isLoading }
 }
 
 // Overload for HTML mode (default)
@@ -505,7 +509,10 @@ export function useSyntaxHighlight(code: string, options: HighlightOptions & { m
     return getShikiTheme(isDark)
   }, [theme, isDark])
 
-  const cacheKey = useMemo(() => getCacheKey(code, normalizedLang, resolvedTheme.key), [code, normalizedLang, resolvedTheme.key])
+  const cacheKey = useMemo(
+    () => getCacheKey(code, normalizedLang, resolvedTheme.key),
+    [code, normalizedLang, resolvedTheme.key],
+  )
   const outputKey = `${mode}:${cacheKey}`
   const [outputState, setOutputState] = useState<{ key: string; value: string | HighlightTokens | null } | null>(() => {
     const cachedResult = mode === 'html' ? htmlCache.get(cacheKey) : tokensCache.get(cacheKey)

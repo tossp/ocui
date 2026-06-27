@@ -8,16 +8,30 @@ import { useInView } from '../hooks/useInView'
 /** Languages that carry no useful information — hide the label */
 const HIDDEN_LANGS = new Set(['text', 'plain', 'txt', 'plaintext'])
 
+const TokenSpan = memo(
+  function TokenSpan({ token }: { token: HighlightTokens[number][number] }) {
+    return <span style={token.color ? { color: token.color } : undefined}>{token.content}</span>
+  },
+  (prev, next) => prev.token === next.token,
+)
+
+const TokenLine = memo(
+  function TokenLine({ line, trailingNewline }: { line: HighlightTokens[number]; trailingNewline: boolean }) {
+    return (
+      <span>
+        {line.map((token, tokenIndex) => (
+          <TokenSpan key={tokenIndex} token={token} />
+        ))}
+        {trailingNewline ? '\n' : null}
+      </span>
+    )
+  },
+  (prev, next) => prev.line === next.line && prev.trailingNewline === next.trailingNewline,
+)
+
 function renderHighlightedTokens(tokens: HighlightTokens) {
   return tokens.map((line, lineIndex) => (
-    <span key={lineIndex}>
-      {line.map((token, tokenIndex) => (
-        <span key={tokenIndex} style={token.color ? { color: token.color } : undefined}>
-          {token.content}
-        </span>
-      ))}
-      {lineIndex < tokens.length - 1 ? '\n' : null}
-    </span>
+    <TokenLine key={lineIndex} line={line} trailingNewline={lineIndex < tokens.length - 1} />
   ))
 }
 
@@ -95,16 +109,20 @@ export const CodeBlock = memo(function CodeBlock({
     delayMs: 0,
     mode: 'tokens',
   })
-  const { output: streamingTokens } = useStreamingSyntaxHighlight(code, {
-    lang: effectiveLanguage,
-    enabled: shouldStreamHighlight,
-  })
-  const tokens = deferHighlight ? null : streamingTokens ?? highlightedTokens
+  const { output: streamingTokens, highlightedCode: streamingHighlightedCode = code } = useStreamingSyntaxHighlight(
+    code,
+    {
+      lang: effectiveLanguage,
+      enabled: shouldStreamHighlight,
+    },
+  )
+  const tokens = deferHighlight ? null : (streamingTokens ?? highlightedTokens)
   const [lastHighlight, setLastHighlight] = useState<{ code: string; tokens: HighlightTokens } | null>(null)
-  if (tokens && lastHighlight?.code !== highlightCode) {
-    setLastHighlight({ code: highlightCode, tokens })
+  const tokenSourceCode = shouldStreamHighlight && streamingTokens ? streamingHighlightedCode : highlightCode
+  if (tokens && lastHighlight?.code !== tokenSourceCode) {
+    setLastHighlight({ code: tokenSourceCode, tokens })
   }
-  const activeHighlight = deferHighlight ? null : tokens ? { code: highlightCode, tokens } : lastHighlight
+  const activeHighlight = deferHighlight ? null : tokens ? { code: tokenSourceCode, tokens } : lastHighlight
 
   const displayedHighlight =
     activeHighlight && code.startsWith(activeHighlight.code)
@@ -145,9 +163,7 @@ export const CodeBlock = memo(function CodeBlock({
   const content = displayedHighlight ? (
     <pre
       className={`shiki-wrapper m-0 font-mono select-text ${textColor} ${fontSize} ${lineHeight} ${contentPad} ${
-        resolvedWordWrap
-          ? 'whitespace-pre-wrap break-words [overflow-wrap:anywhere]'
-          : 'whitespace-pre'
+        resolvedWordWrap ? 'whitespace-pre-wrap break-words [overflow-wrap:anywhere]' : 'whitespace-pre'
       }`}
       suppressHydrationWarning
     >

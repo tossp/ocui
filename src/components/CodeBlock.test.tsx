@@ -8,13 +8,17 @@ const useInputCapabilitiesMock = vi.fn(() => ({
   hasTouch: false,
   preferTouchUi: false,
 }))
-type HighlightMockOutput = { output: { content: string; color?: string }[][] | null }
-const useSyntaxHighlightMock = vi.fn((_code: string, _options: unknown): HighlightMockOutput => ({
-  output: [[{ content: 'highlighted', color: '#fff' }]],
-}))
-const useStreamingSyntaxHighlightMock = vi.fn((_code: string, _options: unknown): HighlightMockOutput => ({
-  output: null,
-}))
+type HighlightMockOutput = { highlightedCode?: string; output: { content: string; color?: string }[][] | null }
+const useSyntaxHighlightMock = vi.fn(
+  (_code: string, _options: unknown): HighlightMockOutput => ({
+    output: [[{ content: 'highlighted', color: '#fff' }]],
+  }),
+)
+const useStreamingSyntaxHighlightMock = vi.fn(
+  (_code: string, _options: unknown): HighlightMockOutput => ({
+    output: null,
+  }),
+)
 const useInViewMock = vi.fn(() => ({ ref: vi.fn(), inView: false }))
 const themeSnapshot = { codeWordWrap: false }
 
@@ -169,5 +173,16 @@ describe('CodeBlock', () => {
       'const value = 1',
       expect.objectContaining({ enabled: true, lang: 'ts' }),
     )
+  })
+
+  it('keeps the live suffix when streaming tokens lag behind code', () => {
+    useStreamingSyntaxHighlightMock.mockReturnValue({
+      highlightedCode: 'const',
+      output: [[{ content: 'const', color: '#fff' }]],
+    })
+
+    const { container } = render(<CodeBlock code="const value" language="ts" forceHighlight streamingHighlight />)
+
+    expect(container.querySelector('pre')).toHaveTextContent('const value')
   })
 })

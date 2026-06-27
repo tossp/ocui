@@ -777,8 +777,8 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
   const renderedContent = isStreaming ? smoothedContent : content
   const streamBlocks = useMemo(() => splitMarkdownStream(renderedContent, isStreaming), [renderedContent, isStreaming])
 
-  const components = useMemo<Components>(
-    () => ({
+  const componentsByMode = useMemo(() => {
+    const makeComponents = (streamingCodeHighlight: boolean): Components => ({
       // --- Inline code ---
       inlineCode({ children }) {
         return <InlineCode variant={isReasoning ? 'reasoning' : 'default'}>{children}</InlineCode>
@@ -800,8 +800,8 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
               language={blockCode.language}
               variant={isReasoning ? 'reasoning' : 'default'}
               wordwrap={isReasoning}
-              forceHighlight={isStreaming}
-              streamingHighlight={isStreaming}
+              forceHighlight={streamingCodeHighlight}
+              streamingHighlight={streamingCodeHighlight}
             />
           </div>
         )
@@ -1013,9 +1013,13 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
           {children}
         </del>
       ),
-    }),
-    [isReasoning, isStreaming],
-  )
+    })
+
+    return {
+      full: makeComponents(false),
+      live: makeComponents(isStreaming),
+    }
+  }, [isReasoning, isStreaming])
 
   return (
     <div
@@ -1025,7 +1029,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
         <MarkdownStreamBlock
           key={block.key}
           src={block.src}
-          components={components}
+          components={block.mode === 'live' ? componentsByMode.live : componentsByMode.full}
           isAnimating={isStreaming && block.mode === 'live'}
           isFirst={index === 0}
           isLast={index === streamBlocks.length - 1}

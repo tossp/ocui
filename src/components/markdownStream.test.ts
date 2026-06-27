@@ -14,6 +14,15 @@ describe('splitMarkdownStream', () => {
     ])
   })
 
+  it('keeps the single live block key stable while streaming grows', () => {
+    const first = splitMarkdownStream('```md\n# title', true)
+    const next = splitMarkdownStream('```md\n# title\n\n- item', true)
+
+    expect(first).toHaveLength(1)
+    expect(next).toHaveLength(1)
+    expect(first[0].key).toBe(next[0].key)
+  })
+
   it('splits stable paragraphs from the live tail while streaming', () => {
     expect(splitMarkdownStream('first paragraph\n\nsecond **live', true)).toEqual([
       expect.objectContaining({ src: 'first paragraph\n\n', mode: 'full' }),
@@ -75,5 +84,12 @@ describe('splitMarkdownStream', () => {
     expect(splitMarkdownStream('[docs][1]\n\n[1]: https://example.com', true)).toEqual([
       expect.objectContaining({ src: '[docs][1]\n\n[1]: https://example.com', mode: 'live' }),
     ])
+  })
+
+  it('keeps reference-style live block key stable while streaming grows', () => {
+    const first = splitMarkdownStream('[docs][1]\n\n[1]: https://example.com', true)
+    const next = splitMarkdownStream('[docs][1]\n\n[1]: https://example.com "title"', true)
+
+    expect(first[0].key).toBe(next[0].key)
   })
 })
