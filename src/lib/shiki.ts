@@ -122,6 +122,12 @@ export async function codeToTokens(code: string, opts: { lang: string; theme: Sh
   return h.codeToTokens(code, { lang: opts.lang, theme: opts.theme })
 }
 
+export async function getLoadedHighlighterForLanguage(lang: string): Promise<HighlighterCore | null> {
+  const h = await getHighlighter()
+  const loaded = await ensureLang(lang)
+  return loaded ? h : null
+}
+
 export function codeToTokensSyncIfLoaded(code: string, opts: { lang: string; theme: ShikiThemeInput }) {
   if (!highlighter || !highlighter.getLoadedLanguages().includes(opts.lang)) return null
 

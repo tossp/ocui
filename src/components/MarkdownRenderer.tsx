@@ -661,21 +661,31 @@ const MarkdownStreamBlock = memo(function MarkdownStreamBlock({
   src,
   components,
   isAnimating,
+  isFirst,
+  isLast,
 }: {
   src: string
   components: Components
   isAnimating: boolean
+  isFirst: boolean
+  isLast: boolean
 }) {
   return (
-    <Streamdown
-      components={components}
-      isAnimating={isAnimating}
-      controls={false}
-      plugins={markdownPlugins}
-      rehypePlugins={markdownRehypePlugins}
+    <div
+      className={`markdown-stream-block ${isFirst ? 'markdown-stream-block-first' : 'markdown-stream-block-not-first'} ${
+        isLast ? 'markdown-stream-block-last' : 'markdown-stream-block-not-last'
+      }`}
     >
-      {src}
-    </Streamdown>
+      <Streamdown
+        components={components}
+        isAnimating={isAnimating}
+        controls={false}
+        plugins={markdownPlugins}
+        rehypePlugins={markdownRehypePlugins}
+      >
+        {src}
+      </Streamdown>
+    </div>
   )
 })
 
@@ -714,6 +724,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
               variant={isReasoning ? 'reasoning' : 'default'}
               wordwrap={isReasoning}
               forceHighlight={isStreaming}
+              streamingHighlight={isStreaming}
             />
           </div>
         )
@@ -933,12 +944,14 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
     <div
       className={`markdown-content ${isReasoning ? 'text-[length:var(--fs-sm)] leading-5 text-text-400' : 'text-[length:var(--fs-base)] leading-relaxed text-text-100'} break-words min-w-0 overflow-hidden ${className}`}
     >
-      {streamBlocks.map(block => (
+      {streamBlocks.map((block, index) => (
         <MarkdownStreamBlock
           key={block.key}
           src={block.src}
           components={components}
           isAnimating={isStreaming && block.mode === 'live'}
+          isFirst={index === 0}
+          isLast={index === streamBlocks.length - 1}
         />
       ))}
     </div>

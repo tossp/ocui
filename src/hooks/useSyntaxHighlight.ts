@@ -1,15 +1,18 @@
-import { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react'
+import { ShikiStreamTokenizer } from 'shiki-stream'
 import {
   codeToHtml,
   codeToHtmlSyncIfLoaded,
   codeToTokens,
   codeToTokensSyncIfLoaded,
+  getLoadedHighlighterForLanguage,
   type ShikiThemeInput,
 } from '../lib/shiki'
 import { normalizeLanguage } from '../utils/languageUtils'
 import { THEME_SWITCH_DISABLE_MS } from '../constants'
 
 export type HighlightTokens = Awaited<ReturnType<typeof codeToTokens>>['tokens']
+type FlatShikiToken = HighlightTokens[number][number]
 
 type IdleWindowApi = {
   requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number
@@ -298,6 +301,182 @@ export interface HighlightOptions {
   theme?: ShikiThemeInput
   enabled?: boolean
   delayMs?: number
+}
+
+function splitStreamingTokensIntoLines(tokens: FlatShikiToken[]): HighlightTokens {
+  if (tokens.length === 0) return [[]]
+
+  const lines: HighlightTokens = []
+  let currentLine: FlatShikiToken[] = []
+
+  for (const token of tokens) {
+    const content = token.content ?? ''
+    const newlineIndex = content.indexOf('\n')
+    if (newlineIndex === -1) {
+      currentLine.push(token)
+      continue
+    }
+
+    const segments = content.split('\n')
+    for (let index = 0; index < segments.length; index += 1) {
+      const segment = segments[index]
+      if (segment) currentLine.push(index === 0 && segment === content ? token : { ...token, content: segment })
+      if (index < segments.length - 1) {
+        lines.push(currentLine)
+        currentLine = []
+      }
+    }
+  }
+
+  if (currentLine.length > 0 || lines.length === 0) lines.push(currentLine)
+  return lines
+}
+
+function mergeStableTokenLines(previousLines: HighlightTokens, nextLines: HighlightTokens): HighlightTokens {
+  if (previousLines.length !== nextLines.length) return nextLines
+
+  let changed = false
+  const merged: HighlightTokens = []
+  for (let lineIndex = 0; lineIndex < nextLines.length; lineIndex += 1) {
+    const previousLine = previousLines[lineIndex]
+    const nextLine = nextLines[lineIndex]
+    if (!previousLine || previousLine.length !== nextLine.length) {
+      merged[lineIndex] = nextLine
+      changed = true
+      continue
+    }
+
+    let lineChanged = false
+    for (let tokenIndex = 0; tokenIndex < nextLine.length; tokenIndex += 1) {
+      if (previousLine[tokenIndex] !== nextLine[tokenIndex]) {
+        lineChanged = true
+        break
+      }
+    }
+    merged[lineIndex] = lineChanged ? nextLine : previousLine
+    changed ||= lineChanged
+  }
+
+  return changed ? merged : previousLines
+}
+
+export function useStreamingSyntaxHighlight(
+  code: string,
+  options: HighlightOptions = {},
+): { output: HighlightTokens | null; isLoading: boolean } {
+  const { lang = 'text', theme, enabled = true } = options
+  const normalizedLang = normalizeLanguage(lang)
+  const isDark = useIsDarkMode()
+  const resolvedTheme = useMemo(() => {
+    if (theme) return { theme, key: theme }
+    return getShikiTheme(isDark)
+  }, [theme, isDark])
+
+  const [output, setOutput] = useState<HighlightTokens | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const tokenizerRef = useRef<ShikiStreamTokenizer | null>(null)
+  const previousTextRef = useRef('')
+  const latestTextRef = useRef(code)
+  const linesRef = useRef<HighlightTokens>([[]])
+  const tokenizerKeyRef = useRef('')
+
+  useEffect(() => {
+    latestTextRef.current = code
+  }, [code])
+
+  const publishTokens = useCallback((tokens: FlatShikiToken[]) => {
+    const nextLines = splitStreamingTokensIntoLines(tokens)
+    const merged = mergeStableTokenLines(linesRef.current, nextLines)
+    if (merged === linesRef.current) return
+    linesRef.current = merged
+    setOutput(merged)
+  }, [])
+
+  const updateTokens = useCallback(
+    async (nextText: string, forceReset = false) => {
+      const tokenizer = tokenizerRef.current
+      if (!tokenizer) return
+
+      if (forceReset) {
+        tokenizer.clear()
+        previousTextRef.current = ''
+      }
+
+      const previousText = previousTextRef.current
+      const canAppend = !forceReset && nextText.startsWith(previousText)
+      const chunk = canAppend ? nextText.slice(previousText.length) : nextText
+      if (!canAppend && !forceReset) tokenizer.clear()
+      previousTextRef.current = nextText
+
+      if (chunk) await tokenizer.enqueue(chunk)
+      publishTokens([...tokenizer.tokensStable, ...tokenizer.tokensUnstable] as FlatShikiToken[])
+    },
+    [publishTokens],
+  )
+
+  useEffect(() => {
+    if (!enabled) {
+      tokenizerRef.current?.clear()
+      tokenizerRef.current = null
+      tokenizerKeyRef.current = ''
+      previousTextRef.current = ''
+      linesRef.current = [[]]
+      setOutput(null)
+      setIsLoading(false)
+      return
+    }
+
+    let cancelled = false
+    const tokenizerKey = `${normalizedLang}:${resolvedTheme.key}`
+    setIsLoading(true)
+
+    async function initTokenizer() {
+      const highlighter = await getLoadedHighlighterForLanguage(normalizedLang)
+      if (!highlighter || cancelled) {
+        if (!cancelled) setIsLoading(false)
+        return
+      }
+
+      if (!tokenizerRef.current || tokenizerKeyRef.current !== tokenizerKey) {
+        tokenizerRef.current?.clear()
+        tokenizerRef.current = new ShikiStreamTokenizer({
+          highlighter,
+          lang: normalizedLang,
+          theme: resolvedTheme.theme,
+        })
+        tokenizerKeyRef.current = tokenizerKey
+        previousTextRef.current = ''
+        linesRef.current = [[]]
+      }
+
+      await updateTokens(latestTextRef.current, true)
+      if (!cancelled) setIsLoading(false)
+    }
+
+    void initTokenizer()
+
+    return () => {
+      cancelled = true
+    }
+  }, [enabled, normalizedLang, resolvedTheme.key, resolvedTheme.theme, updateTokens])
+
+  useEffect(() => {
+    if (!enabled || !tokenizerRef.current) return
+    let cancelled = false
+    setIsLoading(true)
+    updateTokens(latestTextRef.current)
+      .catch(err => {
+        if (import.meta.env.DEV) console.warn('[Syntax] streaming Shiki error:', err)
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [code, enabled, updateTokens])
+
+  return { output, isLoading }
 }
 
 // Overload for HTML mode (default)
