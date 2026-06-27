@@ -951,6 +951,7 @@ export const ChatPane = memo(function ChatPane({
     <SessionNavigationContext.Provider value={navigationCtx}>
       <div
         ref={paneRootRef}
+        data-chat-pane-root="true"
         className={
           showCompactShell
             ? `relative h-full flex flex-col overflow-hidden rounded-lg transition-all duration-200 ${
