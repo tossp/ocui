@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo, useSyncExternalStore, memo } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo, useSyncExternalStore, useLayoutEffect, memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { DragDropEvent } from '@tauri-apps/api/webview'
 import { AttachmentPreview, type Attachment } from '../attachment'
@@ -65,6 +65,32 @@ interface DroppedPathInfo {
 }
 
 type TauriDropPosition = Extract<DragDropEvent, { type: 'drop' }>['position']
+
+const TEXTAREA_MIN_HEIGHT = 24
+const TEXTAREA_VERTICAL_CHROME = 24
+const INPUT_TOOLBAR_FALLBACK_HEIGHT = 36
+const INPUT_FOOTER_FALLBACK_HEIGHT = 32
+const COMPOSER_MIN_HEIGHT = 144
+const COMPOSER_DESKTOP_MAX_HEIGHT = 420
+const COMPOSER_COMPACT_MAX_HEIGHT = 320
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max)
+}
+
+function getComposerPaneHeight(anchor: HTMLElement | null): number {
+  const paneRoot = anchor?.closest<HTMLElement>('[data-chat-pane-root]')
+  const paneHeight = paneRoot?.getBoundingClientRect().height
+  if (paneHeight && paneHeight > 0) return paneHeight
+  return window.innerHeight || 800
+}
+
+function getComposerMaxHeight(paneHeight: number, isCompact: boolean): number {
+  const ratio = isCompact ? 0.44 : 0.4
+  const hardMax = isCompact ? COMPOSER_COMPACT_MAX_HEIGHT : COMPOSER_DESKTOP_MAX_HEIGHT
+  const availableMax = Math.max(COMPOSER_MIN_HEIGHT, paneHeight - 96)
+  return clamp(Math.floor(paneHeight * ratio), COMPOSER_MIN_HEIGHT, Math.min(hardMax, availableMax))
+}
 
 function getDropClientPoints(position: TauriDropPosition): Array<{ x: number; y: number }> {
   const directPoint = { x: position.x, y: position.y }
@@ -248,6 +274,8 @@ function InputBoxComponent({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const inputContainerRef = useRef<HTMLDivElement>(null)
   const attachmentRailRef = useRef<HTMLDivElement>(null)
+  const attachmentSectionRef = useRef<HTMLDivElement>(null)
+  const toolbarRef = useRef<HTMLDivElement>(null)
   const mentionMenuRef = useRef<MentionMenuHandle>(null)
   const slashMenuRef = useRef<SlashCommandMenuHandle>(null)
   const prevRevertedTextRef = useRef<string | undefined>(undefined)
@@ -256,6 +284,9 @@ function InputBoxComponent({
   const footerRef = useRef<HTMLDivElement>(null)
   const isComposingRef = useRef(false)
   const compositionEndTimerRef = useRef<number | null>(null)
+  const [composerMaxHeight, setComposerMaxHeight] = useState(280)
+  const [inputContainerMaxHeight, setInputContainerMaxHeight] = useState(240)
+  const [textareaMaxHeight, setTextareaMaxHeight] = useState(180)
 
   // 附件横向轨道
   const {
@@ -332,25 +363,68 @@ function InputBoxComponent({
     [],
   )
 
-  // 自动调整 textarea 高度
+  const updateComposerHeightBudget = useCallback(() => {
+    const paneHeight = getComposerPaneHeight(inputContainerRef.current ?? contentWrapRef.current)
+    const nextComposerMaxHeight = getComposerMaxHeight(paneHeight, isCompact)
+    const attachmentHeight = attachments.length > 0 ? (attachmentSectionRef.current?.offsetHeight ?? 0) : 0
+    const toolbarHeight = toolbarRef.current?.offsetHeight || INPUT_TOOLBAR_FALLBACK_HEIGHT
+    const footerHeight = isCollapsed ? 0 : footerRef.current?.offsetHeight || INPUT_FOOTER_FALLBACK_HEIGHT
+    const inputContainerChrome = attachmentHeight + toolbarHeight + TEXTAREA_VERTICAL_CHROME
+    const nextInputContainerMaxHeight = Math.max(
+      TEXTAREA_MIN_HEIGHT + TEXTAREA_VERTICAL_CHROME + toolbarHeight,
+      nextComposerMaxHeight - footerHeight,
+    )
+    const nextTextareaMaxHeight = Math.max(
+      TEXTAREA_MIN_HEIGHT,
+      nextInputContainerMaxHeight - inputContainerChrome,
+    )
+
+    setComposerMaxHeight(prev => (Math.abs(prev - nextComposerMaxHeight) < 1 ? prev : nextComposerMaxHeight))
+    setInputContainerMaxHeight(prev =>
+      Math.abs(prev - nextInputContainerMaxHeight) < 1 ? prev : nextInputContainerMaxHeight,
+    )
+    setTextareaMaxHeight(prev => (Math.abs(prev - nextTextareaMaxHeight) < 1 ? prev : nextTextareaMaxHeight))
+  }, [attachments.length, isCollapsed, isCompact])
+
+  useLayoutEffect(() => {
+    updateComposerHeightBudget()
+  }, [updateComposerHeightBudget, text])
+
   useEffect(() => {
+    updateComposerHeightBudget()
+
+    const observed = [
+      inputContainerRef.current?.closest<HTMLElement>('[data-chat-pane-root]'),
+      inputContainerRef.current,
+      attachmentSectionRef.current,
+      toolbarRef.current,
+      footerRef.current,
+    ].filter((element): element is HTMLElement => !!element)
+
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateComposerHeightBudget) : null
+    observed.forEach(element => observer?.observe(element))
+    window.addEventListener('resize', updateComposerHeightBudget)
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener('resize', updateComposerHeightBudget)
+    }
+  }, [updateComposerHeightBudget])
+
+  // 自动调整 textarea 高度
+  useLayoutEffect(() => {
     const textarea = textareaRef.current
     if (!textarea) return
 
     // 只有真正空字符串时才重置高度；保留仅空格/空行时的换行高度
     if (text.length === 0) {
-      textarea.style.height = '24px'
+      textarea.style.height = `${TEXTAREA_MIN_HEIGHT}px`
       return
     }
 
     textarea.style.height = 'auto'
     const scrollHeight = textarea.scrollHeight
-    // 原生层已处理键盘 resize，window.innerHeight 即可用高度
-    const viewportH = window.innerHeight
-    // 可用高度 = viewport - header(48px) - toolbar/padding/footer(~100px) - 安全余量
-    const maxH = isCompact ? Math.max(80, viewportH - 48 - 100 - 72) : viewportH * 0.35
-    textarea.style.height = Math.max(24, Math.min(scrollHeight, maxH)) + 'px'
-  }, [text, isCompact])
+    textarea.style.height = Math.max(TEXTAREA_MIN_HEIGHT, Math.min(scrollHeight, textareaMaxHeight)) + 'px'
+  }, [text, textareaMaxHeight])
 
   // 计算
   const inputDisabled = !!disabled
@@ -1214,7 +1288,11 @@ function InputBoxComponent({
           ref={contentWrapRef}
           onPointerDown={handleContainerPointerDown}
           className={`relative flex flex-col gap-2 ${isCollapsed ? 'justify-end' : ''}`}
-          style={isCollapsed && expandedHeight > 0 ? { minHeight: expandedHeight } : undefined}
+          style={
+            isCollapsed && expandedHeight > 0
+              ? { minHeight: expandedHeight, maxHeight: composerMaxHeight }
+              : { maxHeight: composerMaxHeight }
+          }
         >
           {/* FloatingActions — 
               展开态：absolute 定位在内容区上方，不占文档流，避免显隐变化影响高度导致滚动抖动
@@ -1294,13 +1372,14 @@ function InputBoxComponent({
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
-              className={`glass rounded-2xl relative focus-within:outline-none shadow-lg ${
+              className={`glass rounded-2xl relative overflow-hidden focus-within:outline-none shadow-lg ${
                 isDragging || isInternalFileDragging
                   ? 'border border-accent-main-100 ring-2 ring-accent-main-100/30'
                   : isStreaming
                     ? 'border border-accent-main-100/50 animate-border-pulse'
                     : 'border border-border-200/60'
               }`}
+              style={{ maxHeight: inputContainerMaxHeight }}
             >
               {/* Drop overlay */}
               {(isDragging || isInternalFileDragging) && (
@@ -1313,6 +1392,7 @@ function InputBoxComponent({
                 <div className="overflow-hidden">
                   {/* Attachments Preview - 显示在输入框上方 */}
                   <div
+                    ref={attachmentSectionRef}
                     className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out ${
                       attachments.length > 0 ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
                     }`}
@@ -1366,34 +1446,36 @@ function InputBoxComponent({
                       style={{
                         ...TEXT_STYLE,
                         minHeight: '24px',
-                        maxHeight: isCompact ? 'calc(var(--app-height, 100vh) - 220px)' : '35vh',
+                        maxHeight: textareaMaxHeight,
                       }}
                       rows={1}
                     />
                   </div>
 
                   {/* Bottom Bar -> InputToolbar */}
-                  <InputToolbar
-                    agents={agents}
-                    selectedAgent={selectedAgent}
-                    onAgentChange={onAgentChange}
-                    variants={variants}
-                    selectedVariant={selectedVariant}
-                    onVariantChange={onVariantChange}
-                    fileCapabilities={fileCaps}
-                    onFilesSelected={handleFilesSelected}
-                    isStreaming={isStreaming}
-                    isSending={isSubmitting}
-                    onAbort={onAbort}
-                    canSend={canSend || false}
-                    onSend={handleSend}
-                    models={models}
-                    selectedModelKey={selectedModelKey}
-                    onModelChange={onModelChange}
-                    modelsLoading={modelsLoading}
-                    inputContainerRef={inputContainerRef}
-                    modelSelectorRef={modelSelectorRef}
-                  />
+                  <div ref={toolbarRef}>
+                    <InputToolbar
+                      agents={agents}
+                      selectedAgent={selectedAgent}
+                      onAgentChange={onAgentChange}
+                      variants={variants}
+                      selectedVariant={selectedVariant}
+                      onVariantChange={onVariantChange}
+                      fileCapabilities={fileCaps}
+                      onFilesSelected={handleFilesSelected}
+                      isStreaming={isStreaming}
+                      isSending={isSubmitting}
+                      onAbort={onAbort}
+                      canSend={canSend || false}
+                      onSend={handleSend}
+                      models={models}
+                      selectedModelKey={selectedModelKey}
+                      onModelChange={onModelChange}
+                      modelsLoading={modelsLoading}
+                      inputContainerRef={inputContainerRef}
+                      modelSelectorRef={modelSelectorRef}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
