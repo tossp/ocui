@@ -259,10 +259,11 @@ export function SettingsDialog({ isOpen, onClose, initialTab = 'servers' }: Sett
         title=""
         ariaLabel={t('title')}
         width="100%"
+        className="h-full"
         showCloseButton={false}
         rawContent
       >
-        <div className="flex flex-col" style={{ height: 'calc(var(--app-height) * 0.92)' }}>
+        <div className="flex min-h-0 flex-1 flex-col">
           {/* Sticky Header + Tabs */}
           <div className="shrink-0">
             {/* Title bar */}

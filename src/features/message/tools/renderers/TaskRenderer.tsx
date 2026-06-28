@@ -8,6 +8,7 @@ import { useSessionNavigation } from '../../../../contexts/SessionNavigationCont
 import { abortSession, getSessionMessages } from '../../../../api'
 import { sessionErrorHandler } from '../../../../utils'
 import { formatToolName } from '../../../../utils/formatUtils'
+import { useUiDisclosureState } from '../../../../utils/uiDisclosureState'
 import type { ToolRendererProps } from '../types'
 import type { Message, TextPart, ToolPart } from '../../../../types/message'
 import { isVisibleTextPart } from '../../../../types/message'
@@ -28,7 +29,10 @@ export const TaskRenderer = memo(function TaskRenderer({ part, onFullscreenChang
   const { t } = useTranslation('message')
   const { currentSessionId, currentDirectory } = useSessionNavigation()
   const { state } = part
-  const [expanded, setExpanded] = useState(() => state.status === 'running' || state.status === 'pending')
+  const [expanded, setExpanded] = useUiDisclosureState(
+    `message:${part.messageID}:tool:${part.id}:task-body`,
+    state.status === 'running' || state.status === 'pending',
+  )
   const [isContentFullscreen, setIsContentFullscreen] = useState(false)
   const effectiveExpanded = expanded || isContentFullscreen
   const shouldRenderBody = useDelayedRender(effectiveExpanded)
@@ -77,14 +81,14 @@ export const TaskRenderer = memo(function TaskRenderer({ part, onFullscreenChang
 
     if (isRunning) {
       frameId = requestAnimationFrame(() => {
-        setExpanded(true)
+        setExpanded(true, { touched: false, respectUser: true })
       })
     }
 
     return () => {
       if (frameId !== null) cancelAnimationFrame(frameId)
     }
-  }, [isRunning])
+  }, [isRunning, setExpanded])
 
   return (
     <div className="min-w-0">
@@ -128,6 +132,7 @@ export const TaskRenderer = memo(function TaskRenderer({ part, onFullscreenChang
                 {isCompleted && state.output !== undefined && state.output !== null && (
                   <ContentBlock
                     label={t('task.result')}
+                    stateKey={`message:${part.messageID}:tool:${part.id}:task-result`}
                     content={typeof state.output === 'string' ? state.output : JSON.stringify(state.output, null, 2)}
                     defaultCollapsed={true}
                     onFullscreenChange={handleContentFullscreenChange}
@@ -139,6 +144,7 @@ export const TaskRenderer = memo(function TaskRenderer({ part, onFullscreenChang
                 {isError && state.error !== undefined && (
                   <ContentBlock
                     label={t('task.error')}
+                    stateKey={`message:${part.messageID}:tool:${part.id}:task-error`}
                     content={typeof state.error === 'string' ? state.error : JSON.stringify(state.error)}
                     variant="error"
                     onFullscreenChange={handleContentFullscreenChange}

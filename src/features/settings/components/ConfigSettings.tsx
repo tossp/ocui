@@ -164,10 +164,21 @@ function ConfigEditorDialog({ isOpen, onClose }: { isOpen: boolean; onClose: () 
   }
 
   return (
-    <Dialog isOpen={isOpen} onClose={onClose} rawContent width={isMobile ? '100%' : 'min(97vw, 1040px)'} showCloseButton={false} ariaLabel={t('config.editorTitle')}>
+    <Dialog
+      isOpen={isOpen}
+      onClose={onClose}
+      rawContent
+      width={isMobile ? '100%' : 'min(97vw, 1040px)'}
+      className={isMobile ? 'h-full' : undefined}
+      showCloseButton={false}
+      ariaLabel={t('config.editorTitle')}
+    >
       <JsonDraftErrorContext.Provider value={reportJsonDraftError}>
         <ValidationDrillTargetContext.Provider value={validationDrillTarget}>
-          <div className="flex min-h-0 flex-col" style={{ height: isMobile ? 'calc(var(--app-height) * 0.92)' : 'min(90vh, 820px)' }}>
+          <div
+            className={`flex min-h-0 flex-col ${isMobile ? 'flex-1' : ''}`}
+            style={isMobile ? undefined : { height: 'min(90vh, 820px)' }}
+          >
             {isMobile ? (
               <div className="shrink-0">
                 <div className="flex items-center justify-center px-4 pt-3 pb-2">

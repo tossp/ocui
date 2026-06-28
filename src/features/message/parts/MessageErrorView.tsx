@@ -1,23 +1,25 @@
-import { memo, useState, useMemo } from 'react'
+import { memo, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { MessageError } from '../../../types/message'
 import { AlertCircleIcon, ChevronDownIcon } from '../../../components/Icons'
 import { useDelayedRender } from '../../../hooks/useDelayedRender'
 import { CodeBlock } from '../../../components/CodeBlock'
+import { useUiDisclosureState } from '../../../utils/uiDisclosureState'
 
 interface MessageErrorViewProps {
   error: MessageError
+  stateKey?: string
 }
 
 /**
  * 消息级别的错误显示（紧凑折叠式）
  * 用于 AssistantMessage 的 error 字段
  */
-export const MessageErrorView = memo(function MessageErrorView({ error }: MessageErrorViewProps) {
+export const MessageErrorView = memo(function MessageErrorView({ error, stateKey }: MessageErrorViewProps) {
   const { t } = useTranslation('message')
   const { title, description, details, severity } = getErrorInfo(error, t)
   const hasDetails = !!(details || description)
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useUiDisclosureState(stateKey ?? `message-error:${title}`, false)
   const shouldRenderBody = useDelayedRender(expanded)
 
   const colorClass = severity === 'error' ? 'text-danger-100' : 'text-warning-100'

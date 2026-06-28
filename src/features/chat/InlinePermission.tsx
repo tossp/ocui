@@ -75,6 +75,7 @@ export const InlinePermission = memo(function InlinePermission({
       {!contentHidden &&
         (isFileEdit && diffData ? (
           <ContentBlock
+            stateKey={`permission:${request.sessionID}:${request.id}:diff`}
             label={request.permission}
             filePath={filepath}
             diff={diffData}
@@ -83,6 +84,7 @@ export const InlinePermission = memo(function InlinePermission({
           />
         ) : patternsText ? (
           <ContentBlock
+            stateKey={`permission:${request.sessionID}:${request.id}:patterns`}
             label={request.permission}
             content={patternsText}
             language="bash"

@@ -8,6 +8,7 @@ import { useNow } from '../../../hooks/useNow'
 import { serverStore } from '../../../store/serverStore'
 import { useTheme } from '../../../hooks/useTheme'
 import { formatToolName, formatDuration } from '../../../utils/formatUtils'
+import { useUiDisclosureState } from '../../../utils/uiDisclosureState'
 import {
   useInlineToolRequests,
   findPermissionRequestForTool,
@@ -121,7 +122,10 @@ export const ToolPartView = memo(function ToolPartView({
     permissionResolved ||
     (immersiveMode && descriptive && isStreaming && isReadable)
 
-  const [expanded, setExpanded] = useState(() => shouldStartExpanded)
+  const [expanded, setExpanded] = useUiDisclosureState(
+    `message:${part.messageID}:tool:${part.id}`,
+    shouldStartExpanded,
+  )
   const hasAutoExpandedReadableRef = useRef(shouldStartExpanded && immersiveMode && descriptive && isReadable)
   const [isChildFullscreen, setIsChildFullscreen] = useState(false)
   const effectiveExpanded = expanded || hasPendingInteraction || permissionResolved || isChildFullscreen
@@ -135,23 +139,32 @@ export const ToolPartView = memo(function ToolPartView({
         hasAutoExpandedReadableRef.current = true
       }
       frameId = requestAnimationFrame(() => {
-        setExpanded(true)
+        setExpanded(true, { touched: false, respectUser: true })
       })
     } else if (immersiveMode && descriptive && !isReadable) {
       frameId = requestAnimationFrame(() => {
-        setExpanded(false)
+        setExpanded(false, { touched: false, respectUser: true })
       })
     } else if (immersiveMode && descriptive && isStreaming && isReadable && !hasAutoExpandedReadableRef.current) {
       hasAutoExpandedReadableRef.current = true
       frameId = requestAnimationFrame(() => {
-        setExpanded(true)
+        setExpanded(true, { touched: false, respectUser: true })
       })
     }
 
     return () => {
       if (frameId !== null) cancelAnimationFrame(frameId)
     }
-  }, [isActive, hasPendingInteraction, permissionResolved, immersiveMode, descriptive, isStreaming, isReadable])
+  }, [
+    isActive,
+    hasPendingInteraction,
+    permissionResolved,
+    immersiveMode,
+    descriptive,
+    isStreaming,
+    isReadable,
+    setExpanded,
+  ])
 
   // Shared icon element
   const toolIcon = (

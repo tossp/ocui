@@ -36,6 +36,7 @@ export function DefaultRenderer({ part, data, onFullscreenChange }: ToolRenderer
       {/* Input — compact 模式下不渲染 */}
       {!isCompact && (hasInput || (isActive && !hasInput)) && (
         <ContentBlock
+          stateKey={`message:${part.messageID}:tool:${part.id}:input`}
           label={t('defaultRenderer.input')}
           content={data.input || ''}
           language={data.inputLang}
@@ -58,6 +59,7 @@ export function DefaultRenderer({ part, data, onFullscreenChange }: ToolRenderer
           compact={isCompact}
           onFullscreenChange={onFullscreenChange}
           fullscreenBaseId={`tool:${part.sessionID}:${part.messageID}:${part.id}:output`}
+          stateBaseKey={`message:${part.messageID}:tool:${part.id}:output`}
         />
       )}
 
@@ -80,6 +82,7 @@ interface OutputBlockProps {
   compact?: boolean
   onFullscreenChange?: (isFullscreen: boolean) => void
   fullscreenBaseId: string
+  stateBaseKey: string
 }
 
 function OutputBlock({
@@ -91,6 +94,7 @@ function OutputBlock({
   compact,
   onFullscreenChange,
   fullscreenBaseId,
+  stateBaseKey,
 }: OutputBlockProps) {
   const { t } = useTranslation('message')
 
@@ -98,6 +102,7 @@ function OutputBlock({
   if (hasError) {
     return (
       <ContentBlock
+        stateKey={stateBaseKey}
         label={t('defaultRenderer.error')}
         content={data.error || ''}
         variant="error"
@@ -113,6 +118,7 @@ function OutputBlock({
     if (compact) return null
     return (
       <ContentBlock
+        stateKey={stateBaseKey}
         label={t('defaultRenderer.output')}
         isLoading={true}
         loadingText=""
@@ -132,6 +138,7 @@ function OutputBlock({
           {data.files.map((file, idx) => (
             <ContentBlock
               key={idx}
+              stateKey={`${stateBaseKey}:file:${file.filePath || idx}`}
               label={formatLabel(tool, t)}
               labelIcon={<FileResultIcon filePath={file.filePath} />}
               hideLabel
@@ -157,6 +164,7 @@ function OutputBlock({
     if (data.diff) {
       return (
         <ContentBlock
+          stateKey={stateBaseKey}
           label={t('defaultRenderer.output')}
           labelIcon={data.filePath ? <FileResultIcon filePath={data.filePath} /> : undefined}
           hideLabel={!!data.filePath}
@@ -174,6 +182,7 @@ function OutputBlock({
     // Regular output
     return (
       <ContentBlock
+        stateKey={stateBaseKey}
         label={t('defaultRenderer.output')}
         content={data.output}
         language={data.outputLang}
@@ -189,6 +198,7 @@ function OutputBlock({
   // 4. 无输出
   return (
     <ContentBlock
+      stateKey={stateBaseKey}
       label={t('defaultRenderer.output')}
       compact={compact}
       onFullscreenChange={onFullscreenChange}

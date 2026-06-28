@@ -1,9 +1,9 @@
-import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronDownIcon, CheckIcon, ClockIcon, CloseIcon, CircleIcon } from '../../../../components/Icons'
 import type { ToolRendererProps } from '../types'
 import { useDelayedRender } from '../../../../hooks'
 import { extractTodos } from './todoUtils'
+import { useUiDisclosureState } from '../../../../utils/uiDisclosureState'
 
 // ============================================
 // Types
@@ -27,16 +27,16 @@ export function TodoRenderer({ part }: ToolRendererProps) {
     return null
   }
 
-  return <TodoList todos={todos} />
+  return <TodoList todos={todos} stateKey={`message:${part.messageID}:tool:${part.id}:todo-list`} />
 }
 
 // ============================================
 // TodoList Component
 // ============================================
 
-function TodoList({ todos }: { todos: TodoItem[] }) {
+function TodoList({ todos, stateKey }: { todos: TodoItem[]; stateKey: string }) {
   const { t } = useTranslation('message')
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useUiDisclosureState(stateKey, false)
   const shouldRenderBody = useDelayedRender(!collapsed)
   const completed = todos.filter(t => t.status === 'completed').length
   const total = todos.length

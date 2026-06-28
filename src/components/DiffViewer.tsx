@@ -17,6 +17,7 @@ import { useDynamicVirtualScroll } from '../hooks/useDynamicVirtualScroll'
 import { themeStore } from '../store/themeStore'
 import type { DiffStyle } from '../store/themeStore'
 import { getLineCount, getLineNumberColumnWidth } from '../utils/lineNumberUtils'
+import { useUiState } from '../utils/uiDisclosureState'
 
 // ============================================
 // 常量
@@ -44,6 +45,8 @@ export interface DiffViewerProps {
   isResizing?: boolean
   wordWrap?: boolean
   data?: DiffViewerData
+  /** Stable key for preserving expanded collapsed-context regions across remounts. */
+  stateKey?: string
 }
 
 export interface DiffViewerData {
@@ -540,6 +543,7 @@ const DiffViewerContent = memo(function DiffViewerContent({
   isResizing = false,
   wordWrap,
   data,
+  stateKey,
 }: DiffViewerProps & { data: DiffViewerData }) {
   const { diffStyle, codeWordWrap, codeFontScale } = useSyncExternalStore(themeStore.subscribe, themeStore.getSnapshot)
   const resolvedWordWrap = wordWrap ?? codeWordWrap
@@ -563,6 +567,7 @@ const DiffViewerContent = memo(function DiffViewerContent({
           maxHeight={maxHeight}
           diffStyle={diffStyle}
           lineHeight={lineHeight}
+          stateKey={stateKey ? `${stateKey}:wrapped-split` : undefined}
         />
       )
     }
@@ -577,6 +582,7 @@ const DiffViewerContent = memo(function DiffViewerContent({
         maxHeight={maxHeight}
         diffStyle={diffStyle}
         lineHeight={lineHeight}
+        stateKey={stateKey ? `${stateKey}:split` : undefined}
       />
     )
   }
@@ -592,6 +598,7 @@ const DiffViewerContent = memo(function DiffViewerContent({
         maxHeight={maxHeight}
         diffStyle={diffStyle}
         lineHeight={lineHeight}
+        stateKey={stateKey ? `${stateKey}:wrapped-unified` : undefined}
       />
     )
   }
@@ -606,6 +613,7 @@ const DiffViewerContent = memo(function DiffViewerContent({
       maxHeight={maxHeight}
       diffStyle={diffStyle}
       lineHeight={lineHeight}
+      stateKey={stateKey ? `${stateKey}:unified` : undefined}
     />
   )
 })
@@ -619,6 +627,7 @@ const WrappedSplitDiffView = memo(function WrappedSplitDiffView({
   maxHeight,
   diffStyle,
   lineHeight,
+  stateKey,
 }: {
   beforeTokens: HighlightTokens | null
   afterTokens: HighlightTokens | null
@@ -628,13 +637,14 @@ const WrappedSplitDiffView = memo(function WrappedSplitDiffView({
   maxHeight?: number
   diffStyle: DiffStyle
   lineHeight: number
+  stateKey?: string
 }) {
   const { t } = useTranslation(['components', 'common'])
-  const [expandedRegions, setExpandedRegions] = useState<Map<number, ExpansionRegion>>(() => new Map())
+  const [expandedRegions, setExpandedRegions] = useUiState<Map<number, ExpansionRegion>>(stateKey, new Map())
   const displayLines = useMemo(() => collapseContextPaired(pairedLines, expandedRegions), [pairedLines, expandedRegions])
   const handleExpand = useCallback((id: number, direction: ExpandDirection) => {
     setExpandedRegions(prev => expandRegion(prev, id, direction))
-  }, [])
+  }, [setExpandedRegions])
 
   const useChangeBars = diffStyle === 'changeBars'
   const gutterWidth = useChangeBars ? lineNumberWidth + 4 : lineNumberWidth + 20
@@ -801,6 +811,7 @@ const SplitDiffView = memo(function SplitDiffView({
   maxHeight,
   diffStyle,
   lineHeight,
+  stateKey,
 }: {
   beforeTokens: HighlightTokens | null
   afterTokens: HighlightTokens | null
@@ -810,6 +821,7 @@ const SplitDiffView = memo(function SplitDiffView({
   maxHeight?: number
   diffStyle: DiffStyle
   lineHeight: number
+  stateKey?: string
 }) {
   const { t } = useTranslation(['components', 'common'])
   const containerRef = useRef<HTMLDivElement>(null)
@@ -830,11 +842,11 @@ const SplitDiffView = memo(function SplitDiffView({
   const [leftScrollLeft, setLeftScrollLeft] = useState(0)
   const [rightScrollLeft, setRightScrollLeft] = useState(0)
 
-  const [expandedRegions, setExpandedRegions] = useState<Map<number, ExpansionRegion>>(() => new Map())
+  const [expandedRegions, setExpandedRegions] = useUiState<Map<number, ExpansionRegion>>(stateKey, new Map())
   const displayLines = useMemo(() => collapseContextPaired(pairedLines, expandedRegions), [pairedLines, expandedRegions])
   const handleExpand = useCallback((id: number, direction: ExpandDirection) => {
     setExpandedRegions(prev => expandRegion(prev, id, direction))
-  }, [])
+  }, [setExpandedRegions])
 
   const totalHeight = displayLines.length * lineHeight
 
@@ -1189,6 +1201,7 @@ const UnifiedDiffView = memo(function UnifiedDiffView({
   maxHeight,
   diffStyle,
   lineHeight,
+  stateKey,
 }: {
   beforeTokens: HighlightTokens | null
   afterTokens: HighlightTokens | null
@@ -1198,6 +1211,7 @@ const UnifiedDiffView = memo(function UnifiedDiffView({
   maxHeight?: number
   diffStyle: DiffStyle
   lineHeight: number
+  stateKey?: string
 }) {
   const { t } = useTranslation(['components', 'common'])
   const containerRef = useRef<HTMLDivElement>(null)
@@ -1210,11 +1224,11 @@ const UnifiedDiffView = memo(function UnifiedDiffView({
   const [contentWidth, setContentWidth] = useState(0)
   const [contentClientWidth, setContentClientWidth] = useState(0)
 
-  const [expandedRegions, setExpandedRegions] = useState<Map<number, ExpansionRegion>>(() => new Map())
+  const [expandedRegions, setExpandedRegions] = useUiState<Map<number, ExpansionRegion>>(stateKey, new Map())
   const displayLines = useMemo(() => collapseContextUnified(lines, expandedRegions), [lines, expandedRegions])
   const handleExpand = useCallback((id: number, direction: ExpandDirection) => {
     setExpandedRegions(prev => expandRegion(prev, id, direction))
-  }, [])
+  }, [setExpandedRegions])
 
   const totalHeight = displayLines.length * lineHeight
 
@@ -1427,6 +1441,7 @@ const WrappedUnifiedDiffView = memo(function WrappedUnifiedDiffView({
   maxHeight,
   diffStyle,
   lineHeight,
+  stateKey,
 }: {
   beforeTokens: HighlightTokens | null
   afterTokens: HighlightTokens | null
@@ -1436,13 +1451,14 @@ const WrappedUnifiedDiffView = memo(function WrappedUnifiedDiffView({
   maxHeight?: number
   diffStyle: DiffStyle
   lineHeight: number
+  stateKey?: string
 }) {
   const { t } = useTranslation(['components', 'common'])
-  const [expandedRegions, setExpandedRegions] = useState<Map<number, ExpansionRegion>>(() => new Map())
+  const [expandedRegions, setExpandedRegions] = useUiState<Map<number, ExpansionRegion>>(stateKey, new Map())
   const displayLines = useMemo(() => collapseContextUnified(lines, expandedRegions), [lines, expandedRegions])
   const handleExpand = useCallback((id: number, direction: ExpandDirection) => {
     setExpandedRegions(prev => expandRegion(prev, id, direction))
-  }, [])
+  }, [setExpandedRegions])
 
   const useChangeBars = diffStyle === 'changeBars'
   const gutterWidth = useChangeBars ? lineNumberWidth * 2 + 4 : lineNumberWidth * 2 + 20

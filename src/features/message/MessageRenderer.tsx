@@ -39,6 +39,7 @@ import type {
 } from '../../types/message'
 import { isToolPart, isVisibleReasoningPart, isVisibleTextPart } from '../../types/message'
 import { formatDuration, formatCompletedAt, formatDetailedDateTime } from '../../utils/formatUtils'
+import { useUiDisclosureState } from '../../utils/uiDisclosureState'
 
 interface MessageRendererProps {
   message: Message
@@ -116,9 +117,8 @@ function useEntryGrowAnimation(created: number) {
 /** 默认预览 8 行 */
 const COLLAPSE_PREVIEW_LINES = 8
 
-// 折叠状态缓存：消息是否溢出、用户是否手动展开过
+// 折叠状态缓存：消息是否溢出
 const overflowStateCache = new Map<string, boolean>()
-const expandedMessages = new Set<string>()
 
 const CollapsibleUserText = memo(function CollapsibleUserText({
   text,
@@ -134,7 +134,7 @@ const CollapsibleUserText = memo(function CollapsibleUserText({
   const { t } = useTranslation('message')
   const contentRef = useRef<HTMLDivElement>(null)
   const overflowCacheKey = `${messageId}:${renderMarkdown ? 'markdown' : 'plain'}`
-  const [expanded, setExpanded] = useState(() => expandedMessages.has(messageId))
+  const [expanded, setExpanded] = useUiDisclosureState(`message:${messageId}:user-text`, false)
   const [isOverflow, setIsOverflow] = useState(() => overflowStateCache.get(overflowCacheKey) ?? false)
 
   useLayoutEffect(() => {
@@ -187,14 +187,7 @@ const CollapsibleUserText = memo(function CollapsibleUserText({
       </div>
       {showCollapse && (
         <button
-          onClick={() => {
-            setExpanded(prev => {
-              const next = !prev
-              if (next) expandedMessages.add(messageId)
-              else expandedMessages.delete(messageId)
-              return next
-            })
-          }}
+          onClick={() => setExpanded(prev => !prev)}
           className="mt-1 text-[length:var(--fs-sm)] text-text-400 hover:text-text-200 transition-colors"
           aria-expanded={expanded}
         >
@@ -265,7 +258,10 @@ const UserMessageView = memo(function UserMessageView({
 }: UserMessageViewProps) {
   const { t } = useTranslation('message')
   const { parts, info } = message
-  const [showSystemContext, setShowSystemContext] = useState(false)
+  const [showSystemContext, setShowSystemContext] = useUiDisclosureState(
+    `message:${info.id}:user-system-context`,
+    false,
+  )
   const shouldRenderSystemContext = useDelayedRender(showSystemContext)
   const { collapseUserMessages, renderUserMarkdown } = useTheme()
 
@@ -450,7 +446,7 @@ const AssistantMessageView = memo(function AssistantMessageView({
     if (messageError) {
       return (
         <div className="flex flex-col gap-2 w-full">
-          <MessageErrorView error={messageError} />
+          <MessageErrorView error={messageError} stateKey={`message:${message.info.id}:error`} />
         </div>
       )
     }
@@ -522,7 +518,7 @@ const AssistantMessageView = memo(function AssistantMessageView({
       </SmoothHeight>
 
       {/* Message-level error */}
-      {messageError && <MessageErrorView error={messageError} />}
+      {messageError && <MessageErrorView error={messageError} stateKey={`message:${info.id}:error`} />}
 
       {(showTurnDurationFooter || showCompletedAtFooter) && (
         <div className="flex items-center gap-3 py-0.5 text-[length:var(--fs-xxs)] text-text-500">
@@ -619,34 +615,42 @@ const ToolGroup = memo(function ToolGroup({
     !descriptiveToolSteps ||
     hasActiveTools ||
     hasPendingInteraction ||
-    (immersiveMode && isStreaming && hasReadableTools)
+    (immersiveMode && !!isStreaming && hasReadableTools)
 
   // descriptive 模式默认收起，运行时展开，完成后保持展开
   // 沉浸模式下：没有可读工具则完成后自动收起
-  const [expanded, setExpanded] = useState(() => shouldStartExpanded)
+  const groupStateKey = `message:${parts[0]?.messageID || 'unknown'}:tool-group:${parts[0]?.id || 'empty'}`
+  const [expanded, setExpanded] = useUiDisclosureState(groupStateKey, shouldStartExpanded)
   const hasAutoExpandedReadableRef = useRef(shouldStartExpanded && immersiveMode && hasReadableTools)
 
   useEffect(() => {
     if (!descriptiveToolSteps) return
     // 沉浸模式下没有可读工具：始终收起，不展开
     if (immersiveMode && !hasReadableTools) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- 沉浸模式联动
-      setExpanded(false)
+      setExpanded(false, { touched: false, respectUser: true })
       return
     }
     if (hasActiveTools || hasPendingInteraction) {
       if (immersiveMode && hasReadableTools) {
         hasAutoExpandedReadableRef.current = true
       }
-      setExpanded(true)
+      setExpanded(true, { touched: false, respectUser: true })
       return
     }
     // 某些可读工具（如 todo）可能首帧已完成，错过 running 态；流仍在继续时也自动展开一次
     if (immersiveMode && isStreaming && hasReadableTools && !hasAutoExpandedReadableRef.current) {
       hasAutoExpandedReadableRef.current = true
-      setExpanded(true)
+      setExpanded(true, { touched: false, respectUser: true })
     }
-  }, [descriptiveToolSteps, hasActiveTools, hasPendingInteraction, immersiveMode, hasReadableTools, isStreaming])
+  }, [
+    descriptiveToolSteps,
+    hasActiveTools,
+    hasPendingInteraction,
+    immersiveMode,
+    hasReadableTools,
+    isStreaming,
+    setExpanded,
+  ])
 
   const effectiveExpanded = expanded || hasPendingInteraction
   const shouldRenderBody = useDelayedRender(effectiveExpanded)

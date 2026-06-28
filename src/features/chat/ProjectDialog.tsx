@@ -309,7 +309,7 @@ export function ProjectDialog({ isOpen, onClose, onSelect, initialPath = '' }: P
       width={560}
       showCloseButton={false}
       allowTouchBackdropClose
-      className="h-[460px]"
+      className="h-[min(460px,100%)]"
     >
       {/* Header */}
       <div className="p-4 pb-2 shrink-0">

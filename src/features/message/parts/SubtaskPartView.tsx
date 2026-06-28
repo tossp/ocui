@@ -1,10 +1,11 @@
-import { memo, useState } from 'react'
+import { memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { SubtaskPart } from '../../../types/message'
 import { useChildSessions, type ChildSessionInfo } from '../../../store'
 import { useSessionNavigation } from '../../../contexts/SessionNavigationContext'
 import { useDelayedRender } from '../../../hooks'
 import { UsersIcon, ChevronDownIcon, LayersIcon, TerminalIcon, ReturnIcon } from '../../../components/Icons'
+import { useUiDisclosureState } from '../../../utils/uiDisclosureState'
 
 interface SubtaskPartViewProps {
   part: SubtaskPart
@@ -19,7 +20,7 @@ interface SubtaskPartViewProps {
  */
 export const SubtaskPartView = memo(function SubtaskPartView({ part }: SubtaskPartViewProps) {
   const { t } = useTranslation('message')
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useUiDisclosureState(`message:${part.messageID}:subtask:${part.id}`, false)
   const shouldRenderBody = useDelayedRender(expanded)
   const { navigateToSession } = useSessionNavigation()
 

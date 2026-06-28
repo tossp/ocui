@@ -1,8 +1,9 @@
-import { memo, useState } from 'react'
+import { memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { RetryIcon, PatchIcon, ChevronDownIcon, FileIcon } from '../../../components/Icons'
 import { useDelayedRender } from '../../../hooks/useDelayedRender'
 import type { RetryPart, CompactionPart, PatchPart } from '../../../types/message'
+import { useUiDisclosureState } from '../../../utils/uiDisclosureState'
 
 // ============================================
 // Retry Part View - 显示重试状态
@@ -14,7 +15,7 @@ interface RetryPartViewProps {
 
 export const RetryPartView = memo(function RetryPartView({ part }: RetryPartViewProps) {
   const { t } = useTranslation('message')
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useUiDisclosureState(`message:${part.messageID}:retry:${part.id}`, false)
   const shouldRenderBody = useDelayedRender(expanded)
   const { attempt, error, time } = part
 
@@ -99,7 +100,7 @@ interface PatchPartViewProps {
 
 export const PatchPartView = memo(function PatchPartView({ part }: PatchPartViewProps) {
   const { t } = useTranslation('message')
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useUiDisclosureState(`message:${part.messageID}:patch:${part.id}`, false)
   const shouldRenderBody = useDelayedRender(expanded)
   const { hash, files } = part
   const fileCount = files.length

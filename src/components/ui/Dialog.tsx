@@ -348,8 +348,8 @@ export function Dialog({
           </div>
 
           {rawContent ? (
-            /* rawContent 模式：children 完全控制内容布局 */
-            children
+            /* rawContent 模式：children 控制内部布局，wrapper 只提供可滚动高度边界 */
+            <div className="flex min-h-0 flex-1 flex-col">{children}</div>
           ) : (
             <>
               {/* Header */}
