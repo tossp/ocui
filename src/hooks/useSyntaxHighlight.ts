@@ -1,10 +1,8 @@
-import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { ShikiStreamTokenizer } from 'shiki-stream'
 import {
   codeToHtml,
-  codeToHtmlSyncIfLoaded,
   codeToTokens,
-  codeToTokensSyncIfLoaded,
   getLoadedHighlighterForLanguage,
   type ShikiThemeInput,
 } from '../lib/shiki'
@@ -521,25 +519,10 @@ export function useSyntaxHighlight(code: string, options: HighlightOptions & { m
   const [isLoading, setIsLoading] = useState(false)
   const prevKeyRef = useRef<{ code: string; lang: string; themeKey: string } | null>(null)
 
-  useLayoutEffect(() => {
-    if (!enabled || delayMs > 0) return
-
-    const syncResult =
-      mode === 'html'
-        ? codeToHtmlSyncIfLoaded(code, { lang: normalizedLang, theme: resolvedTheme.theme })
-        : codeToTokensSyncIfLoaded(code, { lang: normalizedLang, theme: resolvedTheme.theme })?.tokens
-
-    if (syncResult) {
-      if (mode === 'html') {
-        htmlCache.set(cacheKey, syncResult as string)
-      } else {
-        tokensCache.set(cacheKey, syncResult as HighlightTokens)
-      }
-      setOutputState({ key: outputKey, value: syncResult })
-      setIsLoading(false)
-    }
-  }, [cacheKey, code, delayMs, enabled, mode, normalizedLang, outputKey, resolvedTheme.theme])
-
+  // 原先此处有 useLayoutEffect 做同步高亮（codeToTokensSyncIfLoaded），
+  // 会在浏览器绘制前阻塞主线程——500 行代码耗时 ~150ms，1000 行 ~300ms。
+  // 删除后由下方 useEffect 的异步路径接管：先绘制纯文本，再通过
+  // scheduleQueuedHighlight（含 yieldToMainThread）逐块高亮，不阻塞交互。
   useEffect(() => {
     // Even when highlighting is temporarily disabled by viewport/lifecycle state,
     // keep already-computed results available after layout changes or remounts.
