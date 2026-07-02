@@ -10,6 +10,8 @@
     "clearSearch": "Clear search",
     "noFilesFound": "No files found",
     "noTextMatches": "No matches found",
+    "fileMatches": "Files",
+    "contentMatches": "Content",
     "failedToLoadFiles": "Failed to load files",
     "failedToLoadFile": "Failed to load file",
     "textSearchFailed": "Search failed",

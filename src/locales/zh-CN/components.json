@@ -10,6 +10,8 @@
     "clearSearch": "清除搜索",
     "noFilesFound": "未找到文件",
     "noTextMatches": "未找到匹配内容",
+    "fileMatches": "文件",
+    "contentMatches": "内容",
     "failedToLoadFiles": "加载文件失败",
     "failedToLoadFile": "加载文件内容失败",
     "textSearchFailed": "搜索失败",

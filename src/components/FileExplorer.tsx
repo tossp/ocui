@@ -36,9 +36,10 @@ import {
   type PreviewCategory,
 } from '../utils/mimeUtils'
 import { downloadFileContent } from '../utils/downloadUtils'
-import { searchText } from '../api/file'
+import { searchText, searchFiles } from '../api/file'
 import type { FileContent, TextSearchMatch } from '../api/types'
 import { startInternalDrag } from '../lib/internalDragCore'
+import { toAbsolutePath } from '../features/mention'
 import type { TargetLineRange } from './codeMirrorReadonlyExtensions'
 
 // 常量
@@ -107,6 +108,7 @@ export const FileExplorer = memo(function FileExplorer({
   const searchRequestIdRef = useRef(0)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<TextSearchMatch[]>([])
+  const [fileResults, setFileResults] = useState<string[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
   const {
@@ -211,8 +213,32 @@ export const FileExplorer = memo(function FileExplorer({
     const timer = window.setTimeout(() => {
       setSearchLoading(true)
       setSearchResults([])
+      setFileResults([])
       setSearchError(null)
 
+      let fileDone = false
+      let textDone = false
+      const maybeFinish = () => {
+        if (fileDone && textDone && requestId === searchRequestIdRef.current) {
+          setSearchLoading(false)
+        }
+      }
+
+      // 文件名搜索（失败静默，不阻断内容搜索）
+      searchFiles(trimmedSearchQuery, { directory, limit: 50 })
+        .then(paths => {
+          if (requestId !== searchRequestIdRef.current) return
+          setFileResults(paths)
+        })
+        .catch(() => {
+          // 文件名搜索失败不报错
+        })
+        .finally(() => {
+          fileDone = true
+          maybeFinish()
+        })
+
+      // 内容搜索
       searchText(trimmedSearchQuery, directory)
         .then(results => {
           if (requestId !== searchRequestIdRef.current) return
@@ -224,9 +250,8 @@ export const FileExplorer = memo(function FileExplorer({
           setSearchError(err instanceof Error ? err.message : t('fileExplorer.textSearchFailed'))
         })
         .finally(() => {
-          if (requestId === searchRequestIdRef.current) {
-            setSearchLoading(false)
-          }
+          textDone = true
+          maybeFinish()
         })
     }, 250)
 
@@ -253,10 +278,19 @@ export const FileExplorer = memo(function FileExplorer({
     [position],
   )
 
+  const handleFileResultClick = useCallback(
+    (path: string) => {
+      const name = path.split(/[/\\]/).pop() || path
+      layoutStore.openFilePreview({ path, name }, position)
+    },
+    [position],
+  )
+
   const handleSearchQueryChange = useCallback((value: string) => {
     setSearchQuery(value)
     if (!value.trim()) {
       setSearchResults([])
+      setFileResults([])
       setSearchLoading(false)
       setSearchError(null)
     }
@@ -339,9 +373,12 @@ export const FileExplorer = memo(function FileExplorer({
           {isSearchingText ? (
             <TextSearchResults
               results={searchResults}
+              fileResults={fileResults}
               isLoading={searchLoading}
               error={searchError}
               onSelect={handleSearchResultClick}
+              onSelectFile={handleFileResultClick}
+              directory={directory}
             />
           ) : isLoading && tree.length === 0 ? (
             <div className="flex items-center justify-center h-20 text-text-400 text-[length:var(--fs-sm)]">
@@ -412,24 +449,51 @@ export const FileExplorer = memo(function FileExplorer({
 
 interface TextSearchResultsProps {
   results: TextSearchMatch[]
+  fileResults: string[]
   isLoading: boolean
   error: string | null
   onSelect: (match: TextSearchMatch) => void
+  onSelectFile: (path: string) => void
+  directory?: string
 }
 
 const TextSearchResults = memo(function TextSearchResults({
   results,
+  fileResults,
   isLoading,
   error,
   onSelect,
+  onSelectFile,
+  directory,
 }: TextSearchResultsProps) {
   const { t } = useTranslation(['components', 'common'])
 
-  if (isLoading && results.length === 0) {
+  const hasFiles = fileResults.length > 0
+  const hasText = results.length > 0
+
+  // 拖拽到输入框实现 @mention，与文件树项行为一致
+  const handlePointerDragStart = useCallback(
+    (e: PointerEvent<HTMLButtonElement>, path: string) => {
+      if (!directory) return
+      const name = path.split(/[/\\]/).pop() || path
+      startInternalDrag(e, {
+        kind: 'file-mention',
+        file: {
+          type: 'file',
+          path,
+          absolute: toAbsolutePath(path, directory),
+          name,
+        },
+      })
+    },
+    [directory],
+  )
+
+  if (isLoading && !hasFiles && !hasText) {
     return <div className="flex items-center justify-center h-20 text-text-400 text-[length:var(--fs-sm)]">{t('common:loading')}</div>
   }
 
-  if (error) {
+  if (error && !hasFiles && !hasText) {
     return (
       <div className="flex flex-col items-center justify-center h-20 text-danger-100 text-[length:var(--fs-sm)] gap-1 px-4">
         <AlertCircleIcon size={16} />
@@ -438,7 +502,7 @@ const TextSearchResults = memo(function TextSearchResults({
     )
   }
 
-  if (results.length === 0) {
+  if (!hasFiles && !hasText) {
     return (
       <div className="flex items-center justify-center h-20 text-text-400 text-[length:var(--fs-sm)]">
         {t('fileExplorer.noTextMatches')}
@@ -448,40 +512,87 @@ const TextSearchResults = memo(function TextSearchResults({
 
   return (
     <div className="py-1">
-      {results.map((match, index) => {
-        const path = match.path.text
-        const name = path.split(/[/\\]/).pop() || path
-        const line = match.lines.text.trim()
-
-        return (
-          <button
-            key={`${path}:${match.line_number}:${match.absolute_offset}:${index}`}
-            type="button"
-            onClick={() => onSelect(match)}
-            className="w-full px-2 py-1.5 text-left hover:bg-bg-200/50 transition-colors"
-          >
-            <div className="flex items-center gap-1.5 min-w-0">
-              <img
-                src={getMaterialIconUrl(path, 'file', false)}
-                alt=""
-                width={16}
-                height={16}
-                draggable={false}
-                className="shrink-0"
-                loading="lazy"
-                decoding="async"
-                onError={e => {
-                  e.currentTarget.style.visibility = 'hidden'
-                }}
-              />
-              <span className="truncate text-[length:var(--fs-sm)] text-text-200">{name}</span>
-              <span className="shrink-0 text-[length:var(--fs-xxs)] text-text-500">:{match.line_number}</span>
+      {hasFiles && (
+        <>
+          <div className="px-2 py-1 text-[length:var(--fs-xxs)] font-medium text-text-500 uppercase tracking-wide">
+            {t('fileExplorer.fileMatches')}
+          </div>
+          {fileResults.map(path => {
+            const name = path.split(/[/\\]/).pop() || path
+            return (
+              <button
+                key={`file:${path}`}
+                type="button"
+                onPointerDown={e => handlePointerDragStart(e, path)}
+                onClick={() => onSelectFile(path)}
+                className="w-full px-2 py-1.5 text-left hover:bg-bg-200/50 transition-colors"
+              >
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <img
+                    src={getMaterialIconUrl(path, 'file', false)}
+                    alt=""
+                    width={16}
+                    height={16}
+                    draggable={false}
+                    className="shrink-0"
+                    loading="lazy"
+                    decoding="async"
+                    onError={e => {
+                      e.currentTarget.style.visibility = 'hidden'
+                    }}
+                  />
+                  <span className="truncate text-[length:var(--fs-sm)] text-text-200">{name}</span>
+                </div>
+                <div className="mt-0.5 truncate pl-[22px] text-[length:var(--fs-xxs)] text-text-500">{path}</div>
+              </button>
+            )
+          })}
+        </>
+      )}
+      {hasText && (
+        <>
+          {hasFiles && (
+            <div className="mt-1 px-2 py-1 text-[length:var(--fs-xxs)] font-medium text-text-500 uppercase tracking-wide">
+              {t('fileExplorer.contentMatches')}
             </div>
-            <div className="mt-0.5 truncate pl-[22px] font-mono text-[length:var(--fs-xxs)] text-text-400">{line}</div>
-            <div className="mt-0.5 truncate pl-[22px] text-[length:var(--fs-xxs)] text-text-500">{path}</div>
-          </button>
-        )
-      })}
+          )}
+          {results.map((match, index) => {
+            const path = match.path.text
+            const name = path.split(/[/\\]/).pop() || path
+            const line = match.lines.text.trim()
+
+            return (
+              <button
+                key={`${path}:${match.line_number}:${match.absolute_offset}:${index}`}
+                type="button"
+                onPointerDown={e => handlePointerDragStart(e, path)}
+                onClick={() => onSelect(match)}
+                className="w-full px-2 py-1.5 text-left hover:bg-bg-200/50 transition-colors"
+              >
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <img
+                    src={getMaterialIconUrl(path, 'file', false)}
+                    alt=""
+                    width={16}
+                    height={16}
+                    draggable={false}
+                    className="shrink-0"
+                    loading="lazy"
+                    decoding="async"
+                    onError={e => {
+                      e.currentTarget.style.visibility = 'hidden'
+                    }}
+                  />
+                  <span className="truncate text-[length:var(--fs-sm)] text-text-200">{name}</span>
+                  <span className="shrink-0 text-[length:var(--fs-xxs)] text-text-500">:{match.line_number}</span>
+                </div>
+                <div className="mt-0.5 truncate pl-[22px] font-mono text-[length:var(--fs-xxs)] text-text-400">{line}</div>
+                <div className="mt-0.5 truncate pl-[22px] text-[length:var(--fs-xxs)] text-text-500">{path}</div>
+              </button>
+            )
+          })}
+        </>
+      )}
       {isLoading && (
         <div className="px-2 py-1.5 text-center text-[length:var(--fs-xs)] text-text-500">{t('common:loading')}</div>
       )}
