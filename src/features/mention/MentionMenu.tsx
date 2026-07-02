@@ -16,6 +16,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import { searchFiles, listDirectory, type ApiAgent } from '../../api/client'
 import { fileErrorHandler } from '../../utils'
+import { scrollItemIntoView } from '../../utils/scrollUtils'
 import type { MentionType, MentionItem } from './types'
 import { getFileName, toAbsolutePath, normalizePath } from './utils'
 
@@ -113,11 +114,11 @@ export const MentionMenu = forwardRef<MentionMenuHandle, MentionMenuProps>(funct
   }, [isOpen])
 
   // 滚动选中项到可见区域
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!listRef.current) return
     const selectedEl = listRef.current.children[selectedIndex] as HTMLElement
     if (selectedEl) {
-      selectedEl.scrollIntoView({ block: 'nearest' })
+      scrollItemIntoView(listRef.current, selectedEl)
     }
   }, [selectedIndex])
 
