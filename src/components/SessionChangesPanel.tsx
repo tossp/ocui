@@ -22,6 +22,7 @@ import { useVerticalSplitResize } from '../hooks/useVerticalSplitResize'
 import { DropdownMenu } from './ui'
 import { changeScopeStore, useSessionChangeScope, type ChangeScopeMode } from '../store/changeScopeStore'
 import { useFullscreenLayer } from '../contexts'
+import { useAutoRefresh } from '../hooks/useAutoRefresh'
 
 // 常量
 const MIN_LIST_HEIGHT = 80
@@ -64,6 +65,7 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
   const { t } = useTranslation(['components', 'common'])
   const containerRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  const consumerId = `session-changes-${useId()}`
   const {
     splitHeight: listHeight,
     isResizing,
@@ -446,6 +448,9 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
     if (!nextProject?.vcs) return
     await loadDiffMode(changeMode, { force: true, project: nextProject })
   }, [changeMode, loadDiffMode, loadProjectState])
+
+  // 自动刷新：session idle / 窗口聚焦 / SSE 重连
+  useAutoRefresh(consumerId, sessionId ?? null, handleRefresh, !!sessionId)
 
   const handleInitGit = useCallback(async () => {
     setInitializingGit(true)

@@ -1260,11 +1260,14 @@ function InputBoxComponent({
   // ============================================
 
   // 计算已选择的 items (用于过滤菜单)
-  const excludeValues = new Set<string>()
-  attachments.forEach(a => {
-    if (a.url) excludeValues.add(a.url)
-    if (a.agentName) excludeValues.add(a.agentName)
-  })
+  const excludeValues = useMemo(() => {
+    const set = new Set<string>()
+    attachments.forEach(a => {
+      if (a.url) set.add(a.url)
+      if (a.agentName) set.add(a.agentName)
+    })
+    return set
+  }, [attachments])
 
   // 底部 padding 计算：
   // - isCollapsed (收起态 / 移动端「回复胶囊」)：

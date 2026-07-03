@@ -32,8 +32,13 @@ function containsLeaf(node: PaneNode, leafId: string): boolean {
 
 /** Visual gap between panes in px */
 const SPLIT_GAP = 6
-/** Extra invisible hit area on each side of the divider for easier grabbing */
-const HIT_EXTEND = 4
+/** Extra invisible hit area on each side of the divider for easier grabbing.
+ *  Vertical splits keep a generous 4px extension; horizontal splits use 1px
+ *  so the divider's hit area (8px total) does not overlap the OutlineIndex
+ *  tick trigger (8px wide, 5px from the pane's right edge). OutlineIndex is
+ *  not present on the top/bottom panes of a vertical split, so 4px is safe. */
+const HIT_EXTEND_VERTICAL = 4
+const HIT_EXTEND_HORIZONTAL = 1
 /** Minimum ratio to prevent a pane from collapsing to zero */
 const MIN_RATIO = 0.1
 const MAX_RATIO = 0.9
@@ -140,7 +145,8 @@ function SplitNode({ split, renderLeaf, fullscreenPaneId }: SplitNodeProps) {
   // ---- Static layout (React-controlled, used when not dragging) ----
   const gridTemplate = buildGridTemplate(split.ratio)
 
-  const hitSize = SPLIT_GAP + HIT_EXTEND * 2
+  const hitExtend = isHorizontal ? HIT_EXTEND_HORIZONTAL : HIT_EXTEND_VERTICAL
+  const hitSize = SPLIT_GAP + hitExtend * 2
   const negMargin = -(hitSize + SPLIT_GAP) / 2
 
   // ---- Fullscreen: bypass grid, use absolute overlay ----

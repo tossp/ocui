@@ -4,7 +4,7 @@
 
 import { getSDKClient, unwrap } from './sdk'
 import { formatPathForApi } from '../utils/directoryUtils'
-import type { MCPStatusResponse, McpServerConfig } from '../types/api/mcp'
+import type { MCPResourceMap, MCPStatusResponse, McpServerConfig } from '../types/api/mcp'
 
 /**
  * 获取所有 MCP 服务器状态
@@ -12,6 +12,14 @@ import type { MCPStatusResponse, McpServerConfig } from '../types/api/mcp'
 export async function getMcpStatus(directory?: string): Promise<MCPStatusResponse> {
   const sdk = getSDKClient()
   return unwrap(await sdk.mcp.status({ directory: formatPathForApi(directory) }))
+}
+
+/**
+ * 获取已连接 MCP 服务器暴露的 resources
+ */
+export async function getMcpResources(directory?: string): Promise<MCPResourceMap> {
+  const sdk = getSDKClient()
+  return unwrap(await sdk.experimental.resource.list({ directory: formatPathForApi(directory) }))
 }
 
 /**

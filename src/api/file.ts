@@ -5,7 +5,7 @@
 
 import { getSDKClient, unwrap } from './sdk'
 import { formatPathForApi } from '../utils/directoryUtils'
-import type { FileNode, FileContent, FileStatusItem, SymbolInfo } from './types'
+import type { FileNode, FileContent, FileStatusItem, SymbolInfo, TextSearchMatch } from './types'
 import { serverStore } from '../store/serverStore'
 
 const ROOT_DIRECTORY_CACHE_TTL_MS = 10_000
@@ -113,6 +113,14 @@ export async function getFileStatus(directory?: string): Promise<FileStatusItem[
 export async function searchSymbols(query: string, directory?: string): Promise<SymbolInfo[]> {
   const sdk = getSDKClient()
   return unwrap(await sdk.find.symbols({ query, directory: formatPathForApi(directory) }))
+}
+
+/**
+ * 搜索文件正文内容
+ */
+export async function searchText(pattern: string, directory?: string): Promise<TextSearchMatch[]> {
+  const sdk = getSDKClient()
+  return unwrap(await sdk.find.text({ pattern, directory: formatPathForApi(directory) }))
 }
 
 /**

@@ -6,9 +6,15 @@
   "fileExplorer": {
     "selectProject": "选择项目以浏览文件",
     "explorer": "文件浏览器",
+    "searchFiles": "搜索文件内容",
+    "clearSearch": "清除搜索",
     "noFilesFound": "未找到文件",
+    "noTextMatches": "未找到匹配内容",
+    "fileMatches": "文件",
+    "contentMatches": "内容",
     "failedToLoadFiles": "加载文件失败",
     "failedToLoadFile": "加载文件内容失败",
+    "textSearchFailed": "搜索失败",
     "binaryFile": "二进制文件，无法预览",
     "fit": "适应",
     "oneToOne": "1:1"
@@ -82,6 +88,7 @@
     "addServer": "添加服务器",
     "loadingServers": "加载服务器中...",
     "failedToLoad": "加载 MCP 服务器失败",
+    "failedToLoadResources": "加载 MCP 资源失败",
     "noServers": "尚未配置 MCP 服务器",
     "addMcpServer": "添加 MCP 服务器",
     "local": "本地",
@@ -97,6 +104,8 @@
     "disabled": "已禁用",
     "needsAuth": "需要认证",
     "needsRegistration": "需要注册",
+    "resources": "资源",
+    "resourceCount_other": "{{count}} 个资源",
     "disconnect": "断开连接",
     "connect": "连接",
     "authenticate": "认证"

@@ -18,16 +18,18 @@ import {
   CloseIcon,
   ChevronRightIcon,
   ChevronDownIcon,
+  FileIcon,
 } from './Icons'
 import {
   getMcpStatus,
+  getMcpResources,
   connectMcpServer,
   disconnectMcpServer,
   startMcpAuth,
   authenticateMcp,
   addMcpServer,
 } from '../api/mcp'
-import type { MCPStatus, McpServerConfig } from '../types/api/mcp'
+import type { MCPResource, MCPStatus, McpServerConfig } from '../types/api/mcp'
 import { useDirectory } from '../hooks'
 import { logger } from '../utils/logger'
 import { apiErrorHandler } from '../utils'
@@ -39,6 +41,7 @@ import { apiErrorHandler } from '../utils'
 interface ServerEntry {
   name: string
   status: MCPStatus
+  resources: MCPResource[]
 }
 
 // ============================================
@@ -57,6 +60,7 @@ export const McpPanel = memo(function McpPanel({ isResizing: _isResizing }: McpP
   const [error, setError] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [showAddForm, setShowAddForm] = useState(false)
+  const [resourceError, setResourceError] = useState<string | null>(null)
 
   // 加载 MCP 状态
   const loadStatus = useCallback(async () => {
@@ -65,10 +69,21 @@ export const McpPanel = memo(function McpPanel({ isResizing: _isResizing }: McpP
       const statusResponse = await getMcpStatus(currentDirectory)
       logger.log('[McpPanel] Status:', statusResponse)
 
+      let resourcesByClient = new Map<string, MCPResource[]>()
+      try {
+        const resourceResponse = await getMcpResources(currentDirectory)
+        resourcesByClient = groupResourcesByClient(Object.values(resourceResponse))
+        setResourceError(null)
+      } catch (err) {
+        apiErrorHandler('load MCP resources', err)
+        setResourceError(t('mcpPanel.failedToLoadResources'))
+      }
+
       // 构建 server entries
       const entries: ServerEntry[] = Object.entries(statusResponse).map(([name, status]) => ({
         name,
         status: status as MCPStatus,
+        resources: resourcesByClient.get(name) ?? [],
       }))
 
       // 按名称排序
@@ -259,6 +274,12 @@ export const McpPanel = memo(function McpPanel({ isResizing: _isResizing }: McpP
           </div>
         ) : (
           <div className="p-1">
+            {resourceError && (
+              <div className="mx-1 mb-1 flex items-center gap-1.5 rounded-md bg-warning-bg/50 px-2 py-1.5 text-[length:var(--fs-sm)] text-warning-100">
+                <AlertCircleIcon size={13} />
+                <span>{resourceError}</span>
+              </div>
+            )}
             {servers.map(server => (
               <ServerItem
                 key={server.name}
@@ -275,6 +296,22 @@ export const McpPanel = memo(function McpPanel({ isResizing: _isResizing }: McpP
     </div>
   )
 })
+
+function groupResourcesByClient(resources: MCPResource[]): Map<string, MCPResource[]> {
+  const groups = new Map<string, MCPResource[]>()
+
+  for (const resource of resources) {
+    const items = groups.get(resource.client) ?? []
+    items.push(resource)
+    groups.set(resource.client, items)
+  }
+
+  for (const items of groups.values()) {
+    items.sort((a, b) => a.name.localeCompare(b.name))
+  }
+
+  return groups
+}
 
 // ============================================
 // AddServerForm Component
@@ -460,6 +497,7 @@ const ServerItem = memo(function ServerItem({ server, isLoading, onConnect, onDi
   }
 
   const errorMessage = getErrorMessage()
+  const canExpand = Boolean(errorMessage) || server.resources.length > 0
 
   // 状态颜色和标签
   const getStatusInfo = () => {
@@ -555,10 +593,10 @@ const ServerItem = memo(function ServerItem({ server, isLoading, onConnect, onDi
       {/* Main row */}
       <div
         className="flex items-center gap-2 rounded-md px-2 py-2 hover:bg-bg-200/50 transition-colors"
-        onClick={() => errorMessage && setExpanded(!expanded)}
+        onClick={() => canExpand && setExpanded(!expanded)}
       >
-        {/* Expand icon only if there is an error to show details for */}
-        {errorMessage ? (
+        {/* Expand icon only if there are details to show */}
+        {canExpand ? (
           <span className="text-text-400 shrink-0 cursor-pointer">
             {expanded ? <ChevronDownIcon size={12} /> : <ChevronRightIcon size={12} />}
           </span>
@@ -575,6 +613,11 @@ const ServerItem = memo(function ServerItem({ server, isLoading, onConnect, onDi
           <div className={`text-[length:var(--fs-sm)] ${statusInfo.color} flex items-center gap-1`}>
             {StatusIcon && <StatusIcon size={10} />}
             <span>{statusInfo.label}</span>
+            {server.resources.length > 0 && (
+              <span className="text-text-500 ml-1">
+                - {t('mcpPanel.resourceCount', { count: server.resources.length })}
+              </span>
+            )}
             {errorMessage && !expanded && (
               <span className="text-text-500 ml-1 truncate max-w-[200px]" title={errorMessage}>
                 - {errorMessage}
@@ -591,6 +634,35 @@ const ServerItem = memo(function ServerItem({ server, isLoading, onConnect, onDi
       {expanded && errorMessage && (
         <div className="mx-2 mb-1 ml-7 rounded-md bg-danger-bg px-2 py-2 text-[length:var(--fs-sm)] text-text-200 break-words font-mono">
           {errorMessage}
+        </div>
+      )}
+
+      {expanded && server.resources.length > 0 && (
+        <div className="mx-2 mb-1 ml-7 overflow-hidden rounded-md border border-border-100/40 bg-bg-200/25">
+          <div className="flex items-center gap-1.5 border-b border-border-100/30 px-2 py-1 text-[length:var(--fs-xs)] font-medium text-text-300">
+            <FileIcon size={12} />
+            <span>{t('mcpPanel.resources')}</span>
+          </div>
+          <div className="divide-y divide-border-100/25">
+            {server.resources.map(resource => (
+              <div key={resource.uri} className="px-2 py-1.5">
+                <div className="flex items-center gap-1.5 text-[length:var(--fs-sm)] text-text-100">
+                  <span className="truncate">{resource.name}</span>
+                  {resource.mimeType && (
+                    <span className="shrink-0 rounded bg-bg-300/60 px-1.5 py-0.5 text-[length:var(--fs-xxs)] text-text-400">
+                      {resource.mimeType}
+                    </span>
+                  )}
+                </div>
+                {resource.description && (
+                  <div className="mt-0.5 line-clamp-2 text-[length:var(--fs-xs)] text-text-400">
+                    {resource.description}
+                  </div>
+                )}
+                <div className="mt-0.5 truncate font-mono text-[length:var(--fs-xxs)] text-text-500">{resource.uri}</div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

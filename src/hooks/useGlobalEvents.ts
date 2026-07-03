@@ -96,6 +96,20 @@ function hasConsumerForSession(sessionId: string): boolean {
   return false
 }
 
+function shouldPlayPermissionSound(sessionId: string): boolean {
+  if (autoApproveStore.fullAutoMode === 'global') return false
+
+  for (const [consumerId, consumer] of sessionConsumers.entries()) {
+    if (!consumer.sessionId) continue
+    if (autoApproveStore.getPaneFullAutoMode(consumerId) !== 'session') continue
+    if (consumer.sessionId === sessionId || childSessionStore.belongsToSession(sessionId, consumer.sessionId)) {
+      return false
+    }
+  }
+
+  return true
+}
+
 /** 检查是否有“其他”消费者仍在使用该 sessionId（排除当前 pane 自己） */
 export function hasOtherConsumerForSession(sessionId: string, consumerId: string): boolean {
   for (const [id, consumer] of sessionConsumers.entries()) {
@@ -541,7 +555,11 @@ export function useGlobalEvents(directories?: string[]) {
         // Toast 通知 — 不属于当前 session family 的才弹
         if (!belongsToCurrentSession(request.sessionID)) {
           notificationStore.push('permission', `${sessionLabel} — Permission`, desc, request.sessionID, meta?.directory)
-        } else if (isSessionDirectlyOpen(request.sessionID) && soundStore.getSnapshot().currentSessionEnabled) {
+        } else if (
+          shouldPlayPermissionSound(request.sessionID) &&
+          isSessionDirectlyOpen(request.sessionID) &&
+          soundStore.getSnapshot().currentSessionEnabled
+        ) {
           // 当前会话：如果开启了当前会话提示音
           playNotificationSoundDeduped('permission')
         }

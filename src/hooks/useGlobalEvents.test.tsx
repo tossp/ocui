@@ -71,6 +71,7 @@ const {
     fullAutoMode: 'off' as 'off' | 'session' | 'global',
     approvePendingOnFullAuto: false,
     subscribe: vi.fn((_listener: () => void) => vi.fn()),
+    getPaneFullAutoMode: vi.fn((_paneId: string) => 'off' as 'off' | 'session' | 'global'),
     claimAutoReply: vi.fn((_requestId: string) => true),
     releaseAutoReply: vi.fn((_requestId: string) => undefined),
   },
@@ -174,6 +175,7 @@ describe('useGlobalEvents', () => {
     autoApproveStoreMock.fullAutoMode = 'off'
     autoApproveStoreMock.approvePendingOnFullAuto = false
     autoApproveStoreMock.subscribe.mockReset()
+    autoApproveStoreMock.getPaneFullAutoMode.mockReset()
     autoApproveStoreMock.claimAutoReply.mockReset()
     autoApproveStoreMock.releaseAutoReply.mockReset()
     Object.values(activeSessionStoreMock).forEach(value => {
@@ -190,6 +192,7 @@ describe('useGlobalEvents', () => {
     onServerChangeMock.mockReturnValue(vi.fn())
     getSessionAndDescendantsMock.mockImplementation((sessionId: string) => [sessionId])
     autoApproveStoreMock.subscribe.mockReturnValue(vi.fn())
+    autoApproveStoreMock.getPaneFullAutoMode.mockReturnValue('off')
     autoApproveStoreMock.claimAutoReply.mockReturnValue(true)
     activeSessionStoreMock.getSessionMeta.mockReturnValue({ title: 'Child Session', directory: '/workspace' })
     activeSessionStoreMock.getSnapshot.mockReturnValue({ statusMap: {} })
@@ -619,6 +622,92 @@ describe('useGlobalEvents', () => {
 
     expect(notificationPushMock).not.toHaveBeenCalled()
     expect(playNotificationSoundDedupedMock).toHaveBeenCalledWith('permission')
+  })
+
+  it('does not play permission sound for a session full-auto pane', async () => {
+    let callbacks: Parameters<typeof subscribeToEventsMock>[0] | undefined
+    subscribeToEventsMock.mockImplementation(cb => {
+      callbacks = cb
+      return vi.fn()
+    })
+    getFocusedSessionIdMock.mockReturnValue('child-session')
+    autoApproveStoreMock.getPaneFullAutoMode.mockImplementation(paneId => (paneId === 'test-pane' ? 'session' : 'off'))
+    const unregister = registerSessionConsumer('test-pane', 'child-session', {})
+
+    renderHook(() => useGlobalEvents())
+
+    await waitFor(() => expect(callbacks).toBeDefined())
+
+    callbacks!.onPermissionAsked?.({
+      id: 'perm-session-auto',
+      sessionID: 'child-session',
+      permission: 'bash',
+      patterns: [],
+    })
+
+    expect(notificationPushMock).not.toHaveBeenCalled()
+    expect(playNotificationSoundDedupedMock).not.toHaveBeenCalled()
+
+    unregister()
+  })
+
+  it('does not play permission sound for a child session of a session full-auto pane', async () => {
+    let callbacks: Parameters<typeof subscribeToEventsMock>[0] | undefined
+    subscribeToEventsMock.mockImplementation(cb => {
+      callbacks = cb
+      return vi.fn()
+    })
+    childBelongsToSessionMock.mockImplementation((sessionId, rootSessionId) => {
+      return sessionId === 'child-session' && rootSessionId === 'parent-session'
+    })
+    getFocusedSessionIdMock.mockReturnValue('child-session')
+    autoApproveStoreMock.getPaneFullAutoMode.mockImplementation(paneId => (paneId === 'test-pane' ? 'session' : 'off'))
+    const unregister = registerSessionConsumer('test-pane', 'parent-session', {})
+
+    renderHook(() => useGlobalEvents())
+
+    await waitFor(() => expect(callbacks).toBeDefined())
+
+    callbacks!.onPermissionAsked?.({
+      id: 'perm-child-session-auto',
+      sessionID: 'child-session',
+      permission: 'bash',
+      patterns: [],
+    })
+
+    expect(notificationPushMock).not.toHaveBeenCalled()
+    expect(playNotificationSoundDedupedMock).not.toHaveBeenCalled()
+
+    unregister()
+  })
+
+  it('still plays permission sound for another pane without session full auto', async () => {
+    let callbacks: Parameters<typeof subscribeToEventsMock>[0] | undefined
+    subscribeToEventsMock.mockImplementation(cb => {
+      callbacks = cb
+      return vi.fn()
+    })
+    getFocusedSessionIdMock.mockReturnValue('other-session')
+    autoApproveStoreMock.getPaneFullAutoMode.mockImplementation(paneId => (paneId === 'auto-pane' ? 'session' : 'off'))
+    const unregisterAutoPane = registerSessionConsumer('auto-pane', 'auto-session', {})
+    const unregisterOtherPane = registerSessionConsumer('other-pane', 'other-session', {})
+
+    renderHook(() => useGlobalEvents())
+
+    await waitFor(() => expect(callbacks).toBeDefined())
+
+    callbacks!.onPermissionAsked?.({
+      id: 'perm-other-pane',
+      sessionID: 'other-session',
+      permission: 'bash',
+      patterns: [],
+    })
+
+    expect(notificationPushMock).not.toHaveBeenCalled()
+    expect(playNotificationSoundDedupedMock).toHaveBeenCalledWith('permission')
+
+    unregisterAutoPane()
+    unregisterOtherPane()
   })
 
   it.each([

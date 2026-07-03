@@ -3,12 +3,13 @@
  * 纯键盘操作的核心入口
  */
 
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { SearchIcon } from './Icons'
 import { formatKeybinding, parseKeybinding } from '../store/keybindingStore'
 import { useDelayedRender } from '../hooks/useDelayedRender'
+import { scrollItemIntoView } from '../utils/scrollUtils'
 
 // ============================================
 // Types
@@ -182,10 +183,12 @@ export function CommandPalette({ isOpen, onClose, commands }: CommandPaletteProp
   }, [isOpen, filteredCommands, activeIndex, executeCommand, onClose])
 
   // Scroll selected item into view
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!listRef.current) return
-    const el = listRef.current.querySelector(`[data-index="${activeIndex}"]`)
-    el?.scrollIntoView({ block: 'nearest' })
+    const el = listRef.current.querySelector<HTMLElement>(`[data-index="${activeIndex}"]`)
+    if (el) {
+      scrollItemIntoView(listRef.current, el)
+    }
   }, [activeIndex])
 
   if (!shouldRender) return null
@@ -266,7 +269,7 @@ export function CommandPalette({ isOpen, onClose, commands }: CommandPaletteProp
                 className={`
                   w-full flex items-center justify-between rounded-md px-2 py-2 text-left
                   transition-colors duration-100
-                  ${index === activeIndex ? 'bg-bg-200/60 text-text-100' : 'text-text-300 hover:bg-bg-200/50 hover:text-text-100'}
+                  ${index === activeIndex ? 'bg-accent-main-100/10 text-text-100' : 'text-text-300 hover:bg-bg-200/50 hover:text-text-100'}
                 `}
               >
                 <div className="flex items-center gap-2.5 min-w-0">

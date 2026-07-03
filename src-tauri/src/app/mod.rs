@@ -32,6 +32,8 @@ struct SavedWindowState {
     x: i32,
     y: i32,
     maximized: bool,
+    #[serde(default)]
+    fullscreen: bool,
 }
 
 #[cfg(not(target_os = "android"))]
@@ -53,6 +55,39 @@ fn save_window_state(window: &tauri::Window) {
         return;
     }
 
+    let is_fullscreen = window.is_fullscreen().unwrap_or(false);
+
+    // 全屏时 outer_size / outer_position 返回的是整个屏幕的尺寸和 (0,0)，
+    // 保存这些值会导致下次恢复时窗口大小/位置不正确。
+    // 全屏状态下只更新 fullscreen 标记，保留之前保存的正常 size/position。
+    if is_fullscreen {
+        let app = window.app_handle();
+        if let Some(path) = window_state_path(app) {
+            if let Ok(existing) = std::fs::read_to_string(&path) {
+                if let Ok(mut state) = serde_json::from_str::<SavedWindowState>(&existing) {
+                    state.fullscreen = true;
+                    if let Ok(data) = serde_json::to_string(&state) {
+                        let _ = std::fs::write(path, data);
+                    }
+                    return;
+                }
+            }
+            // 没有已保存的状态，只写 fullscreen 标记，size/position 用默认值
+            let state = SavedWindowState {
+                width: 800,
+                height: 600,
+                x: 100,
+                y: 100,
+                maximized: false,
+                fullscreen: true,
+            };
+            if let Ok(data) = serde_json::to_string(&state) {
+                let _ = std::fs::write(path, data);
+            }
+        }
+        return;
+    }
+
     let Ok(size) = window.outer_size() else {
         return;
     };
@@ -61,12 +96,18 @@ fn save_window_state(window: &tauri::Window) {
     };
     let maximized = window.is_maximized().unwrap_or(false);
 
+    // 防御：窗口正在关闭时 outer_size 可能返回 0，不要用 0 覆盖已有的合法值
+    if size.width == 0 || size.height == 0 {
+        return;
+    }
+
     let state = SavedWindowState {
         width: size.width,
         height: size.height,
         x: position.x,
         y: position.y,
         maximized,
+        fullscreen: false,
     };
 
     let app = window.app_handle();
@@ -88,13 +129,21 @@ fn restore_window_state(window: &tauri::WebviewWindow) {
         return;
     };
 
+    // 只在尺寸合理时恢复 size/position，防止保存了异常值导致窗口不可见
     if state.width >= 400 && state.height >= 300 {
         let _ = window.set_size(tauri::PhysicalSize::new(state.width, state.height));
     }
-    let _ = window.set_position(tauri::PhysicalPosition::new(state.x, state.y));
+    // position 可能为负（多显示器场景），只在合理范围内恢复
+    if state.x > -10000 && state.y > -10000 {
+        let _ = window.set_position(tauri::PhysicalPosition::new(state.x, state.y));
+    }
 
     if state.maximized {
         let _ = window.maximize();
+    }
+
+    if state.fullscreen {
+        let _ = window.set_fullscreen(true);
     }
 }
 

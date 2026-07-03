@@ -4,6 +4,7 @@ import type {
   FileNode as SDKFileNode,
   SnapshotFileDiff as SDKSnapshotFileDiff,
   Symbol as SDKSymbol,
+  FindTextResponse as SDKFindTextResponse,
 } from '@opencode-ai/sdk/v2/client'
 
 export type FileNodeType = SDKFileNode['type']
@@ -35,3 +36,5 @@ export type SymbolRange = SDKSymbol['location']['range']
 export type SymbolLocation = SDKSymbol['location']
 
 export type Symbol = SDKSymbol
+
+export type TextSearchMatch = SDKFindTextResponse[number]

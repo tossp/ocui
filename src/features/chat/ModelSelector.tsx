@@ -695,11 +695,11 @@ export const ModelSelector = memo(
         switch (e.key) {
           case 'ArrowDown':
             e.preventDefault()
-            focusItemAtInteractiveIndex(Math.min(interactiveIndex + 1, itemIndices.length - 1))
+            focusItemAtInteractiveIndex(interactiveIndex >= itemIndices.length - 1 ? 0 : interactiveIndex + 1)
             break
           case 'ArrowUp':
             e.preventDefault()
-            focusItemAtInteractiveIndex(Math.max(interactiveIndex - 1, 0))
+            focusItemAtInteractiveIndex(interactiveIndex <= 0 ? itemIndices.length - 1 : interactiveIndex - 1)
             break
           case 'Home':
             e.preventDefault()
@@ -747,11 +747,11 @@ export const ModelSelector = memo(
         switch (e.key) {
           case 'ArrowDown':
             e.preventDefault()
-            focusItemAtInteractiveIndex(Math.min(interactiveIndex + 1, itemIndices.length - 1))
+            focusItemAtInteractiveIndex(interactiveIndex >= itemIndices.length - 1 ? 0 : interactiveIndex + 1)
             break
           case 'ArrowUp':
             e.preventDefault()
-            focusItemAtInteractiveIndex(Math.max(interactiveIndex - 1, 0))
+            focusItemAtInteractiveIndex(interactiveIndex <= 0 ? itemIndices.length - 1 : interactiveIndex - 1)
             break
           case 'Home':
             e.preventDefault()

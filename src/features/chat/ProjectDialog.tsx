@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FolderIcon, ArrowUpIcon, SpinnerIcon, PlusIcon } from '../../components/Icons'
 import { listDirectory, getPath } from '../../api'
 import { fileErrorHandler } from '../../utils'
+import { scrollItemIntoView } from '../../utils/scrollUtils'
 import { Dialog } from '../../components/ui/Dialog'
 
 // ============================================
@@ -70,6 +71,7 @@ export function ProjectDialog({ isOpen, onClose, onSelect, initialPath = '' }: P
   // Refs
   const loadedPathRef = useRef<string>('')
   const inputRef = useRef<HTMLInputElement>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
   const pendingSelectionRef = useRef<string | null>(null)
   const requestIdRef = useRef(0)
 
@@ -189,9 +191,14 @@ export function ProjectDialog({ isOpen, onClose, onSelect, initialPath = '' }: P
   // Scroll to Selection
   // ==========================================
 
-  useEffect(() => {
+  // 滚动选中项到可见区域
+  useLayoutEffect(() => {
+    if (selectedIndex < 0) return
+    const container = scrollContainerRef.current
     const el = document.getElementById(`project-item-${selectedIndex}`)
-    el?.scrollIntoView({ block: 'nearest' })
+    if (container && el) {
+      scrollItemIntoView(container, el)
+    }
   }, [selectedIndex, filteredItems])
 
   // ==========================================
@@ -241,14 +248,17 @@ export function ProjectDialog({ isOpen, onClose, onSelect, initialPath = '' }: P
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      const hasGoUp = inputValue.split(PATH_SEP).filter(Boolean).length > 0
+      const minIndex = hasGoUp ? -1 : 0
+      const maxIndex = filteredItems.length - 1
       switch (e.key) {
         case 'ArrowDown':
           e.preventDefault()
-          setSelectedIndex(prev => Math.min(prev + 1, filteredItems.length - 1))
+          setSelectedIndex(prev => (prev >= maxIndex ? minIndex : prev + 1))
           break
         case 'ArrowUp':
           e.preventDefault()
-          setSelectedIndex(prev => Math.max(prev - 1, 0))
+          setSelectedIndex(prev => (prev <= minIndex ? maxIndex : prev - 1))
           break
         case 'ArrowRight':
         case 'Tab':
@@ -334,7 +344,7 @@ export function ProjectDialog({ isOpen, onClose, onSelect, initialPath = '' }: P
       </div>
 
       {/* List */}
-      <div className="flex-1 overflow-y-auto px-2 py-1 custom-scrollbar">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-2 py-1 custom-scrollbar">
         {error ? (
           <div className="flex items-center justify-center h-full text-danger-100 text-[length:var(--fs-sm)] px-4 text-center">
             {error}

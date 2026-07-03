@@ -26,6 +26,8 @@ export type MCPStatus = SDKMcpStatus
 
 export type MCPResource = SDKMcpResource
 
+export type MCPResourceMap = Record<string, MCPResource>
+
 export type MCPStatusResponse = SDKMcpStatusResponse
 
 export type McpLocalConfig = SDKMcpLocalConfig

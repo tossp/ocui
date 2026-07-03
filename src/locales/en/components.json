@@ -6,9 +6,15 @@
   "fileExplorer": {
     "selectProject": "Select a project to browse files",
     "explorer": "Explorer",
+    "searchFiles": "Search files",
+    "clearSearch": "Clear search",
     "noFilesFound": "No files found",
+    "noTextMatches": "No matches found",
+    "fileMatches": "Files",
+    "contentMatches": "Content",
     "failedToLoadFiles": "Failed to load files",
     "failedToLoadFile": "Failed to load file",
+    "textSearchFailed": "Search failed",
     "binaryFile": "Binary file — preview not available",
     "fit": "Fit",
     "oneToOne": "1:1"
@@ -83,6 +89,7 @@
     "addServer": "Add Server",
     "loadingServers": "Loading servers...",
     "failedToLoad": "Failed to load MCP servers",
+    "failedToLoadResources": "Failed to load MCP resources",
     "noServers": "No MCP servers configured",
     "addMcpServer": "Add MCP Server",
     "local": "Local",
@@ -98,6 +105,9 @@
     "disabled": "Disabled",
     "needsAuth": "Needs Auth",
     "needsRegistration": "Needs Registration",
+    "resources": "Resources",
+    "resourceCount_one": "{{count}} resource",
+    "resourceCount_other": "{{count}} resources",
     "disconnect": "Disconnect",
     "connect": "Connect",
     "authenticate": "Authenticate"

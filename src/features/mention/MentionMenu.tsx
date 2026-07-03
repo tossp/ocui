@@ -16,6 +16,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import { searchFiles, listDirectory, type ApiAgent } from '../../api/client'
 import { fileErrorHandler } from '../../utils'
+import { scrollItemIntoView } from '../../utils/scrollUtils'
 import type { MentionType, MentionItem } from './types'
 import { getFileName, toAbsolutePath, normalizePath } from './utils'
 
@@ -113,11 +114,11 @@ export const MentionMenu = forwardRef<MentionMenuHandle, MentionMenuProps>(funct
   }, [isOpen])
 
   // 滚动选中项到可见区域
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!listRef.current) return
     const selectedEl = listRef.current.children[selectedIndex] as HTMLElement
     if (selectedEl) {
-      selectedEl.scrollIntoView({ block: 'nearest' })
+      scrollItemIntoView(listRef.current, selectedEl)
     }
   }, [selectedIndex])
 
@@ -169,13 +170,13 @@ export const MentionMenu = forwardRef<MentionMenuHandle, MentionMenuProps>(funct
           // Agent 列表（只在根目录且无过滤时显示，或过滤匹配时显示）
           const agentItems: MentionItem[] =
             path === '.'
-              ? agents
+              ? agentsRef.current
                   .filter(a => !a.hidden && a.mode === 'subagent')
                   .filter(a => !lowerFilter || a.name.toLowerCase().includes(lowerFilter))
                   .map(a => createItem('agent', a.name, a.name, a.description))
               : []
 
-          const allItems = [...agentItems, ...folders, ...files].filter(item => !excludeValues?.has(item.value))
+          const allItems = [...agentItems, ...folders, ...files].filter(item => !excludeValuesRef.current?.has(item.value))
 
           setItems(allItems)
 
@@ -200,10 +201,17 @@ export const MentionMenu = forwardRef<MentionMenuHandle, MentionMenuProps>(funct
           }
         })
     },
-    [agents, createItem, rootPath, excludeValues],
+    [createItem, rootPath],
   )
 
   // 搜索逻辑 - 基于 query prop
+  // 依赖里故意排除 agents/excludeValues：流式输出期间这些引用可能变化，
+  // 但它们只影响过滤结果（在 setItems 时已处理），不应触发重新搜索和重置 selectedIndex。
+  const agentsRef = useRef(agents)
+  const excludeValuesRef = useRef(excludeValues)
+  agentsRef.current = agents
+  excludeValuesRef.current = excludeValues
+
   useEffect(() => {
     if (!isOpen) return
 
@@ -245,12 +253,12 @@ export const MentionMenu = forwardRef<MentionMenuHandle, MentionMenuProps>(funct
           })
 
           const lowerQuery = query.toLowerCase()
-          const agentItems = agents
+          const agentItems = agentsRef.current
             .filter(a => !a.hidden && a.mode === 'subagent')
             .filter(a => a.name.toLowerCase().includes(lowerQuery))
             .map(a => createItem('agent', a.name, a.name, a.description))
 
-          const allItems = [...agentItems, ...folders, ...fileItems].filter(item => !excludeValues?.has(item.value))
+          const allItems = [...agentItems, ...folders, ...fileItems].filter(item => !excludeValuesRef.current?.has(item.value))
 
           setItems(allItems)
           setSelectedIndex(0)
@@ -268,17 +276,17 @@ export const MentionMenu = forwardRef<MentionMenuHandle, MentionMenuProps>(funct
     })
 
     return () => cancelAnimationFrame(frameId)
-  }, [isOpen, query, agents, loadDirectory, createItem, rootPath, excludeValues])
+  }, [isOpen, query, loadDirectory, createItem, rootPath])
 
   // 暴露方法给父组件
   useImperativeHandle(
     ref,
     () => ({
       moveUp: () => {
-        setSelectedIndex(prev => Math.max(prev - 1, 0))
+        setSelectedIndex(prev => (prev <= 0 ? items.length - 1 : prev - 1))
       },
       moveDown: () => {
-        setSelectedIndex(prev => Math.min(prev + 1, items.length - 1))
+        setSelectedIndex(prev => (prev >= items.length - 1 ? 0 : prev + 1))
       },
       selectCurrent: () => {
         const selectedItem = items[selectedIndex]

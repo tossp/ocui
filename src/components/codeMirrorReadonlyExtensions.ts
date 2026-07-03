@@ -1,5 +1,5 @@
 import { defaultKeymap } from '@codemirror/commands'
-import { EditorState, StateEffect, StateField, type Extension } from '@codemirror/state'
+import { EditorState, StateEffect, StateField, type Extension, type Range } from '@codemirror/state'
 import {
   closeSearchPanel,
   findNext,
@@ -54,6 +54,7 @@ export function createReadonlyCodeMirrorExtensions({
     search({ top: true, createPanel: createCodeMirrorSearchPanel }),
     highlightSelectionMatches(),
     shikiDecorationsField,
+    targetLineDecorationsField,
     readonlyCodeMirrorTheme(lineHeight, maxHeight, lineNumberWidth),
     ...extraExtensions,
   ]
@@ -68,6 +69,62 @@ export function dispatchShikiTokens(view: EditorView, tokens: HighlightTokens | 
   view.dispatch({ effects: setShikiTokensEffect.of(tokens) })
 }
 
+export interface TargetLineRange {
+  from: number
+  to: number
+}
+
+export function dispatchTargetLine(view: EditorView, lineNumber: number, ranges: readonly TargetLineRange[] = []) {
+  if (!Number.isFinite(lineNumber) || lineNumber < 1 || lineNumber > view.state.doc.lines) return
+
+  const line = view.state.doc.line(lineNumber)
+  view.dispatch({
+    selection: { anchor: line.from },
+    effects: setTargetLineEffect.of({ lineNumber, ranges }),
+  })
+
+  view.requestMeasure({
+    read: currentView => {
+      const block = currentView.lineBlockAt(line.from)
+      const scrollTarget = findScrollTarget(currentView.scrollDOM)
+      const scrollerRect = currentView.scrollDOM.getBoundingClientRect()
+      const targetRect = scrollTarget.getBoundingClientRect()
+      return {
+        top: block.top,
+        height: block.height,
+        scrollerHeight: currentView.scrollDOM.clientHeight || scrollTarget.clientHeight,
+        targetScrollTop: scrollTarget.scrollTop,
+        targetOffsetTop: scrollerRect.top - targetRect.top,
+        scrollTarget,
+      }
+    },
+    write: (measure, currentView) => {
+      const nextScrollTop = Math.max(0, measure.top - (measure.scrollerHeight - measure.height) / 2)
+      currentView.scrollDOM.scrollTop = nextScrollTop
+
+      if (measure.scrollTarget !== currentView.scrollDOM) {
+        measure.scrollTarget.scrollTop = Math.max(
+          0,
+          measure.targetScrollTop + measure.targetOffsetTop + measure.top - (measure.scrollerHeight - measure.height) / 2,
+        )
+      }
+    },
+  })
+}
+
+function findScrollTarget(start: HTMLElement): HTMLElement {
+  let element: HTMLElement | null = start
+  while (element) {
+    if (element.clientHeight > 0 && element.scrollHeight > element.clientHeight + 1) return element
+    element = element.parentElement
+  }
+  return start
+}
+
+export function clearTargetLine(view: EditorView) {
+  view.dispatch({ effects: clearTargetLineEffect.of(null) })
+}
+
 const setShikiTokensEffect = StateEffect.define<HighlightTokens | null>()
 
 const shikiDecorationsField = StateField.define<DecorationSet>({
@@ -75,6 +132,38 @@ const shikiDecorationsField = StateField.define<DecorationSet>({
   update(decorations, transaction) {
     for (const effect of transaction.effects) {
       if (effect.is(setShikiTokensEffect)) return buildShikiDecorations(transaction.state, effect.value)
+    }
+    return decorations.map(transaction.changes)
+  },
+  provide: field => EditorView.decorations.from(field),
+})
+
+const setTargetLineEffect = StateEffect.define<{ lineNumber: number; ranges: readonly TargetLineRange[] }>()
+const clearTargetLineEffect = StateEffect.define<null>()
+
+const targetLineDecorationsField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(decorations, transaction) {
+    for (const effect of transaction.effects) {
+      if (effect.is(clearTargetLineEffect)) return Decoration.none
+      if (effect.is(setTargetLineEffect)) {
+        const { lineNumber, ranges } = effect.value
+        if (lineNumber < 1 || lineNumber > transaction.state.doc.lines) return Decoration.none
+        const line = transaction.state.doc.line(lineNumber)
+        const decorations: Range<Decoration>[] = []
+
+        for (const range of ranges) {
+          const from = line.from + Math.max(0, Math.min(range.from, line.length))
+          const to = line.from + Math.max(0, Math.min(range.to, line.length))
+          if (to > from) decorations.push(Decoration.mark({ class: 'cm-targetMatch' }).range(from, to))
+        }
+
+        if (decorations.length === 0) {
+          decorations.push(Decoration.line({ class: 'cm-targetLine' }).range(line.from))
+        }
+
+        return Decoration.set(decorations, true)
+      }
     }
     return decorations.map(transaction.changes)
   },
@@ -125,6 +214,10 @@ function readonlyCodeMirrorTheme(lineHeight: number, maxHeight: number | undefin
     '.cm-lineNumbers .cm-gutterElement': { boxSizing: 'border-box', width: `${lineNumberWidth}px`, minWidth: `${lineNumberWidth}px`, padding: '0 0.75rem 0 1rem', textAlign: 'right', userSelect: 'none' },
     '.cm-activeLineGutter': { backgroundColor: 'transparent', color: 'hsl(var(--accent-main-100))' },
     '.cm-activeLine': { backgroundColor: 'transparent' },
+    '.cm-targetLine': { animation: 'cm-target-line-flash 1.6s ease-out' },
+    '.cm-targetMatch': { borderRadius: '0.18rem', animation: 'cm-target-match-flash 1.6s ease-out' },
+    '@keyframes cm-target-line-flash': { '0%': { backgroundColor: 'hsl(var(--accent-main-100) / 0.28)', outline: '1px solid hsl(var(--accent-main-100) / 0.42)', outlineOffset: '-1px' }, '70%': { backgroundColor: 'hsl(var(--accent-main-100) / 0.13)', outline: '1px solid hsl(var(--accent-main-100) / 0.24)', outlineOffset: '-1px' }, '100%': { backgroundColor: 'transparent', outline: '1px solid transparent', outlineOffset: '-1px' } },
+    '@keyframes cm-target-match-flash': { '0%': { backgroundColor: 'hsl(var(--warning-100) / 0.5)', boxShadow: '0 0 0 1px hsl(var(--warning-100) / 0.55)' }, '70%': { backgroundColor: 'hsl(var(--warning-100) / 0.26)', boxShadow: '0 0 0 1px hsl(var(--warning-100) / 0.28)' }, '100%': { backgroundColor: 'transparent', boxShadow: '0 0 0 1px transparent' } },
     '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': { backgroundColor: 'hsl(var(--accent-main-100) / 0.2)' },
     '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground': { backgroundColor: 'hsl(var(--accent-main-100) / 0.26)' },
     '&.cm-focused': { outline: 'none' },

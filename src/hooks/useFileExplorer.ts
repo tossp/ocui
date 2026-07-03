@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next'
 import { listDirectory, getFileContent, getFileStatus, getSessionDiff, getLastTurnDiff, getVcsDiff } from '../api'
 import type { FileNode, FileContent, FileStatusItem, FileDiff } from '../api/types'
 import { useSessionChangeScope } from '../store/changeScopeStore'
+import { useAutoRefresh } from './useAutoRefresh'
 
 export interface FileTreeNode extends FileNode {
   children?: FileTreeNode[]
@@ -19,6 +20,8 @@ export interface UseFileExplorerOptions {
   directory?: string
   autoLoad?: boolean
   sessionId?: string
+  /** 唯一标识，用于注册 SSE 消费者，避免多实例冲突 */
+  consumerId?: string
 }
 
 export interface UseFileExplorerResult {
@@ -45,11 +48,12 @@ export interface UseFileExplorerResult {
 
   // 操作
   refresh: () => Promise<void>
+  softRefresh: () => Promise<void>
   loadChildren: (parentPath: string) => Promise<void>
 }
 
 export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileExplorerResult {
-  const { directory, autoLoad = true, sessionId } = options
+  const { directory, autoLoad = true, sessionId, consumerId = 'file-explorer' } = options
   const { t } = useTranslation(['components'])
   const changeMode = useSessionChangeScope(sessionId ?? null)
   const directoryRef = useRef(directory)
@@ -316,6 +320,14 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
     await Promise.all([loadRoot(), loadStatuses()])
   }, [directory, loadRoot, loadStatuses])
 
+  // 软刷新：重新加载根目录和状态，但保留展开路径和预览
+  const softRefresh = useCallback(async () => {
+    await Promise.all([loadRoot(), loadStatuses()])
+  }, [loadRoot, loadStatuses])
+
+  // 自动刷新：session idle / 窗口聚焦 / SSE 重连
+  useAutoRefresh(consumerId, sessionId ?? null, softRefresh, !!directory)
+
   // 初始加载
   useEffect(() => {
     if (autoLoad && directory) {
@@ -373,6 +385,7 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
     clearPreview,
     fileStatus,
     refresh,
+    softRefresh,
     loadChildren,
   }
 }

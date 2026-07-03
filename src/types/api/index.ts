@@ -94,6 +94,7 @@ export type {
   Symbol,
   SymbolLocation,
   SymbolRange,
+  TextSearchMatch,
 } from './file'
 
 // Project types

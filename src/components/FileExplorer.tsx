@@ -9,7 +9,16 @@ import { useTranslation } from 'react-i18next'
 import { useFileExplorer, type FileTreeNode } from '../hooks'
 import { useVerticalSplitResize } from '../hooks/useVerticalSplitResize'
 import { layoutStore, type PreviewFile } from '../store/layoutStore'
-import { ChevronRightIcon, ChevronDownIcon, RetryIcon, AlertCircleIcon, DownloadIcon, MaximizeIcon } from './Icons'
+import {
+  ChevronRightIcon,
+  ChevronDownIcon,
+  RetryIcon,
+  AlertCircleIcon,
+  DownloadIcon,
+  MaximizeIcon,
+  SearchIcon,
+  CloseIcon,
+} from './Icons'
 import { CodePreview } from './CodePreview'
 import { PreviewTabsBar, type PreviewTabsBarItem } from './PreviewTabsBar'
 import { MarkdownRenderer } from './MarkdownRenderer'
@@ -27,19 +36,51 @@ import {
   type PreviewCategory,
 } from '../utils/mimeUtils'
 import { downloadFileContent } from '../utils/downloadUtils'
-import type { FileContent } from '../api/types'
+import { searchText, searchFiles } from '../api/file'
+import type { FileContent, TextSearchMatch } from '../api/types'
 import { startInternalDrag } from '../lib/internalDragCore'
+import { toAbsolutePath } from '../features/mention'
+import type { TargetLineRange } from './codeMirrorReadonlyExtensions'
 
 // 常量
 const MIN_TREE_HEIGHT = 100
 const MIN_PREVIEW_HEIGHT = 150
 
 const MARKDOWN_MIME_TYPES = new Set(['text/markdown', 'text/x-markdown', 'text/md', 'application/markdown'])
+const textEncoder = new TextEncoder()
 
 function isMarkdownPreview(language: string, mimeType?: string): boolean {
   if (language === 'markdown' || language === 'mdx') return true
   if (!mimeType) return false
   return MARKDOWN_MIME_TYPES.has(mimeType.split(';', 1)[0].toLowerCase())
+}
+
+function byteOffsetToCodeUnitIndex(text: string, byteOffset: number): number {
+  let bytes = 0
+  let index = 0
+
+  while (index < text.length && bytes < byteOffset) {
+    const codePoint = text.codePointAt(index)
+    if (codePoint === undefined) break
+
+    const char = String.fromCodePoint(codePoint)
+    const charBytes = textEncoder.encode(char).length
+    if (bytes + charBytes > byteOffset) break
+
+    bytes += charBytes
+    index += char.length
+  }
+
+  return Math.min(index, text.length)
+}
+
+function getSearchMatchRanges(match: TextSearchMatch): TargetLineRange[] {
+  return match.submatches
+    .map(submatch => ({
+      from: byteOffsetToCodeUnitIndex(match.lines.text, submatch.start),
+      to: byteOffsetToCodeUnitIndex(match.lines.text, submatch.end),
+    }))
+    .filter(range => range.to > range.from)
 }
 
 interface FileExplorerProps {
@@ -64,6 +105,12 @@ export const FileExplorer = memo(function FileExplorer({
   const { t } = useTranslation(['components', 'common'])
   const containerRef = useRef<HTMLDivElement>(null)
   const treeRef = useRef<HTMLDivElement>(null)
+  const searchRequestIdRef = useRef(0)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<TextSearchMatch[]>([])
+  const [fileResults, setFileResults] = useState<string[]>([])
+  const [searchLoading, setSearchLoading] = useState(false)
+  const [searchError, setSearchError] = useState<string | null>(null)
   const {
     splitHeight: treeHeight,
     isResizing,
@@ -94,7 +141,7 @@ export const FileExplorer = memo(function FileExplorer({
     clearPreview,
     fileStatus,
     refresh,
-  } = useFileExplorer({ directory, autoLoad: true, sessionId: sessionId || undefined })
+  } = useFileExplorer({ directory, autoLoad: true, sessionId: sessionId || undefined, consumerId: `file-explorer-${panelTabId}` })
 
   // 当 previewFile 改变时加载预览
   useEffect(() => {
@@ -153,6 +200,101 @@ export const FileExplorer = memo(function FileExplorer({
 
   // 是否显示预览
   const showPreview = Boolean(previewFile) || previewLoading || Boolean(previewError)
+  const trimmedSearchQuery = searchQuery.trim()
+  const isSearchingText = trimmedSearchQuery.length > 0
+
+  useEffect(() => {
+    if (!directory || !trimmedSearchQuery) {
+      searchRequestIdRef.current += 1
+      return
+    }
+
+    const requestId = ++searchRequestIdRef.current
+    const timer = window.setTimeout(() => {
+      setSearchLoading(true)
+      setSearchResults([])
+      setFileResults([])
+      setSearchError(null)
+
+      let fileDone = false
+      let textDone = false
+      const maybeFinish = () => {
+        if (fileDone && textDone && requestId === searchRequestIdRef.current) {
+          setSearchLoading(false)
+        }
+      }
+
+      // 文件名搜索（失败静默，不阻断内容搜索）
+      searchFiles(trimmedSearchQuery, { directory, limit: 50 })
+        .then(paths => {
+          if (requestId !== searchRequestIdRef.current) return
+          setFileResults(paths)
+        })
+        .catch(() => {
+          // 文件名搜索失败不报错
+        })
+        .finally(() => {
+          fileDone = true
+          maybeFinish()
+        })
+
+      // 内容搜索
+      searchText(trimmedSearchQuery, directory)
+        .then(results => {
+          if (requestId !== searchRequestIdRef.current) return
+          setSearchResults(results)
+        })
+        .catch(err => {
+          if (requestId !== searchRequestIdRef.current) return
+          setSearchResults([])
+          setSearchError(err instanceof Error ? err.message : t('fileExplorer.textSearchFailed'))
+        })
+        .finally(() => {
+          textDone = true
+          maybeFinish()
+        })
+    }, 250)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [directory, trimmedSearchQuery, t])
+
+  const handleSearchResultClick = useCallback(
+    (match: TextSearchMatch) => {
+      const path = match.path.text
+      const name = path.split(/[/\\]/).pop() || path
+      layoutStore.openFilePreview(
+        {
+          path,
+          name,
+          targetLine: match.line_number,
+          targetKey: `${path}:${match.line_number}:${match.absolute_offset}:${Date.now()}`,
+          targetRanges: getSearchMatchRanges(match),
+        },
+        position,
+      )
+    },
+    [position],
+  )
+
+  const handleFileResultClick = useCallback(
+    (path: string) => {
+      const name = path.split(/[/\\]/).pop() || path
+      layoutStore.openFilePreview({ path, name }, position)
+    },
+    [position],
+  )
+
+  const handleSearchQueryChange = useCallback((value: string) => {
+    setSearchQuery(value)
+    if (!value.trim()) {
+      setSearchResults([])
+      setFileResults([])
+      setSearchLoading(false)
+      setSearchError(null)
+    }
+  }, [])
 
   // 没有选择目录
   if (!directory) {
@@ -188,10 +330,31 @@ export const FileExplorer = memo(function FileExplorer({
         }
       >
         {/* Tree Header */}
-        <div className="relative flex h-10 items-center justify-between px-3 shrink-0">
-          <span className="inline-flex h-6 items-center text-[length:var(--fs-xs)] font-medium text-text-100">
-            {t('fileExplorer.explorer')}
-          </span>
+        <div className="relative flex h-10 items-center gap-2 px-3 shrink-0">
+          <div className="relative group min-w-0 flex-1">
+            <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-400 w-3.5 h-3.5 group-focus-within:text-accent-main-100 transition-colors" />
+            <input
+              type="text"
+              name="file-explorer-text-search"
+              value={searchQuery}
+              onChange={e => handleSearchQueryChange(e.target.value)}
+              placeholder={t('fileExplorer.searchFiles')}
+              aria-label={t('fileExplorer.searchFiles')}
+              autoComplete="off"
+              className="w-full bg-bg-200/40 hover:bg-bg-200/60 focus:bg-bg-000 border border-transparent focus:border-border-200 rounded-lg py-1 pl-[30px] pr-7 text-[length:var(--fs-xs)] text-text-100 placeholder:text-text-400/70 focus-visible:ring-1 focus-visible:ring-border-200 focus-visible:ring-inset transition-all"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => handleSearchQueryChange('')}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 inline-flex h-5 w-5 items-center justify-center text-text-400 hover:text-text-100 rounded transition-colors"
+                aria-label={t('fileExplorer.clearSearch')}
+                title={t('fileExplorer.clearSearch')}
+              >
+                <CloseIcon size={12} />
+              </button>
+            )}
+          </div>
           <button
             type="button"
             onClick={handleRefresh}
@@ -207,7 +370,17 @@ export const FileExplorer = memo(function FileExplorer({
 
         {/* Tree Content */}
         <div className="flex-1 overflow-auto panel-scrollbar-y">
-          {isLoading && tree.length === 0 ? (
+          {isSearchingText ? (
+            <TextSearchResults
+              results={searchResults}
+              fileResults={fileResults}
+              isLoading={searchLoading}
+              error={searchError}
+              onSelect={handleSearchResultClick}
+              onSelectFile={handleFileResultClick}
+              directory={directory}
+            />
+          ) : isLoading && tree.length === 0 ? (
             <div className="flex items-center justify-center h-20 text-text-400 text-[length:var(--fs-sm)]">
               {t('common:loading')}
             </div>
@@ -256,6 +429,9 @@ export const FileExplorer = memo(function FileExplorer({
           <FilePreview
             previewFiles={previewFiles}
             path={previewFile?.path ?? null}
+            targetLine={previewFile?.targetLine}
+            targetKey={previewFile?.targetKey}
+            targetRanges={previewFile?.targetRanges}
             content={previewContent}
             isLoading={previewLoading}
             error={previewError}
@@ -266,6 +442,159 @@ export const FileExplorer = memo(function FileExplorer({
             isResizing={isAnyResizing}
           />
         </div>
+      )}
+    </div>
+  )
+})
+
+interface TextSearchResultsProps {
+  results: TextSearchMatch[]
+  fileResults: string[]
+  isLoading: boolean
+  error: string | null
+  onSelect: (match: TextSearchMatch) => void
+  onSelectFile: (path: string) => void
+  directory?: string
+}
+
+const TextSearchResults = memo(function TextSearchResults({
+  results,
+  fileResults,
+  isLoading,
+  error,
+  onSelect,
+  onSelectFile,
+  directory,
+}: TextSearchResultsProps) {
+  const { t } = useTranslation(['components', 'common'])
+
+  const hasFiles = fileResults.length > 0
+  const hasText = results.length > 0
+
+  // 拖拽到输入框实现 @mention，与文件树项行为一致
+  const handlePointerDragStart = useCallback(
+    (e: PointerEvent<HTMLButtonElement>, path: string) => {
+      if (!directory) return
+      const name = path.split(/[/\\]/).pop() || path
+      startInternalDrag(e, {
+        kind: 'file-mention',
+        file: {
+          type: 'file',
+          path,
+          absolute: toAbsolutePath(path, directory),
+          name,
+        },
+      })
+    },
+    [directory],
+  )
+
+  if (isLoading && !hasFiles && !hasText) {
+    return <div className="flex items-center justify-center h-20 text-text-400 text-[length:var(--fs-sm)]">{t('common:loading')}</div>
+  }
+
+  if (error && !hasFiles && !hasText) {
+    return (
+      <div className="flex flex-col items-center justify-center h-20 text-danger-100 text-[length:var(--fs-sm)] gap-1 px-4">
+        <AlertCircleIcon size={16} />
+        <span className="text-center">{error}</span>
+      </div>
+    )
+  }
+
+  if (!hasFiles && !hasText) {
+    return (
+      <div className="flex items-center justify-center h-20 text-text-400 text-[length:var(--fs-sm)]">
+        {t('fileExplorer.noTextMatches')}
+      </div>
+    )
+  }
+
+  return (
+    <div className="py-1">
+      {hasFiles && (
+        <>
+          <div className="px-2 py-1 text-[length:var(--fs-xxs)] font-medium text-text-500 uppercase tracking-wide">
+            {t('fileExplorer.fileMatches')}
+          </div>
+          {fileResults.map(path => {
+            const name = path.split(/[/\\]/).pop() || path
+            return (
+              <button
+                key={`file:${path}`}
+                type="button"
+                onPointerDown={e => handlePointerDragStart(e, path)}
+                onClick={() => onSelectFile(path)}
+                className="w-full px-2 py-1.5 text-left hover:bg-bg-200/50 transition-colors"
+              >
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <img
+                    src={getMaterialIconUrl(path, 'file', false)}
+                    alt=""
+                    width={16}
+                    height={16}
+                    draggable={false}
+                    className="shrink-0"
+                    loading="lazy"
+                    decoding="async"
+                    onError={e => {
+                      e.currentTarget.style.visibility = 'hidden'
+                    }}
+                  />
+                  <span className="truncate text-[length:var(--fs-sm)] text-text-200">{name}</span>
+                </div>
+                <div className="mt-0.5 truncate pl-[22px] text-[length:var(--fs-xxs)] text-text-500">{path}</div>
+              </button>
+            )
+          })}
+        </>
+      )}
+      {hasText && (
+        <>
+          {hasFiles && (
+            <div className="mt-1 px-2 py-1 text-[length:var(--fs-xxs)] font-medium text-text-500 uppercase tracking-wide">
+              {t('fileExplorer.contentMatches')}
+            </div>
+          )}
+          {results.map((match, index) => {
+            const path = match.path.text
+            const name = path.split(/[/\\]/).pop() || path
+            const line = match.lines.text.trim()
+
+            return (
+              <button
+                key={`${path}:${match.line_number}:${match.absolute_offset}:${index}`}
+                type="button"
+                onPointerDown={e => handlePointerDragStart(e, path)}
+                onClick={() => onSelect(match)}
+                className="w-full px-2 py-1.5 text-left hover:bg-bg-200/50 transition-colors"
+              >
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <img
+                    src={getMaterialIconUrl(path, 'file', false)}
+                    alt=""
+                    width={16}
+                    height={16}
+                    draggable={false}
+                    className="shrink-0"
+                    loading="lazy"
+                    decoding="async"
+                    onError={e => {
+                      e.currentTarget.style.visibility = 'hidden'
+                    }}
+                  />
+                  <span className="truncate text-[length:var(--fs-sm)] text-text-200">{name}</span>
+                  <span className="shrink-0 text-[length:var(--fs-xxs)] text-text-500">:{match.line_number}</span>
+                </div>
+                <div className="mt-0.5 truncate pl-[22px] font-mono text-[length:var(--fs-xxs)] text-text-400">{line}</div>
+                <div className="mt-0.5 truncate pl-[22px] text-[length:var(--fs-xxs)] text-text-500">{path}</div>
+              </button>
+            )
+          })}
+        </>
+      )}
+      {isLoading && (
+        <div className="px-2 py-1.5 text-center text-[length:var(--fs-xs)] text-text-500">{t('common:loading')}</div>
       )}
     </div>
   )
@@ -396,6 +725,9 @@ const FileTreeItem = memo(function FileTreeItem({
 interface FilePreviewProps {
   previewFiles: PreviewFile[]
   path: string | null
+  targetLine?: number
+  targetKey?: string
+  targetRanges?: readonly TargetLineRange[]
   content: FileContent | null
   isLoading: boolean
   error: string | null
@@ -409,6 +741,9 @@ interface FilePreviewProps {
 function FilePreview({
   previewFiles,
   path,
+  targetLine,
+  targetKey,
+  targetRanges,
   content,
   isLoading,
   error,
@@ -526,21 +861,42 @@ function FilePreview({
       case 'textMedia':
         return (
           <TextMediaPreview
+            key={targetKey ?? path ?? fileName}
             dataUrl={displayContent.dataUrl}
             text={displayContent.text}
             language={language || 'xml'}
             fileName={fileName}
             isResizing={false}
+            targetLine={targetLine}
+            targetKey={targetKey}
+            targetRanges={targetRanges}
           />
         )
       case 'markdown':
-        return <MarkdownFilePreview text={displayContent.text} isResizing={false} />
+        return (
+          <MarkdownFilePreview
+            key={targetKey ?? path ?? fileName}
+            text={displayContent.text}
+            isResizing={false}
+            targetLine={targetLine}
+            targetKey={targetKey}
+            targetRanges={targetRanges}
+          />
+        )
       case 'text':
-        return <CodePreview code={displayContent.text} language={language || 'text'} />
+        return (
+          <CodePreview
+            code={displayContent.text}
+            language={language || 'text'}
+            targetLine={targetLine}
+            targetKey={targetKey}
+            targetRanges={targetRanges}
+          />
+        )
       default:
         return null
     }
-  }, [displayContent, fileName, language, handleDownload])
+  }, [displayContent, fileName, handleDownload, language, path, targetKey, targetLine, targetRanges])
 
   const fullscreenHeaderRight = useMemo(
     () =>
@@ -625,19 +981,37 @@ function FilePreview({
           <BinaryPlaceholder mimeType={displayContent.mimeType} fileName={fileName} onDownload={handleDownload} />
         ) : displayContent?.type === 'textMedia' ? (
           <TextMediaPreview
+            key={targetKey ?? path ?? fileName}
             dataUrl={displayContent.dataUrl}
             text={displayContent.text}
             language={language || 'xml'}
             fileName={fileName}
             isResizing={isResizing}
+            targetLine={targetLine}
+            targetKey={targetKey}
+            targetRanges={targetRanges}
           />
         ) : displayContent?.type === 'markdown' ? (
-          <MarkdownFilePreview text={displayContent.text} isResizing={isResizing} />
+          <MarkdownFilePreview
+            key={targetKey ?? path ?? fileName}
+            text={displayContent.text}
+            isResizing={isResizing}
+            targetLine={targetLine}
+            targetKey={targetKey}
+            targetRanges={targetRanges}
+          />
         ) : // diff 渲染已移至 Changes 面板
         // ) : displayContent?.type === 'diff' ? (
         //   <DiffPreview hunks={displayContent.hunks} isResizing={isResizing} />
         displayContent?.type === 'text' ? (
-          <CodePreview code={displayContent.text} language={language || 'text'} isResizing={isResizing} />
+          <CodePreview
+            code={displayContent.text}
+            language={language || 'text'}
+            isResizing={isResizing}
+            targetLine={targetLine}
+            targetKey={targetKey}
+            targetRanges={targetRanges}
+          />
         ) : (
           <div className="flex items-center justify-center h-full text-text-400 text-[length:var(--fs-sm)]">
             {t('common:noContent')}
@@ -893,11 +1267,23 @@ interface TextMediaPreviewProps {
   language: string
   fileName: string
   isResizing?: boolean
+  targetLine?: number
+  targetKey?: string
+  targetRanges?: readonly TargetLineRange[]
 }
 
-function TextMediaPreview({ dataUrl, text, language, fileName, isResizing = false }: TextMediaPreviewProps) {
+function TextMediaPreview({
+  dataUrl,
+  text,
+  language,
+  fileName,
+  isResizing = false,
+  targetLine,
+  targetKey,
+  targetRanges,
+}: TextMediaPreviewProps) {
   const { t } = useTranslation(['components', 'common'])
-  const [mode, setMode] = useState<'preview' | 'code'>('preview')
+  const [mode, setMode] = useState<'preview' | 'code'>(targetLine ? 'code' : 'preview')
 
   return (
     <div className="flex flex-col h-full">
@@ -921,7 +1307,14 @@ function TextMediaPreview({ dataUrl, text, language, fileName, isResizing = fals
         <ImagePreview dataUrl={dataUrl} fileName={fileName} />
       ) : (
         <div className="flex-1 min-h-0">
-          <CodePreview code={text} language={language} isResizing={isResizing} />
+          <CodePreview
+            code={text}
+            language={language}
+            isResizing={isResizing}
+            targetLine={targetLine}
+            targetKey={targetKey}
+            targetRanges={targetRanges}
+          />
         </div>
       )}
     </div>
@@ -931,11 +1324,14 @@ function TextMediaPreview({ dataUrl, text, language, fileName, isResizing = fals
 interface MarkdownFilePreviewProps {
   text: string
   isResizing?: boolean
+  targetLine?: number
+  targetKey?: string
+  targetRanges?: readonly TargetLineRange[]
 }
 
-function MarkdownFilePreview({ text, isResizing = false }: MarkdownFilePreviewProps) {
+function MarkdownFilePreview({ text, isResizing = false, targetLine, targetKey, targetRanges }: MarkdownFilePreviewProps) {
   const { t } = useTranslation(['components', 'common'])
-  const [mode, setMode] = useState<'preview' | 'code'>('preview')
+  const [mode, setMode] = useState<'preview' | 'code'>(targetLine ? 'code' : 'preview')
 
   return (
     <div className="flex flex-col h-full">
@@ -960,7 +1356,14 @@ function MarkdownFilePreview({ text, isResizing = false }: MarkdownFilePreviewPr
         </div>
       ) : (
         <div className="flex-1 min-h-0">
-          <CodePreview code={text} language="markdown" isResizing={isResizing} />
+          <CodePreview
+            code={text}
+            language="markdown"
+            isResizing={isResizing}
+            targetLine={targetLine}
+            targetKey={targetKey}
+            targetRanges={targetRanges}
+          />
         </div>
       )}
     </div>

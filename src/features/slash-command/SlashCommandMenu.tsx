@@ -7,6 +7,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useImperativeHandle, forw
 import { useTranslation } from 'react-i18next'
 import { getCommands, type Command } from '../../api/command'
 import { apiErrorHandler } from '../../utils'
+import { scrollItemIntoView } from '../../utils/scrollUtils'
 
 // ============================================
 // Types
@@ -139,11 +140,11 @@ export const SlashCommandMenu = forwardRef<SlashCommandMenuHandle, SlashCommandM
   }, [isOpen, query])
 
   // 滚动选中项到可见区域
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!listRef.current) return
     const selectedEl = listRef.current.children[activeIndex] as HTMLElement
     if (selectedEl) {
-      selectedEl.scrollIntoView({ block: 'nearest' })
+      scrollItemIntoView(listRef.current, selectedEl)
     }
   }, [activeIndex])
 
@@ -152,10 +153,10 @@ export const SlashCommandMenu = forwardRef<SlashCommandMenuHandle, SlashCommandM
     ref,
     () => ({
       moveUp: () => {
-        setSelectedIndex(prev => Math.max(prev - 1, 0))
+        setSelectedIndex(prev => (prev <= 0 ? filteredCommands.length - 1 : prev - 1))
       },
       moveDown: () => {
-        setSelectedIndex(prev => Math.min(prev + 1, filteredCommands.length - 1))
+        setSelectedIndex(prev => (prev >= filteredCommands.length - 1 ? 0 : prev + 1))
       },
       selectCurrent: () => {
         const selected = filteredCommands[activeIndex]

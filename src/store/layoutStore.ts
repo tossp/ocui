@@ -33,6 +33,9 @@ export interface PanelTab {
 export interface PreviewFile {
   path: string
   name: string
+  targetLine?: number
+  targetKey?: string
+  targetRanges?: Array<{ from: number; to: number }>
 }
 
 const MAX_RIGHT_PANEL_WIDTH = 1280
