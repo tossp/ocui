@@ -1,7 +1,7 @@
 import type { Message } from '../../types/message'
 
 export const PAGE_MESSAGE_COUNT = 20
-export const EXPANDED_PAGE_RADIUS = 0
+export const PAGE_OVERSCAN_VIEWPORTS = 2
 
 export interface MessageGroupRow {
   key: string
@@ -298,21 +298,22 @@ export function computeExpandedPageRange(options: {
   measuredPageHeights: Record<string, number>
   scrollOffsetFromBottom: number
   viewportHeight: number
-  radius?: number
+  overscanPx?: number
 }): PageRange {
   const { pages, measuredPageHeights, scrollOffsetFromBottom, viewportHeight } = options
-  const radius = options.radius ?? EXPANDED_PAGE_RADIUS
   if (pages.length === 0) return { startIndex: 0, endIndex: -1 }
 
   const offsets = buildPageOffsets(pages, measuredPageHeights)
-  const viewportStart = Math.max(0, scrollOffsetFromBottom)
-  const viewportEnd = viewportStart + Math.max(1, viewportHeight)
+  const viewportSpan = Math.max(1, viewportHeight)
+  const overscanPx = Math.max(0, options.overscanPx ?? viewportSpan * PAGE_OVERSCAN_VIEWPORTS)
+  const viewportStart = Math.max(0, scrollOffsetFromBottom - overscanPx)
+  const viewportEnd = scrollOffsetFromBottom + viewportSpan + overscanPx
   const firstVisiblePageIndex = findPageIndexAtOffset(offsets, viewportStart)
   const lastVisiblePageIndex = findPageIndexAtOffset(offsets, Math.max(viewportStart, viewportEnd - 1))
 
   return {
-    startIndex: Math.max(0, firstVisiblePageIndex - radius),
-    endIndex: Math.min(pages.length - 1, lastVisiblePageIndex + radius),
+    startIndex: firstVisiblePageIndex,
+    endIndex: lastVisiblePageIndex,
   }
 }
 

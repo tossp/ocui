@@ -22,6 +22,8 @@ import { marked } from 'marked'
 import type { Tokens } from 'marked'
 import { projectMarkdownStream, type MarkdownStreamProjection } from './markdownStream'
 import { renderMarkdownToHtml } from './markdownHtmlRenderer'
+import { getCachedMermaidSvg, getOrRenderMermaidSvg } from './mermaidRenderCache'
+import { inferImageDimensions } from './imageDimensions'
 
 interface MarkdownRendererProps {
   content: string
@@ -73,6 +75,35 @@ function createMermaidRenderId(prefix: string) {
   return `mermaid-${safePrefix}-${mermaidRenderCounter}`
 }
 
+function scopeMermaidSvg(svg: string, instanceId: string) {
+  const ids = Array.from(svg.matchAll(/\bid=["']([^"']+)["']/gi), match => match[1])
+  let scoped = svg
+  Array.from(new Set(ids)).forEach((id, index) => {
+    const escapedId = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const nextId = `${instanceId}-${index}`
+    scoped = scoped.replace(new RegExp(`\\bid=(["'])${escapedId}\\1`, 'g'), `id="${nextId}"`)
+    scoped = scoped.replace(new RegExp(`#${escapedId}(?![a-zA-Z0-9_.:-])`, 'g'), `#${nextId}`)
+    scoped = scoped.replace(
+      /\b(aria-labelledby|aria-describedby)=(["'])([^"']*)\2/gi,
+      (_attribute, name: string, quote: string, value: string) => {
+        const tokens = value.split(/\s+/).map(token => (token === id ? nextId : token))
+        return `${name}=${quote}${tokens.join(' ')}${quote}`
+      },
+    )
+  })
+  return scoped
+}
+
+async function getMermaidSvg(code: string, theme: 'dark' | 'default', renderPrefix: string) {
+  const cacheKey = `${theme}:${code}`
+  return getOrRenderMermaidSvg(cacheKey, async () => {
+    const { default: mermaid } = await import('mermaid')
+    mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme })
+    const result = await mermaid.render(createMermaidRenderId(renderPrefix), code)
+    return result.svg
+  })
+}
+
 function clampMermaidScale(scale: number) {
   return Math.min(MERMAID_MAX_SCALE, Math.max(MERMAID_MIN_SCALE, Number(scale.toFixed(2))))
 }
@@ -122,9 +153,11 @@ function getOrderedListPadding(start: number, itemCount: number): string {
 
 const MarkdownMermaid = memo(function MarkdownMermaid({ code, isIncomplete }: { code: string; isIncomplete?: boolean }) {
   const { resolvedTheme } = useTheme()
+  const mermaidTheme = resolvedTheme === 'dark' ? 'dark' : 'default'
   const { hasCoarsePointer, hasTouch, preferTouchUi } = useInputCapabilities()
   const supportsTouchGestures = hasCoarsePointer || hasTouch
   const renderPrefix = useId()
+  const instanceSvgId = `mermaid-instance-${renderPrefix.replace(/[^a-zA-Z0-9_-]/g, '')}`
   const dragRef = useRef<{
     pointerId: number
     startX: number
@@ -134,7 +167,7 @@ const MarkdownMermaid = memo(function MarkdownMermaid({ code, isIncomplete }: { 
   } | null>(null)
   const touchPointersRef = useRef<Map<number, DiagramPointer>>(new Map())
   const pinchRef = useRef<PinchGesture | null>(null)
-  const [svg, setSvg] = useState('')
+  const [svg, setSvg] = useState(() => (isIncomplete ? '' : (getCachedMermaidSvg(`${mermaidTheme}:${code}`) ?? '')))
   const [error, setError] = useState('')
   const [scale, setScale] = useState(1)
   const [offset, setOffset] = useState({ x: 0, y: 0 })
@@ -144,6 +177,7 @@ const MarkdownMermaid = memo(function MarkdownMermaid({ code, isIncomplete }: { 
     setScale(1)
     setOffset({ x: 0, y: 0 })
   }, [])
+  const scopedSvg = useMemo(() => scopeMermaidSvg(svg, instanceSvgId), [instanceSvgId, svg])
 
   const zoomBy = useCallback((delta: number) => {
     setScale(current => clampMermaidScale(current + delta))
@@ -267,9 +301,6 @@ const MarkdownMermaid = memo(function MarkdownMermaid({ code, isIncomplete }: { 
 
   useEffect(() => {
     if (isIncomplete || !code.trim()) {
-      setSvg('')
-      setError('')
-      resetView()
       return
     }
 
@@ -277,17 +308,13 @@ const MarkdownMermaid = memo(function MarkdownMermaid({ code, isIncomplete }: { 
 
     async function renderDiagram() {
       try {
-        setSvg('')
+        const cached = getCachedMermaidSvg(`${mermaidTheme}:${code}`)
+        setSvg(cached ?? '')
         setError('')
         resetView()
-        const { default: mermaid } = await import('mermaid')
-        mermaid.initialize({
-          startOnLoad: false,
-          securityLevel: 'strict',
-          theme: resolvedTheme === 'dark' ? 'dark' : 'default',
-        })
-        const result = await mermaid.render(createMermaidRenderId(renderPrefix), code)
-        if (!cancelled) setSvg(result.svg)
+        if (cached !== undefined) return
+        const result = await getMermaidSvg(code, mermaidTheme, renderPrefix)
+        if (!cancelled) setSvg(result)
       } catch (err) {
         if (import.meta.env.DEV) {
           console.warn('[Markdown] Mermaid render failed:', err)
@@ -304,7 +331,7 @@ const MarkdownMermaid = memo(function MarkdownMermaid({ code, isIncomplete }: { 
     return () => {
       cancelled = true
     }
-  }, [code, isIncomplete, renderPrefix, resetView, resolvedTheme])
+  }, [code, isIncomplete, mermaidTheme, renderPrefix, resetView])
 
   if (isIncomplete) {
     return <CodeBlock code={code} language="mermaid" deferHighlight />
@@ -400,7 +427,7 @@ const MarkdownMermaid = memo(function MarkdownMermaid({ code, isIncomplete }: { 
           transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
           transformOrigin: 'top left',
         }}
-        dangerouslySetInnerHTML={{ __html: svg }}
+        dangerouslySetInnerHTML={{ __html: scopedSvg }}
       />
     </div>
   )
@@ -575,7 +602,8 @@ function renderInlineTokensToReact(tokens: unknown[], _isReasoning: boolean): Re
     if (item.type === 'image') {
       const src = typeof item.href === 'string' ? item.href : undefined
       if (!src || isUnsafeImageSrcInline(src)) return <span key={index}>[Image blocked: {String(item.text ?? '')}]</span>
-      return <img key={index} src={src} alt={String(item.text ?? '')} loading="lazy" className="block max-w-full rounded-md" />
+      const dimensions = inferImageDimensions(src)
+      return <img key={index} src={src} alt={String(item.text ?? '')} width={dimensions?.width} height={dimensions?.height} loading="eager" decoding="async" className="block max-w-full rounded-md" />
     }
     if (item.type === 'br') return <br key={index} />
     return <span key={index}>{String(item.text ?? item.raw ?? '')}</span>
@@ -718,6 +746,16 @@ function decodeLocalFileHrefInline(href?: string): string | null {
 // ─── DOM decoration (pure style, no interaction) ────────────────
 
 function decorateMarkdownDom(root: HTMLElement) {
+  root.querySelectorAll('img').forEach(image => {
+    const dimensions = inferImageDimensions(image.currentSrc || image.src)
+    if (dimensions && !image.hasAttribute('width') && !image.hasAttribute('height')) {
+      image.width = dimensions.width
+      image.height = dimensions.height
+    }
+    image.loading = 'eager'
+    image.decoding = 'async'
+  })
+
   root.querySelectorAll('ol').forEach(list => {
     const startAttr = list.getAttribute('start')
     const start = startAttr ? parseInt(startAttr, 10) : 1
@@ -751,6 +789,11 @@ const MarkdownDomBlock = memo(function MarkdownDomBlock({
   useLayoutEffect(() => {
     const root = rootRef.current
     if (!root) return
+    if (!root.hasChildNodes()) {
+      root.innerHTML = html
+      decorateMarkdownDom(root)
+      return
+    }
     const next = document.createElement('div')
     next.innerHTML = html
     decorateMarkdownDom(next)

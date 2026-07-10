@@ -377,39 +377,73 @@ describe('buildChatPages', () => {
 })
 
 describe('computeExpandedPageRange', () => {
-  it('expands only the current page by default around the viewport center', () => {
+  it('preloads pages within two viewports around the visible range', () => {
     const pages = [
-      { key: 'page-0', rows: [], messageIds: ['m0'], estimatedHeight: 400 },
-      { key: 'page-1', rows: [], messageIds: ['m1'], estimatedHeight: 400 },
-      { key: 'page-2', rows: [], messageIds: ['m2'], estimatedHeight: 400 },
-      { key: 'page-3', rows: [], messageIds: ['m3'], estimatedHeight: 400 },
+      { key: 'page-0', rows: [], messageIds: ['m0'], estimatedHeight: 1000 },
+      { key: 'page-1', rows: [], messageIds: ['m1'], estimatedHeight: 1000 },
+      { key: 'page-2', rows: [], messageIds: ['m2'], estimatedHeight: 1000 },
+      { key: 'page-3', rows: [], messageIds: ['m3'], estimatedHeight: 1000 },
     ]
 
     const range = computeExpandedPageRange({
       pages,
       measuredPageHeights: {},
-      scrollOffsetFromBottom: 450,
+      scrollOffsetFromBottom: 1450,
       viewportHeight: 300,
     })
 
-    expect(range).toEqual({ startIndex: 1, endIndex: 1 })
+    expect(range).toEqual({ startIndex: 0, endIndex: 2 })
   })
 
-  it('expands every page intersecting the viewport to avoid blank page seams', () => {
+  it('keeps adjacent pages mounted near a page boundary', () => {
     const pages = [
-      { key: 'page-0', rows: [], messageIds: ['m0'], estimatedHeight: 400 },
-      { key: 'page-1', rows: [], messageIds: ['m1'], estimatedHeight: 400 },
-      { key: 'page-2', rows: [], messageIds: ['m2'], estimatedHeight: 400 },
+      { key: 'page-0', rows: [], messageIds: ['m0'], estimatedHeight: 1000 },
+      { key: 'page-1', rows: [], messageIds: ['m1'], estimatedHeight: 1000 },
+      { key: 'page-2', rows: [], messageIds: ['m2'], estimatedHeight: 1000 },
     ]
 
     const range = computeExpandedPageRange({
       pages,
       measuredPageHeights: {},
-      scrollOffsetFromBottom: 350,
+      scrollOffsetFromBottom: 850,
       viewportHeight: 300,
     })
 
     expect(range).toEqual({ startIndex: 0, endIndex: 1 })
+  })
+
+  it('does not mount adjacent pages in the middle of a tall page', () => {
+    const pages = [
+      { key: 'page-0', rows: [], messageIds: ['m0'], estimatedHeight: 2000 },
+      { key: 'page-1', rows: [], messageIds: ['m1'], estimatedHeight: 2000 },
+      { key: 'page-2', rows: [], messageIds: ['m2'], estimatedHeight: 2000 },
+    ]
+
+    const range = computeExpandedPageRange({
+      pages,
+      measuredPageHeights: {},
+      scrollOffsetFromBottom: 1000,
+      viewportHeight: 300,
+    })
+
+    expect(range).toEqual({ startIndex: 0, endIndex: 0 })
+  })
+
+  it('treats the overscan end as an exclusive boundary', () => {
+    const pages = [
+      { key: 'page-0', rows: [], messageIds: ['m0'], estimatedHeight: 400 },
+      { key: 'page-1', rows: [], messageIds: ['m1'], estimatedHeight: 400 },
+    ]
+
+    const range = computeExpandedPageRange({
+      pages,
+      measuredPageHeights: {},
+      scrollOffsetFromBottom: 0,
+      viewportHeight: 200,
+      overscanPx: 200,
+    })
+
+    expect(range).toEqual({ startIndex: 0, endIndex: 0 })
   })
 
   it('keeps the viewport range narrow for far jump targets', () => {
@@ -427,8 +461,8 @@ describe('computeExpandedPageRange', () => {
       viewportHeight: 200,
     })
 
-    expect(range).toEqual({ startIndex: 0, endIndex: 0 })
-    expect(Array.from(buildExpandedPageSelection(range, 3))).toEqual([0, 3])
+    expect(range).toEqual({ startIndex: 0, endIndex: 1 })
+    expect(Array.from(buildExpandedPageSelection(range, 3))).toEqual([0, 1, 3])
   })
 })
 

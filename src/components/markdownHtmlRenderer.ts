@@ -2,6 +2,7 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
+import { inferImageDimensions } from './imageDimensions'
 
 const LOCAL_FILE_LINK_PREFIX = '#opencode-local-file:'
 
@@ -319,7 +320,9 @@ function createMarkdownHtmlRenderer(isReasoning: boolean) {
     const safeTitle = title || text || undefined
     const titleAttr = safeTitle ? ` title="${escapeAttribute(safeTitle)}"` : ''
     const imgTitleAttr = title ? ` title="${escapeAttribute(title)}"` : ''
-    return `<a href="${escapeAttribute(href)}" target="_blank" rel="noopener noreferrer" class="inline-block max-w-full align-top"${titleAttr}><img src="${escapeAttribute(href)}" alt="${escapeAttribute(text || '')}"${imgTitleAttr} loading="lazy" class="block max-w-full rounded-md"></a>`
+    const dimensions = inferImageDimensions(href)
+    const dimensionsAttr = dimensions ? ` width="${dimensions.width}" height="${dimensions.height}"` : ''
+    return `<a href="${escapeAttribute(href)}" target="_blank" rel="noopener noreferrer" class="inline-block max-w-full align-top"${titleAttr}><img src="${escapeAttribute(href)}" alt="${escapeAttribute(text || '')}"${imgTitleAttr}${dimensionsAttr} loading="eager" decoding="async" class="block max-w-full rounded-md"></a>`
   }
 
   renderer.blockquote = function ({ tokens }) {

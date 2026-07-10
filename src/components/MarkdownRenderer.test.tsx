@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MarkdownRenderer } from './MarkdownRenderer'
+import { clearMermaidRenderCache } from './mermaidRenderCache'
 
 const mermaidMocks = vi.hoisted(() => ({
   initialize: vi.fn(),
@@ -65,6 +66,7 @@ vi.mock('./ui', () => ({
 
 describe('MarkdownRenderer', () => {
   beforeEach(() => {
+    clearMermaidRenderCache()
     useInputCapabilitiesMock.mockReset()
     useInputCapabilitiesMock.mockReturnValue({
       canHover: true,
@@ -539,6 +541,42 @@ $$ \begin{aligned} \nabla \cdot \vec{E} &= \rho / \varepsilon_0 \ \nabla \cdot \
     expect(mermaidMocks.render).toHaveBeenCalledTimes(1)
   })
 
+  it('reuses cached mermaid output after remounting', async () => {
+    const content = '```mermaid\ngraph TD\n  A-->B\n```'
+    const first = render(<MarkdownRenderer content={content} />)
+    expect(await screen.findByRole('img', { name: 'Mermaid diagram' })).toBeInTheDocument()
+    first.unmount()
+
+    render(<MarkdownRenderer content={content} />)
+
+    expect(screen.getByRole('img', { name: 'Mermaid diagram' })).toBeInTheDocument()
+    expect(screen.queryByLabelText('Rendering diagram')).not.toBeInTheDocument()
+    expect(mermaidMocks.render).toHaveBeenCalledTimes(1)
+  })
+
+  it('scopes cached mermaid ids for each mounted diagram', async () => {
+    mermaidMocks.render.mockResolvedValue({
+      svg: '<svg id="diagram"><defs><marker id="diagram-arrow"></marker></defs><path marker-end="url(#diagram-arrow)"></path></svg>',
+    })
+    render(
+      <MarkdownRenderer
+        content={'```mermaid\ngraph TD\n  A-->B\n```\n\n```mermaid\ngraph TD\n  A-->B\n```'}
+      />,
+    )
+
+    const diagrams = await screen.findAllByRole('img', { name: 'Mermaid diagram' })
+    const firstSvg = diagrams[0].querySelector('svg')
+    const secondSvg = diagrams[1].querySelector('svg')
+    const firstMarker = firstSvg?.querySelector('marker')
+    const secondMarker = secondSvg?.querySelector('marker')
+
+    expect(firstSvg?.id).not.toBe(secondSvg?.id)
+    expect(firstMarker?.id).not.toBe(secondMarker?.id)
+    expect(firstSvg?.querySelector('path')).toHaveAttribute('marker-end', `url(#${firstMarker?.id})`)
+    expect(secondSvg?.querySelector('path')).toHaveAttribute('marker-end', `url(#${secondMarker?.id})`)
+    expect(mermaidMocks.render).toHaveBeenCalledTimes(1)
+  })
+
   it('defers incomplete streaming mermaid diagrams as code blocks', () => {
     render(<MarkdownRenderer content={'```mermaid\ngraph TD\n  A-->B'} isStreaming />)
 
@@ -713,7 +751,16 @@ $$ \begin{aligned} \nabla \cdot \vec{E} &= \rho / \varepsilon_0 \ \nabla \cdot \
     const img = screen.getByRole('img', { name: 'avatar' })
     expect(img).toBeInTheDocument()
     expect(img.tagName).toBe('IMG')
+    expect(img).toHaveAttribute('loading', 'eager')
+    expect(img).toHaveAttribute('decoding', 'async')
     expect(screen.queryByTitle('Download image')).not.toBeInTheDocument()
+  })
+
+  it('reserves image dimensions when the source URL includes them', () => {
+    render(<MarkdownRenderer content={'![sample](https://picsum.photos/400/200)'} />)
+
+    expect(screen.getByRole('img', { name: 'sample' })).toHaveAttribute('width', '400')
+    expect(screen.getByRole('img', { name: 'sample' })).toHaveAttribute('height', '200')
   })
 
   it('blocks data image markdown sources through hardening', () => {
