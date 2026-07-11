@@ -125,8 +125,6 @@ function sameRow(a: MessageGroupRow, b: MessageGroupRow) {
   return (
     a.key === b.key &&
     a.estimatedHeight === b.estimatedHeight &&
-    a.continuesFromPrevious === b.continuesFromPrevious &&
-    a.continuesToNext === b.continuesToNext &&
     sameStringList(a.messageIds, b.messageIds) &&
     a.messages.every((message, index) => message === b.messages[index])
   )
@@ -135,8 +133,8 @@ function sameRow(a: MessageGroupRow, b: MessageGroupRow) {
 function reusePageRecords(previous: StableChatPage[] | undefined, next: StableChatPage[]): StableChatPage[] {
   if (!previous) return next
   const previousByKey = new Map(previous.map(page => [page.key, page]))
-  let changed = false
-  const pages = next.map(page => {
+  let changed = previous.length !== next.length
+  const pages = next.map((page, index) => {
     const previousPage = previousByKey.get(page.key)
     if (
       previousPage &&
@@ -146,6 +144,7 @@ function reusePageRecords(previous: StableChatPage[] | undefined, next: StableCh
       previousPage.rows.length === page.rows.length &&
       previousPage.rows.every((row, rowIndex) => sameRow(row, page.rows[rowIndex]))
     ) {
+      if (previous[index] !== previousPage) changed = true
       return previousPage
     }
     changed = true

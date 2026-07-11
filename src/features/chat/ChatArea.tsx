@@ -2,8 +2,8 @@
 // ChatArea - 聊天消息显示区域
 // ============================================
 //
-// 这版使用内容权重块级虚拟化：
-// - 消息按预计渲染重量分块，不再使用固定消息条数
+// 这版使用粗颗粒页块级虚拟化：
+// - 消息以 20 条为主分块，渲染重量只限制极端页面
 // - 视口附近少量页保持真实 DOM
 // - 远页折叠成固定高度块，优先使用实测高度，未测量时使用保守估算
 //
@@ -42,6 +42,7 @@ import {
   buildTurnDurationMap,
   computeExpandedPageRange,
   expandSelectionWithPageKeys,
+  PAGE_ADJACENT_OVERSCAN,
   seedMeasuredPageHeightsFromPreviousPages,
   type ChatPage,
   type StableChatPage,
@@ -54,6 +55,7 @@ const LOAD_MORE_DEFER_MS = 100
 const LOAD_MORE_ANCHOR_SETTLE_MS = 600
 const LOAD_MORE_ANCHOR_FALLBACK_MS = 5000
 const PENDING_SCROLL_TARGET_KEEPALIVE_MS = 900
+const ADJACENT_PAGE_PRELOAD_VIEWPORTS = 12
 
 type LoadMoreAnchorSnapshot = {
   messageId: string
@@ -290,6 +292,8 @@ export const ChatArea = memo(
             measuredPageHeights,
             scrollOffsetFromBottom,
             viewportHeight,
+            adjacentPageCount: PAGE_ADJACENT_OVERSCAN,
+            adjacentPageMaxSourceHeight: viewportHeight * ADJACENT_PAGE_PRELOAD_VIEWPORTS,
           }),
         [activePages, measuredPageHeights, scrollOffsetFromBottom, viewportHeight],
       )
@@ -1062,17 +1066,10 @@ const PageBlock = memo(function PageBlock({
     <div ref={wrapperRef} className="shrink-0" data-page-key={page.key}>
       {page.rows.map(row => {
         const isUser = row.messages[0].info.role === 'user'
-        const verticalPaddingClass = row.continuesFromPrevious
-          ? row.continuesToNext
-            ? 'pt-2 pb-0'
-            : 'pt-2 pb-3'
-          : row.continuesToNext
-            ? 'pt-3 pb-0'
-            : 'py-3'
         return (
           <div
             key={row.key}
-            className={`w-full ${messageMaxWidthClass} mx-auto ${messagePaddingClass} ${verticalPaddingClass} transition-[max-width] duration-300 ease-in-out`}
+            className={`w-full ${messageMaxWidthClass} mx-auto ${messagePaddingClass} py-3 transition-[max-width] duration-300 ease-in-out`}
           >
             <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
               <div className={`min-w-0 group ${!isUser ? 'w-full' : ''} flex flex-col gap-2`}>

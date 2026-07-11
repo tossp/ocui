@@ -311,7 +311,20 @@ describe('buildChatPageViewModel', () => {
     expect(new Set(next.pageRecords.map(page => page.key)).size).toBe(next.pageRecords.length)
   })
 
-  it('keeps a short initial conversation eager and starts weighted pages after the threshold', () => {
+  it('reuses page objects without preserving a stale page order', () => {
+    const messages = Array.from({ length: 40 }, (_unused, index) => ({
+      ...createUserMessage(`user-${index}`, index),
+      parts: [createTextPart(`text-${index}`, `user-${index}`, `prompt ${index}`)],
+    }))
+    const first = buildChatPageViewModel(messages)
+    const reordered = buildChatPageViewModel([...messages.slice(20), ...messages.slice(0, 20)], first)
+
+    expect(first.pageRecords).toHaveLength(2)
+    expect(reordered.pageRecords[0]).toBe(first.pageRecords[1])
+    expect(reordered.pageRecords[1]).toBe(first.pageRecords[0])
+  })
+
+  it('starts a new stable page after twenty visible messages', () => {
     const messages = Array.from({ length: 20 }, (_unused, index) => ({
       ...createUserMessage(`user-${index}`, index),
       parts: [createTextPart(`text-${index}`, `user-${index}`, `prompt ${index}`)],
@@ -330,7 +343,7 @@ describe('buildChatPageViewModel', () => {
     expect(next.pageRecords[0].messageIds).toEqual(['user-20'])
   })
 
-  it('keeps a small set of heavyweight messages eager', () => {
+  it('keeps an oversized assistant group intact', () => {
     const longText = 'markdown '.repeat(3500)
     const messages = Array.from({ length: 26 }, (_unused, index) =>
       createAssistantMessage(
@@ -347,7 +360,7 @@ describe('buildChatPageViewModel', () => {
     expect(viewModel.pageRecords[0].messageIds).toHaveLength(26)
   })
 
-  it('starts a streaming assistant in its own stable page', () => {
+  it('keeps a growing streaming assistant in the current stable page', () => {
     const user = {
       ...createUserMessage('user-1', 1),
       parts: [createTextPart('user-text', 'user-1', 'prompt')],
@@ -371,11 +384,11 @@ describe('buildChatPageViewModel', () => {
       next,
     )
 
-    expect(next.pageRecords).toHaveLength(2)
-    expect(initial.pageRecords).toHaveLength(2)
-    expect(next.pageRecords[0].messageIds).toEqual(['assistant-1'])
+    expect(next.pageRecords).toHaveLength(1)
+    expect(initial.pageRecords).toHaveLength(1)
+    expect(next.pageRecords[0].messageIds).toEqual(['user-1', 'assistant-1'])
     expect(grown.pageRecords[0].key).toBe(next.pageRecords[0].key)
-    expect(grown.pageRecords[1]).toBe(next.pageRecords[1])
+    expect(grown.pageRecords[0].messageIds).toEqual(next.pageRecords[0].messageIds)
   })
 })
 
@@ -447,7 +460,7 @@ describe('buildChatPages', () => {
       createAssistantMessage('assistant-3', [], 7, 8),
     ]
 
-    const pages = buildChatPages(messages, 4)
+    const pages = buildChatPages(messages, 2)
 
     // render order: newest page first
     expect(pages).toHaveLength(3)
@@ -457,16 +470,16 @@ describe('buildChatPages', () => {
     expect(pages[2].messageIds).toEqual(['user-1'])
   })
 
-  it('allows more than twenty lightweight messages in one page', () => {
+  it('uses twenty visible messages as the default page size', () => {
     const messages = Array.from({ length: 25 }, (_unused, index) => createUserMessage(`user-${index}`, index))
 
-    const pages = buildChatPages(messages, 30)
+    const pages = buildChatPages(messages)
 
-    expect(pages).toHaveLength(1)
-    expect(pages[0].messageIds).toHaveLength(25)
+    expect(pages).toHaveLength(2)
+    expect(pages.map(page => page.messageIds.length)).toEqual([20, 5])
   })
 
-  it('isolates a heavyweight markdown message from lightweight neighbors', () => {
+  it('uses render weight only as an extreme page limit', () => {
     const largeMarkdown = Array.from(
       { length: 12 },
       (_unused, index) => `\`\`\`ts\nconst value${index} = ${index}\n\`\`\``,
@@ -477,36 +490,28 @@ describe('buildChatPages', () => {
       createUserMessage('user-2', 4),
     ]
 
-    const pages = buildChatPages(messages, 12)
+    const pages = buildChatPages(messages, 20, 12)
 
     expect(pages).toHaveLength(3)
     expect(pages[1].messageIds).toEqual(['assistant-heavy'])
     expect(pages[1].renderWeight).toBeGreaterThan(12)
   })
 
-  it('splits an oversized assistant group without losing continuation spacing', () => {
+  it('does not split an oversized assistant group', () => {
     const messages = Array.from({ length: 8 }, (_unused, index) =>
       createAssistantMessage(`assistant-${index}`, [], index, index + 1),
     )
 
     const pages = buildChatPages(messages, 6)
 
-    expect(pages).toHaveLength(3)
-    const rows = pages
-      .slice()
-      .reverse()
-      .flatMap(page => page.rows)
-    expect(rows.map(row => row.messages.length)).toEqual([3, 3, 2])
-    expect(rows.map(row => [row.continuesFromPrevious, row.continuesToNext])).toEqual([
-      [false, true],
-      [true, true],
-      [true, false],
-    ])
+    expect(pages).toHaveLength(1)
+    expect(pages[0].messageIds).toEqual(messages.map(message => message.info.id))
+    expect(pages[0].rows).toHaveLength(1)
   })
 })
 
 describe('computeExpandedPageRange', () => {
-  it('preloads pages within one viewport around the visible range', () => {
+  it('preloads pages within two viewports around the visible range', () => {
     const pages = [
       { key: 'page-0', rows: [], messageIds: ['m0'], estimatedHeight: 1000 },
       { key: 'page-1', rows: [], messageIds: ['m1'], estimatedHeight: 1000 },
@@ -521,7 +526,43 @@ describe('computeExpandedPageRange', () => {
       viewportHeight: 300,
     })
 
-    expect(range).toEqual({ startIndex: 1, endIndex: 2 })
+    expect(range).toEqual({ startIndex: 0, endIndex: 2 })
+  })
+
+  it('keeps the next coarse page mounted even when the current page is taller than pixel overscan', () => {
+    const pages = [
+      { key: 'page-0', rows: [], messageIds: ['m0'], estimatedHeight: 8286 },
+      { key: 'page-1', rows: [], messageIds: ['m1'], estimatedHeight: 3664 },
+    ]
+
+    const range = computeExpandedPageRange({
+      pages,
+      measuredPageHeights: { 'page-0': 8286 },
+      scrollOffsetFromBottom: 0,
+      viewportHeight: 900,
+      adjacentPageCount: 1,
+      adjacentPageMaxSourceHeight: 10800,
+    })
+
+    expect(range).toEqual({ startIndex: 0, endIndex: 1 })
+  })
+
+  it('does not preload an adjacent page from an extremely tall source page', () => {
+    const pages = [
+      { key: 'page-0', rows: [], messageIds: ['m0'], estimatedHeight: 4000 },
+      { key: 'page-1', rows: [], messageIds: ['m1'], estimatedHeight: 4000 },
+    ]
+
+    const range = computeExpandedPageRange({
+      pages,
+      measuredPageHeights: { 'page-0': 78312 },
+      scrollOffsetFromBottom: 0,
+      viewportHeight: 900,
+      adjacentPageCount: 1,
+      adjacentPageMaxSourceHeight: 10800,
+    })
+
+    expect(range).toEqual({ startIndex: 0, endIndex: 0 })
   })
 
   it('keeps adjacent pages mounted near a page boundary', () => {
@@ -590,8 +631,8 @@ describe('computeExpandedPageRange', () => {
       viewportHeight: 200,
     })
 
-    expect(range).toEqual({ startIndex: 0, endIndex: 0 })
-    expect(Array.from(buildExpandedPageSelection(range, 3))).toEqual([0, 3])
+    expect(range).toEqual({ startIndex: 0, endIndex: 1 })
+    expect(Array.from(buildExpandedPageSelection(range, 3))).toEqual([0, 1, 3])
   })
 })
 
@@ -713,7 +754,7 @@ describe('reconcileStableChatPages', () => {
       currentPages: [],
       nextMessages: currentMessages,
       allocateKey: alloc,
-      targetRenderWeight: 6,
+      pageMessageCount: 2,
     })
 
     const nextMessages = [
@@ -726,7 +767,7 @@ describe('reconcileStableChatPages', () => {
       currentPages,
       nextMessages,
       allocateKey: alloc,
-      targetRenderWeight: 6,
+      pageMessageCount: 2,
     })
 
     expect(nextPages.slice(0, currentPages.length).map(page => page.key)).toEqual(currentPages.map(page => page.key))
@@ -743,7 +784,7 @@ describe('reconcileStableChatPages', () => {
       currentPages: [],
       nextMessages: currentMessages,
       allocateKey: alloc,
-      targetRenderWeight: 6,
+      pageMessageCount: 2,
     })
 
     const nextMessages = [
@@ -755,7 +796,7 @@ describe('reconcileStableChatPages', () => {
       currentPages,
       nextMessages,
       allocateKey: alloc,
-      targetRenderWeight: 6,
+      pageMessageCount: 2,
     })
 
     // 老的第二页 key 应该保住，避免整段历史一起重切
