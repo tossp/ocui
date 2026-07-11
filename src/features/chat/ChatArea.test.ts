@@ -6,6 +6,7 @@ import {
   buildTurnDurationMap,
   computeAnchorRestoreScrollDelta,
   computeExpandedPageRange,
+  estimateMessageRenderWeight,
   expandSelectionWithPageKeys,
   findMessageSequenceOffset,
   reconcileStableChatPages,
@@ -343,7 +344,7 @@ describe('buildChatPageViewModel', () => {
     expect(next.pageRecords[0].messageIds).toEqual(['user-20'])
   })
 
-  it('keeps an oversized assistant group intact', () => {
+  it('splits an oversized assistant group at the page limit', () => {
     const longText = 'markdown '.repeat(3500)
     const messages = Array.from({ length: 26 }, (_unused, index) =>
       createAssistantMessage(
@@ -355,9 +356,24 @@ describe('buildChatPageViewModel', () => {
     )
 
     const viewModel = buildChatPageViewModel(messages)
+    const appended = buildChatPageViewModel(
+      [
+        ...messages,
+        createAssistantMessage(
+          'assistant-26',
+          [createTextPart('text-26', 'assistant-26', longText)],
+          26,
+          27,
+        ),
+      ],
+      viewModel,
+    )
 
-    expect(viewModel.pageRecords).toHaveLength(1)
-    expect(viewModel.pageRecords[0].messageIds).toHaveLength(26)
+    expect(viewModel.pageRecords).toHaveLength(2)
+    expect(viewModel.pageRecords.map(page => page.messageIds.length)).toEqual([6, 20])
+    expect(viewModel.pageRecords[0].rows[0].continuesFromPrevious).toBe(true)
+    expect(viewModel.pageRecords[1].rows[0].continuesToNext).toBe(true)
+    expect(appended.pageRecords[0].rows[0].continuesFromPrevious).toBe(true)
   })
 
   it('keeps a growing streaming assistant in the current stable page', () => {
@@ -389,6 +405,30 @@ describe('buildChatPageViewModel', () => {
     expect(next.pageRecords[0].messageIds).toEqual(['user-1', 'assistant-1'])
     expect(grown.pageRecords[0].key).toBe(next.pageRecords[0].key)
     expect(grown.pageRecords[0].messageIds).toEqual(next.pageRecords[0].messageIds)
+  })
+
+  it('keeps the existing assistant row key when appending another assistant', () => {
+    const firstAssistant = createAssistantMessage(
+      'assistant-1',
+      [createTextPart('assistant-text-1', 'assistant-1', 'first answer')],
+      1,
+      2,
+    )
+    const first = buildChatPageViewModel([firstAssistant])
+    const secondAssistant = {
+      ...createAssistantMessage(
+        'assistant-2',
+        [createTextPart('assistant-text-2', 'assistant-2', 'second answer')],
+        3,
+      ),
+      isStreaming: true,
+    }
+
+    const next = buildChatPageViewModel([firstAssistant, secondAssistant], first)
+
+    expect(first.pageRecords[0].rows[0].key).toBe('row:assistant-1')
+    expect(next.pageRecords[0].rows[0].key).toBe(first.pageRecords[0].rows[0].key)
+    expect(next.pageRecords[0].rows[0].messageIds).toEqual(['assistant-1', 'assistant-2'])
   })
 })
 
@@ -497,16 +537,35 @@ describe('buildChatPages', () => {
     expect(pages[1].renderWeight).toBeGreaterThan(12)
   })
 
-  it('does not split an oversized assistant group', () => {
+  it('counts blank lines before fenced code independently of indentation', () => {
+    const suffix = '```ts\nconst value = 1\n```'
+    const withoutIndent = createAssistantMessage(
+      'assistant-plain-lines',
+      [createTextPart('text-plain-lines', 'assistant-plain-lines', `${'\n'.repeat(100)}${suffix}`)],
+    )
+    const withIndent = createAssistantMessage(
+      'assistant-indented-lines',
+      [createTextPart('text-indented-lines', 'assistant-indented-lines', `${' \n'.repeat(100)}${suffix}`)],
+    )
+
+    expect(estimateMessageRenderWeight(withIndent)).toBe(estimateMessageRenderWeight(withoutIndent))
+  })
+
+  it('splits an oversized assistant group without breaking its visual continuation', () => {
     const messages = Array.from({ length: 8 }, (_unused, index) =>
       createAssistantMessage(`assistant-${index}`, [], index, index + 1),
     )
 
     const pages = buildChatPages(messages, 6)
 
-    expect(pages).toHaveLength(1)
-    expect(pages[0].messageIds).toEqual(messages.map(message => message.info.id))
-    expect(pages[0].rows).toHaveLength(1)
+    expect(pages).toHaveLength(2)
+    expect(pages[0].messageIds).toEqual(['assistant-6', 'assistant-7'])
+    expect(pages[1].messageIds).toEqual(messages.slice(0, 6).map(message => message.info.id))
+    expect(pages[0].rows[0].continuesFromPrevious).toBe(true)
+    expect(pages[1].rows[0].continuesToNext).toBe(true)
+    const unsplitHeight = buildChatPages(messages.slice(0, 6), 6)[0].rows[0].estimatedHeight
+    expect(pages[0].rows[0].estimatedHeight).toBe(buildChatPages(messages.slice(6), 6)[0].rows[0].estimatedHeight - 4)
+    expect(pages[1].rows[0].estimatedHeight).toBe(unsplitHeight - 12)
   })
 })
 
@@ -801,6 +860,64 @@ describe('reconcileStableChatPages', () => {
 
     // 老的第二页 key 应该保住，避免整段历史一起重切
     expect(nextPages[nextPages.length - 1].key).toBe(currentPages[currentPages.length - 1].key)
+  })
+
+  it('keeps assistant continuation markers when an append crosses a page boundary', () => {
+    const currentMessages = Array.from({ length: 8 }, (_unused, index) =>
+      createAssistantMessage(`assistant-${index}`, [], index, index + 1),
+    )
+    const currentPages = reconcileStableChatPages({
+      currentPages: [],
+      nextMessages: currentMessages,
+      allocateKey: alloc,
+      pageMessageCount: 6,
+    })
+    const nextMessages = [
+      ...currentMessages,
+      ...Array.from({ length: 5 }, (_unused, index) =>
+        createAssistantMessage(`assistant-${index + 8}`, [], index + 8, index + 9),
+      ),
+    ]
+
+    const nextPages = reconcileStableChatPages({
+      currentPages,
+      nextMessages,
+      allocateKey: alloc,
+      pageMessageCount: 6,
+    })
+
+    expect(nextPages).toHaveLength(3)
+    expect(nextPages[0].rows[0].continuesFromPrevious).toBe(true)
+    expect(nextPages[1].rows[0].continuesFromPrevious).toBe(true)
+    expect(nextPages[1].rows[0].continuesToNext).toBe(true)
+    expect(nextPages[2].rows[0].continuesToNext).toBe(true)
+  })
+
+  it('keeps assistant continuation markers when prepending older history', () => {
+    const currentMessages = Array.from({ length: 8 }, (_unused, index) =>
+      createAssistantMessage(`assistant-${index + 2}`, [], index + 2, index + 3),
+    )
+    const currentPages = reconcileStableChatPages({
+      currentPages: [],
+      nextMessages: currentMessages,
+      allocateKey: alloc,
+      pageMessageCount: 6,
+    })
+    const olderMessages = [
+      createAssistantMessage('assistant-0', [], 0, 1),
+      createAssistantMessage('assistant-1', [], 1, 2),
+    ]
+
+    const nextPages = reconcileStableChatPages({
+      currentPages,
+      nextMessages: [...olderMessages, ...currentMessages],
+      allocateKey: alloc,
+      pageMessageCount: 6,
+    })
+
+    expect(nextPages).toHaveLength(3)
+    expect(nextPages[1].rows[0].continuesFromPrevious).toBe(true)
+    expect(nextPages[2].rows[0].continuesToNext).toBe(true)
   })
 })
 

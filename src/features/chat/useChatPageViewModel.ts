@@ -125,6 +125,8 @@ function sameRow(a: MessageGroupRow, b: MessageGroupRow) {
   return (
     a.key === b.key &&
     a.estimatedHeight === b.estimatedHeight &&
+    a.continuesFromPrevious === b.continuesFromPrevious &&
+    a.continuesToNext === b.continuesToNext &&
     sameStringList(a.messageIds, b.messageIds) &&
     a.messages.every((message, index) => message === b.messages[index])
   )

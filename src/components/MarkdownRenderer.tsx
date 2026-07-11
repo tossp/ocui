@@ -76,22 +76,47 @@ function createMermaidRenderId(prefix: string) {
 }
 
 function scopeMermaidSvg(svg: string, instanceId: string) {
-  const ids = Array.from(svg.matchAll(/\bid=["']([^"']+)["']/gi), match => match[1])
-  let scoped = svg
-  Array.from(new Set(ids)).forEach((id, index) => {
-    const escapedId = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const template = document.createElement('template')
+  template.innerHTML = svg
+  const root = template.content.querySelector('svg')
+  if (!root) return svg
+
+  const idMap = new Map<string, string>()
+  const elementsWithIds = [...(root.hasAttribute('id') ? [root] : []), ...root.querySelectorAll('[id]')]
+  elementsWithIds.forEach((element, index) => {
+    const id = element.getAttribute('id')
+    if (!id) return
     const nextId = `${instanceId}-${index}`
-    scoped = scoped.replace(new RegExp(`\\bid=(["'])${escapedId}\\1`, 'g'), `id="${nextId}"`)
-    scoped = scoped.replace(new RegExp(`#${escapedId}(?![a-zA-Z0-9_.:-])`, 'g'), `#${nextId}`)
-    scoped = scoped.replace(
-      /\b(aria-labelledby|aria-describedby)=(["'])([^"']*)\2/gi,
-      (_attribute, name: string, quote: string, value: string) => {
-        const tokens = value.split(/\s+/).map(token => (token === id ? nextId : token))
-        return `${name}=${quote}${tokens.join(' ')}${quote}`
-      },
-    )
+    idMap.set(id, nextId)
+    element.setAttribute('id', nextId)
   })
-  return scoped
+
+  const replaceReferences = (value: string) =>
+    value.replace(/#([a-zA-Z0-9_.:-]+)/g, (match, id: string) => {
+      const nextId = idMap.get(id)
+      return nextId ? `#${nextId}` : match
+    })
+
+  const elements = [root, ...root.querySelectorAll('*')]
+  elements.forEach(element => {
+    for (const attribute of Array.from(element.attributes)) {
+      if (attribute.name === 'aria-labelledby' || attribute.name === 'aria-describedby') {
+        const value = attribute.value
+          .split(/\s+/)
+          .map(id => idMap.get(id) ?? id)
+          .join(' ')
+        element.setAttribute(attribute.name, value)
+        continue
+      }
+      const value = replaceReferences(attribute.value)
+      if (value !== attribute.value) element.setAttribute(attribute.name, value)
+    }
+  })
+  root.querySelectorAll('style').forEach(style => {
+    if (style.textContent) style.textContent = replaceReferences(style.textContent)
+  })
+
+  return root.outerHTML
 }
 
 async function getMermaidSvg(code: string, theme: 'dark' | 'default', renderPrefix: string) {

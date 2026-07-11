@@ -556,7 +556,7 @@ $$ \begin{aligned} \nabla \cdot \vec{E} &= \rho / \varepsilon_0 \ \nabla \cdot \
 
   it('scopes cached mermaid ids for each mounted diagram', async () => {
     mermaidMocks.render.mockResolvedValue({
-      svg: '<svg id="diagram"><defs><marker id="diagram-arrow"></marker></defs><path marker-end="url(#diagram-arrow)"></path></svg>',
+      svg: '<svg id="diagram" aria-labelledby="diagram-title"><title id="diagram-title">Diagram</title><style>#diagram-node { fill: red; }</style><defs><marker id="diagram-arrow"></marker></defs><path id="diagram-node" marker-end="url(#diagram-arrow)"></path><foreignObject><div xmlns="http://www.w3.org/1999/xhtml">hello<br>world</div></foreignObject></svg>',
     })
     render(
       <MarkdownRenderer
@@ -569,11 +569,14 @@ $$ \begin{aligned} \nabla \cdot \vec{E} &= \rho / \varepsilon_0 \ \nabla \cdot \
     const secondSvg = diagrams[1].querySelector('svg')
     const firstMarker = firstSvg?.querySelector('marker')
     const secondMarker = secondSvg?.querySelector('marker')
+    const firstTitle = firstSvg?.querySelector('title')
 
     expect(firstSvg?.id).not.toBe(secondSvg?.id)
     expect(firstMarker?.id).not.toBe(secondMarker?.id)
     expect(firstSvg?.querySelector('path')).toHaveAttribute('marker-end', `url(#${firstMarker?.id})`)
     expect(secondSvg?.querySelector('path')).toHaveAttribute('marker-end', `url(#${secondMarker?.id})`)
+    expect(firstSvg).toHaveAttribute('aria-labelledby', firstTitle?.id)
+    expect(firstSvg?.querySelector('style')).toHaveTextContent(`#${firstSvg?.querySelector('path')?.id}`)
     expect(mermaidMocks.render).toHaveBeenCalledTimes(1)
   })
 

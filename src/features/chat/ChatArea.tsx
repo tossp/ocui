@@ -1066,10 +1066,17 @@ const PageBlock = memo(function PageBlock({
     <div ref={wrapperRef} className="shrink-0" data-page-key={page.key}>
       {page.rows.map(row => {
         const isUser = row.messages[0].info.role === 'user'
+        const verticalPaddingClass = row.continuesFromPrevious
+          ? row.continuesToNext
+            ? 'pt-2 pb-0'
+            : 'pt-2 pb-3'
+          : row.continuesToNext
+            ? 'pt-3 pb-0'
+            : 'py-3'
         return (
           <div
             key={row.key}
-            className={`w-full ${messageMaxWidthClass} mx-auto ${messagePaddingClass} py-3 transition-[max-width] duration-300 ease-in-out`}
+            className={`w-full ${messageMaxWidthClass} mx-auto ${messagePaddingClass} ${verticalPaddingClass} transition-[max-width] duration-300 ease-in-out`}
           >
             <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
               <div className={`min-w-0 group ${!isUser ? 'w-full' : ''} flex flex-col gap-2`}>
