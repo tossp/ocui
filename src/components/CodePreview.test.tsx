@@ -92,4 +92,33 @@ describe('CodePreview', () => {
       vi.useRealTimers()
     }
   })
+
+  it('requests a CodeMirror measure when an ancestor layout transition settles', async () => {
+    vi.useFakeTimers()
+    const requestMeasureSpy = vi.spyOn(EditorView.prototype, 'requestMeasure')
+
+    try {
+      const { rerender } = render(
+        <CodePreview code={'first line\nsecond line'} language="text" isVisible layoutVersion={0} />,
+      )
+
+      await act(async () => {
+        vi.advanceTimersByTime(320)
+        await Promise.resolve()
+      })
+      requestMeasureSpy.mockClear()
+
+      rerender(<CodePreview code={'first line\nsecond line'} language="text" isVisible layoutVersion={1} />)
+
+      await act(async () => {
+        vi.advanceTimersByTime(16)
+        await Promise.resolve()
+      })
+
+      expect(requestMeasureSpy).toHaveBeenCalled()
+    } finally {
+      requestMeasureSpy.mockRestore()
+      vi.useRealTimers()
+    }
+  })
 })

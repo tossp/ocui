@@ -7,7 +7,7 @@
  * - Loading 状态 -> Skeleton
  */
 
-import { memo, useState, useMemo, useEffect, useRef, useId, type ReactNode } from 'react'
+import { memo, useState, useMemo, useEffect, useRef, useId, type ReactNode, type TransitionEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { diffLines } from 'diff'
 import { ChevronDownIcon, ChevronRightIcon, MaximizeIcon } from './Icons'
@@ -105,6 +105,7 @@ export const ContentBlock = memo(function ContentBlock({
   )
   const [diffViewMode, setDiffViewMode] = useState<ViewMode>('split')
   const [fullscreenDiffViewMode, setFullscreenDiffViewMode] = useState<ViewMode>('split')
+  const [contentLayoutVersion, setContentLayoutVersion] = useState(0)
   const contentRef = useRef<HTMLDivElement>(null)
 
   // 响应式 maxHeight，外部传入的值优先
@@ -255,6 +256,11 @@ export const ContentBlock = memo(function ContentBlock({
   const showBody = (hasContent && !collapsed) || (isLoading && !hasContent)
   const shouldRenderContent = useDelayedRender(showBody)
 
+  const handleBodyTransitionEnd = (event: TransitionEvent<HTMLDivElement>) => {
+    if (event.target !== event.currentTarget || !showBody) return
+    setContentLayoutVersion(version => version + 1)
+  }
+
   // 容器样式
   const containerClass = isError
     ? 'border border-danger-100/30 bg-danger-100/5'
@@ -264,7 +270,7 @@ export const ContentBlock = memo(function ContentBlock({
   const headerClass = isError ? 'bg-danger-100/8 hover:bg-danger-100/12' : 'bg-bg-200/40 hover:bg-bg-200/60'
 
   return (
-    <div className={`rounded-md overflow-hidden text-[length:var(--fs-sm)] contain-content ${containerClass}`}>
+    <div className={`rounded-md overflow-hidden text-[length:var(--fs-sm)] ${containerClass}`}>
       {/* Header */}
       <div
         className={`flex items-center gap-2 px-3 h-8 select-none transition-colors ${
@@ -346,6 +352,8 @@ export const ContentBlock = memo(function ContentBlock({
 
       {/* Body - grid collapse animation */}
       <div
+        data-content-block-body
+        onTransitionEnd={handleBodyTransitionEnd}
         className={`grid transition-[grid-template-rows] duration-300 ease-out ${
           showBody ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
         }`}
@@ -372,6 +380,7 @@ export const ContentBlock = memo(function ContentBlock({
                   language={lang}
                   maxHeight={maxHeight}
                   isVisible={showBody}
+                  layoutVersion={contentLayoutVersion}
                 />
               ) : null}
             </div>

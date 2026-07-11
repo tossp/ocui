@@ -21,6 +21,7 @@ interface CodeMirrorReadonlyProps {
   maxHeight?: number
   isResizing?: boolean
   isVisible?: boolean
+  layoutVersion?: number
   showLineNumbers?: boolean
   className?: string
   extraExtensions?: Extension[]
@@ -41,6 +42,7 @@ export function CodeMirrorReadonly({
   maxHeight,
   isResizing = false,
   isVisible = true,
+  layoutVersion = 0,
   showLineNumbers = true,
   className = '',
   extraExtensions = EMPTY_EXTENSIONS,
@@ -132,7 +134,7 @@ export function CodeMirrorReadonly({
       if (secondFrameId !== null) cancelAnimationFrame(secondFrameId)
       clearTimeout(transitionTimerId)
     }
-  }, [isVisible])
+  }, [isVisible, layoutVersion])
 
   const handleKeyDownCapture = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
