@@ -1,4 +1,4 @@
-import { memo, useCallback, useDeferredValue, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { memo, useCallback, useDeferredValue, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useInputCapabilities } from '../hooks/useInputCapabilities'
 import { useSyntaxHighlight, useStreamingSyntaxHighlight, type HighlightTokens } from '../hooks/useSyntaxHighlight'
 import { themeStore } from '../store/themeStore'
@@ -105,6 +105,8 @@ interface CodeBlockProps {
   forceHighlight?: boolean
   /** Use incremental Shiki tokenization for streaming code. */
   streamingHighlight?: boolean
+  /** Persistent controls rendered beside the copy action. */
+  headerActions?: ReactNode
 }
 
 export const CodeBlock = memo(function CodeBlock({
@@ -118,6 +120,7 @@ export const CodeBlock = memo(function CodeBlock({
   deferHighlight = false,
   forceHighlight = false,
   streamingHighlight = false,
+  headerActions,
 }: CodeBlockProps) {
   const { codeWordWrap } = useSyncExternalStore(themeStore.subscribe, themeStore.getSnapshot)
   const { preferTouchUi } = useInputCapabilities()
@@ -254,7 +257,8 @@ export const CodeBlock = memo(function CodeBlock({
           <div className="flex h-8 min-w-0 items-center text-[length:var(--fs-xs)] font-medium leading-none tracking-wide text-text-500 select-none">
             <span className="truncate">{language}</span>
           </div>
-          <div className="inline-flex h-8 shrink-0 items-center pr-2 opacity-0 group-hover/code:opacity-100 group-focus-within/code:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity">
+          <div className="inline-flex h-8 shrink-0 items-center gap-0.5 pr-2 opacity-0 group-hover/code:opacity-100 group-focus-within/code:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity">
+            {headerActions}
             <CopyButton text={code} position="static" className="!h-8 !w-8 !p-2" />
           </div>
         </div>

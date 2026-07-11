@@ -501,6 +501,151 @@ body {
   margin-bottom: 0.5rem;
 }
 
+/* Sanitized rich HTML keeps native semantics while matching the Markdown surface. */
+.markdown-content .markdown-html-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid hsl(var(--border-200) / 0.65);
+  border-radius: 6px;
+  background: hsl(var(--bg-100) / 0.45);
+}
+
+.markdown-content .markdown-html-table {
+  width: 100%;
+  min-width: max-content;
+  border-collapse: collapse;
+  color: hsl(var(--text-200));
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
+.markdown-content .markdown-html-table th,
+.markdown-content .markdown-html-table td {
+  min-width: 7rem;
+  padding: 0.625rem 0.75rem;
+  border-right: 1px solid hsl(var(--border-200) / 0.45);
+  border-bottom: 1px solid hsl(var(--border-200) / 0.45);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.markdown-content .markdown-html-table th:last-child,
+.markdown-content .markdown-html-table td:last-child {
+  border-right: 0;
+}
+
+.markdown-content .markdown-html-table tr:last-child > td {
+  border-bottom: 0;
+}
+
+.markdown-content .markdown-html-table th {
+  background: hsl(var(--bg-200) / 0.75);
+  color: hsl(var(--text-100));
+  font-weight: 600;
+}
+
+.markdown-content .markdown-html-table :is(th, td)[align='center'] {
+  text-align: center;
+}
+
+.markdown-content .markdown-html-table :is(th, td)[align='right'] {
+  text-align: right;
+}
+
+.markdown-content .markdown-html-table tbody tr:hover > td {
+  background: hsl(var(--bg-200) / 0.32);
+}
+
+.markdown-content .markdown-html-details {
+  max-width: 100%;
+  overflow: clip;
+  border: 1px solid hsl(var(--border-200) / 0.6);
+  border-radius: 6px;
+  background: hsl(var(--bg-100) / 0.35);
+}
+
+.markdown-content .markdown-html-summary {
+  cursor: pointer;
+  padding: 0.625rem 0.75rem;
+  color: hsl(var(--text-100));
+  font-weight: 600;
+  user-select: none;
+}
+
+.markdown-content .markdown-html-details[open] > .markdown-html-summary {
+  border-bottom: 1px solid hsl(var(--border-200) / 0.45);
+}
+
+.markdown-content .markdown-html-details > :not(.markdown-html-summary) {
+  margin-inline: 0.75rem;
+}
+
+.markdown-content .markdown-html-details > :last-child {
+  margin-bottom: 0.75rem;
+}
+
+.markdown-content .markdown-html-definition-list {
+  display: grid;
+  grid-template-columns: minmax(7rem, auto) minmax(0, 1fr);
+  gap: 0.25rem 1rem;
+}
+
+.markdown-content .markdown-html-definition-list dt {
+  color: hsl(var(--text-100));
+  font-weight: 600;
+}
+
+.markdown-content .markdown-html-definition-list dd {
+  margin: 0;
+  color: hsl(var(--text-300));
+}
+
+.markdown-content .markdown-html-control:is(input:not([type='checkbox']):not([type='radio']), textarea, select, button) {
+  max-width: 100%;
+  border: 1px solid hsl(var(--border-200) / 0.75);
+  border-radius: 5px;
+  background: hsl(var(--bg-200) / 0.65);
+  color: hsl(var(--text-100));
+  font: inherit;
+}
+
+.markdown-content .markdown-html-control:is(input:not([type='checkbox']):not([type='radio']), textarea, select) {
+  padding: 0.4rem 0.55rem;
+}
+
+.markdown-content button.markdown-html-control {
+  cursor: pointer;
+  padding: 0.4rem 0.7rem;
+}
+
+.markdown-content button.markdown-html-control:hover {
+  background: hsl(var(--bg-300) / 0.8);
+}
+
+.markdown-content .markdown-html-control:focus-visible,
+.markdown-content .markdown-html-summary:focus-visible {
+  outline: 2px solid hsl(var(--accent-main-100) / 0.7);
+  outline-offset: 2px;
+}
+
+.markdown-content :is(.markdown-html-control[type='checkbox'], .markdown-html-control[type='radio'], .markdown-html-progress) {
+  accent-color: hsl(var(--accent-main-100));
+}
+
+.markdown-content .markdown-html-progress {
+  width: 100%;
+  max-width: 28rem;
+}
+
+.markdown-content .markdown-html-media {
+  display: block;
+  max-width: 100%;
+}
+
+.message-renderer-shell:has([data-user-html-artifact]) {
+  width: 100%;
+}
+
 /* Theme View Transition (Circular Reveal) */
 ::view-transition-old(root),
 ::view-transition-new(root) {

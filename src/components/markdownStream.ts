@@ -73,8 +73,85 @@ function appendReferenceDefinitions(src: string, referenceDefinitions: string) {
   return `${src.replace(/\s+$/, '')}\n\n${referenceDefinitions}`
 }
 
+type MarkdownSourceBlock = { start: number; raw: string; src: string; token?: Tokens.Generic }
+
+const BLOCK_HTML_CONTAINERS = new Set([
+  'address',
+  'article',
+  'aside',
+  'blockquote',
+  'center',
+  'details',
+  'dialog',
+  'div',
+  'dl',
+  'fieldset',
+  'figure',
+  'footer',
+  'form',
+  'header',
+  'html',
+  'main',
+  'nav',
+  'ol',
+  'section',
+  'table',
+  'ul',
+])
+
+function updateHtmlContainerStack(raw: string, stack: string[]) {
+  const markup = raw.replace(/<!--[\s\S]*?-->/g, '')
+  for (const match of markup.matchAll(/<\s*(\/?)\s*([a-z][a-z0-9-]*)\b[^>]*>/gi)) {
+    const tag = match[2]?.toLowerCase()
+    if (!tag || !BLOCK_HTML_CONTAINERS.has(tag) || /\/\s*>$/.test(match[0])) continue
+    if (!match[1]) {
+      stack.push(tag)
+      continue
+    }
+    const openingIndex = stack.lastIndexOf(tag)
+    if (openingIndex !== -1) stack.splice(openingIndex)
+  }
+}
+
+function mergeMixedHtmlBlocks(blocks: MarkdownSourceBlock[]): MarkdownSourceBlock[] {
+  const merged: MarkdownSourceBlock[] = []
+  const stack: string[] = []
+  let pending: MarkdownSourceBlock | null = null
+
+  for (const block of blocks) {
+    if (!pending) {
+      if (/^\s*<!doctype\s+html\b/i.test(block.raw)) {
+        pending = { ...block, src: block.raw, token: undefined }
+        continue
+      }
+      if (block.token?.type !== 'html') {
+        merged.push(block)
+        continue
+      }
+      updateHtmlContainerStack(block.raw, stack)
+      if (!stack.length) {
+        merged.push(block)
+        continue
+      }
+      pending = { ...block, src: block.raw, token: undefined }
+      continue
+    }
+
+    pending.raw += block.raw
+    pending.src += block.raw
+    if (block.token?.type === 'html') updateHtmlContainerStack(block.raw, stack)
+    if (!stack.length) {
+      merged.push(pending)
+      pending = null
+    }
+  }
+
+  if (pending) merged.push(pending)
+  return merged
+}
+
 function splitMarkdownBlocks(markdown: string) {
-  const blocks: Array<{ start: number; raw: string; src: string; token?: Tokens.Generic }> = []
+  const blocks: MarkdownSourceBlock[] = []
   const referenceDefinitions: string[] = []
   let offset = 0
 
@@ -111,23 +188,25 @@ function splitMarkdownBlocks(markdown: string) {
   }
 
   return {
-    blocks: blocks.length > 0 ? blocks : [{ start: 0, raw: markdown, src: markdown }],
+    blocks: mergeMixedHtmlBlocks(blocks.length > 0 ? blocks : [{ start: 0, raw: markdown, src: markdown }]),
     referenceDefinitions: referenceDefinitions.join('\n'),
   }
 }
 
 export function splitMarkdownStream(markdown: string, isStreaming: boolean): MarkdownStreamBlock[] {
   if (!isStreaming) {
-    if (!markdown) return [{ key: 'full:empty', src: '', mode: 'full' }]
+    if (!markdown) return [{ key: 'html:0', src: '', mode: 'full' }]
     const { blocks, referenceDefinitions } = splitMarkdownBlocks(markdown)
     if (blocks.length === 1 && blocks[0]?.token?.type !== 'code' && blocks[0]?.token?.type !== 'table') {
-      return [{ key: `full:${hashString(markdown)}`, src: appendReferenceDefinitions(blocks[0]?.raw ?? markdown, referenceDefinitions), mode: 'full' }]
+      return [{ key: 'html:0', src: appendReferenceDefinitions(blocks[0]?.raw ?? markdown, referenceDefinitions), mode: 'full' }]
     }
     return blocks.map(block => {
       if (block.token?.type === 'code') {
         const language = getLanguage((block.token as Tokens.Code).lang)
         return {
-          key: `code:${block.start}:${hashString(block.raw)}`,
+          key: language && ['html', 'htm'].includes(language.toLowerCase())
+            ? `html-code:${block.start}`
+            : `code:${block.start}:${hashString(block.raw)}`,
           raw: block.raw,
           src: block.src,
           mode: 'code' as const,
@@ -144,7 +223,7 @@ export function splitMarkdownStream(markdown: string, isStreaming: boolean): Mar
         }
       }
       return {
-        key: `full:${block.start}:${hashString(block.raw)}`,
+        key: `html:${block.start}`,
         raw: block.raw,
         src: appendReferenceDefinitions(block.raw, referenceDefinitions),
         mode: 'full' as const,
@@ -152,12 +231,12 @@ export function splitMarkdownStream(markdown: string, isStreaming: boolean): Mar
     })
   }
 
-  if (!markdown) return [{ key: 'live:empty', src: '', mode: 'live' }]
+  if (!markdown) return [{ key: 'html:0', src: '', mode: 'live' }]
 
   const fenceStart = getTrailingOpenFenceStart(markdown)
   const { blocks, referenceDefinitions } = splitMarkdownBlocks(markdown)
   if (blocks.length === 1 && blocks[0]?.token?.type !== 'code' && blocks[0]?.token?.type !== 'table') {
-    return [{ key: 'live:0:', src: appendReferenceDefinitions(blocks[0]?.raw ?? markdown, referenceDefinitions), mode: 'live' }]
+    return [{ key: 'html:0', src: appendReferenceDefinitions(blocks[0]?.raw ?? markdown, referenceDefinitions), mode: 'live' }]
   }
 
   return blocks.map(block => {
@@ -166,7 +245,9 @@ export function splitMarkdownStream(markdown: string, isStreaming: boolean): Mar
       const complete = fenceStart == null || block.start < fenceStart
       const language = getLanguage((block.token as Tokens.Code).lang)
       return {
-        key: `code:${block.start}:${complete ? hashString(block.raw) : ''}`,
+        key: language && ['html', 'htm'].includes(language.toLowerCase())
+          ? `html-code:${block.start}`
+          : `code:${block.start}:${complete ? hashString(block.raw) : ''}`,
         raw: block.raw,
         src: block.src,
         mode: 'code' as const,
@@ -183,7 +264,7 @@ export function splitMarkdownStream(markdown: string, isStreaming: boolean): Mar
       }
     }
     return {
-      key: `${isLiveTail ? 'live' : 'stable'}:${block.start}:${isLiveTail ? '' : hashString(block.src)}`,
+      key: `html:${block.start}`,
       src: appendReferenceDefinitions(block.src, referenceDefinitions),
       mode: isLiveTail ? ('live' as const) : ('full' as const),
     }

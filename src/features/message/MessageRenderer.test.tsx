@@ -5,6 +5,7 @@ import { MessageRenderer } from './MessageRenderer'
 import type { Message } from '../../types/message'
 
 let mockRenderUserMarkdown = false
+let mockCollapseUserMessages = false
 
 vi.mock('motion/mini', () => ({
   animate: () => Promise.resolve(),
@@ -16,7 +17,7 @@ vi.mock('../../hooks', () => ({
 
 vi.mock('../../hooks/useTheme', () => ({
   useTheme: () => ({
-    collapseUserMessages: false,
+    collapseUserMessages: mockCollapseUserMessages,
     renderUserMarkdown: mockRenderUserMarkdown,
     stepFinishDisplay: { turnDuration: false },
     descriptiveToolSteps: false,
@@ -114,6 +115,7 @@ function createUserTextMessage(text: string): Message {
 describe('MessageRenderer assistant fork', () => {
   beforeEach(() => {
     mockRenderUserMarkdown = false
+    mockCollapseUserMessages = false
   })
 
   it('passes the explicit fork target id when forking an assistant message', async () => {
@@ -178,5 +180,20 @@ describe('MessageRenderer assistant fork', () => {
     render(<MessageRenderer message={createUserTextMessage('Use **bold** text')} />)
 
     expect(screen.getByTestId('user-markdown')).toHaveTextContent('Use **bold** text')
+  })
+
+  it('does not crop an interactive user HTML artifact to the collapsed preview height', () => {
+    mockRenderUserMarkdown = true
+    mockCollapseUserMessages = true
+    const message = createUserTextMessage(
+      '<section><style>section{height:380px}</style><canvas></canvas><script>requestAnimationFrame(()=>{})</script></section>',
+    )
+
+    render(<MessageRenderer message={message} />)
+
+    expect(screen.getByTestId('user-markdown').parentElement).not.toHaveStyle({ maxHeight: '8lh' })
+    expect(screen.getByTestId('user-markdown').closest('.bg-bg-300')).toHaveClass('w-full', 'max-w-2xl')
+    expect(screen.getByTestId('user-markdown').closest('.group')).toHaveClass('w-full')
+    expect(screen.getByTestId('user-markdown').closest('[data-user-html-artifact]')).toBeInTheDocument()
   })
 })

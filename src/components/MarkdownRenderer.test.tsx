@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MarkdownRenderer } from './MarkdownRenderer'
 import { clearMermaidRenderCache } from './mermaidRenderCache'
@@ -15,6 +15,7 @@ const useInputCapabilitiesMock = vi.hoisted(() =>
     preferTouchUi: false,
   })),
 )
+const themeMock = vi.hoisted(() => ({ resolvedTheme: 'light' as 'light' | 'dark' }))
 
 vi.mock('./CodeBlock', () => ({
   CodeBlock: ({
@@ -24,6 +25,7 @@ vi.mock('./CodeBlock', () => ({
     deferHighlight,
     forceHighlight,
     streamingHighlight,
+    headerActions,
   }: {
     code: string
     language?: string
@@ -31,6 +33,7 @@ vi.mock('./CodeBlock', () => ({
     deferHighlight?: boolean
     forceHighlight?: boolean
     streamingHighlight?: boolean
+    headerActions?: React.ReactNode
   }) => (
     <div
       data-testid="code-block"
@@ -39,13 +42,15 @@ vi.mock('./CodeBlock', () => ({
       data-force-highlight={String(!!forceHighlight)}
       data-streaming-highlight={String(!!streamingHighlight)}
     >
+      {language}
+      {headerActions}
       {`${language ?? 'text'}:${code}`}
     </div>
   ),
 }))
 
 vi.mock('../hooks/useTheme', () => ({
-  useTheme: () => ({ resolvedTheme: 'light' }),
+  useTheme: () => ({ resolvedTheme: themeMock.resolvedTheme }),
 }))
 
 vi.mock('../hooks/useInputCapabilities', () => ({
@@ -66,6 +71,7 @@ vi.mock('./ui', () => ({
 
 describe('MarkdownRenderer', () => {
   beforeEach(() => {
+    themeMock.resolvedTheme = 'light'
     clearMermaidRenderCache()
     useInputCapabilitiesMock.mockReset()
     useInputCapabilitiesMock.mockReturnValue({
@@ -526,13 +532,13 @@ $$`
   })
 
   it('removes unsafe CSS URLs from raw HTML styles', () => {
-    const { container } = render(
+    render(
       <MarkdownRenderer content={'<div style="background: url(javascript:alert(1)); color: red">bad</div>'} />,
     )
 
-    const element = container.querySelector('div div')
-    expect(element).toBeInTheDocument()
-    expect(element).not.toHaveAttribute('style')
+    const style = screen.getByText('bad').getAttribute('style') ?? ''
+    expect(style).not.toMatch(/url/i)
+    expect(style).toMatch(/color:\s*red/i)
   })
 
   it('preserves safe inline styles in raw HTML', () => {
@@ -541,6 +547,256 @@ $$`
     const element = screen.getByText('styled')
     expect(element).toHaveAttribute('style')
     expect(element.getAttribute('style')).toMatch(/color:\s*red/i)
+  })
+
+  it('removes overlay-capable styles while retaining safe declarations', () => {
+    render(
+      <MarkdownRenderer
+        content={'<div style="position:fixed;inset:0;z-index:99999;transform:scale(2);margin-top:-400px;opacity:0;color:blue">safe</div>'}
+      />,
+    )
+
+    const style = screen.getByText('safe').getAttribute('style') ?? ''
+    expect(style).toMatch(/color:\s*blue/i)
+    expect(style).not.toMatch(/position|inset|z-index|transform|margin|opacity/i)
+  })
+
+  it('keeps KaTeX positioning styles intact', () => {
+    const { container } = render(<MarkdownRenderer content={'Inline $x^2$ formula'} />)
+
+    expect(container.querySelector('.katex [style*="top"]')).toBeInTheDocument()
+  })
+
+  it('styles raw HTML tables without losing merged-cell attributes', () => {
+    const content = `<table>
+      <tr><th>分类</th><th>项目</th><th>描述</th></tr>
+      <tr><td rowspan="2">前端</td><td>React</td><td>UI 库</td></tr>
+      <tr><td>Vue</td><td>渐进式框架</td></tr>
+      <tr><td colspan="3" align="center">后端技术栈</td></tr>
+    </table>`
+    const { container } = render(<MarkdownRenderer content={content} />)
+
+    const table = screen.getByRole('table')
+    expect(table).toHaveClass('markdown-html-table')
+    expect(table.parentElement).toHaveClass('markdown-html-table-scroll')
+    expect(screen.getByText('前端')).toHaveAttribute('rowspan', '2')
+    expect(screen.getByText('后端技术栈')).toHaveAttribute('colspan', '3')
+    expect(screen.getByText('后端技术栈')).toHaveAttribute('align', 'center')
+    expect(container.querySelectorAll('th')).toHaveLength(3)
+  })
+
+  it('preserves native HTML control state across updates and stream completion', () => {
+    const initial = `<div><details><summary>Options</summary><input value="initial"><select><option>A</option><option value="b">B</option></select></details><span>one</span></div>`
+    const updated = initial
+      .replace('<select>', '<select><option value="x">X</option>')
+      .replace('<span>one</span>', '<span>two</span>')
+    const view = render(<MarkdownRenderer content={initial} isStreaming />)
+
+    const summary = screen.getByText('Options')
+    const details = summary.closest('details') as HTMLDetailsElement
+    fireEvent.click(summary)
+    details.open = true
+    const input = screen.getByRole('textbox') as HTMLInputElement
+    fireEvent.input(input, { target: { value: 'edited' } })
+    const select = screen.getByRole('combobox') as HTMLSelectElement
+    fireEvent.change(select, { target: { value: 'b' } })
+    expect(select).toHaveAttribute('data-markdown-user-state')
+
+    view.rerender(<MarkdownRenderer content={initial} />)
+    view.rerender(<MarkdownRenderer content={updated} />)
+
+    expect((screen.getByText('Options').closest('details') as HTMLDetailsElement).open).toBe(true)
+    expect(screen.getByRole('textbox')).toHaveValue('edited')
+    expect(screen.getByRole('combobox')).toHaveValue('b')
+    expect(screen.getByText('two')).toBeInTheDocument()
+  })
+
+  it('renders Markdown mixed inside block HTML as one interactive structure', () => {
+    const content = `<details>
+<summary>Mixed content</summary>
+
+**formatted text**
+
+| A | B |
+|---|---|
+| 1 | 2 |
+
+</details>`
+    const { container } = render(<MarkdownRenderer content={content} />)
+
+    const details = screen.getByText('Mixed content').closest('details')
+    expect(details).toContainElement(screen.getByText('formatted text'))
+    expect(screen.getByText('formatted text').tagName).toBe('STRONG')
+    expect(details).toContainElement(screen.getByRole('table'))
+    expect(container.querySelector('.markdown-html-table-scroll')).toContainElement(screen.getByRole('table'))
+  })
+
+  it('switches a direct block HTML island between rendered content and source', () => {
+    render(<MarkdownRenderer content={'<div><strong>Rendered HTML</strong></div>'} />)
+
+    expect(screen.getByText('Rendered HTML').tagName).toBe('STRONG')
+    fireEvent.click(screen.getByRole('button', { name: 'View HTML source' }))
+    expect(screen.getByTestId('code-block')).toHaveTextContent('html:<div><strong>Rendered HTML</strong></div>')
+    fireEvent.click(screen.getByRole('button', { name: 'Render HTML' }))
+    expect(screen.getByText('Rendered HTML')).toBeInTheDocument()
+  })
+
+  it('keeps inline HTML mixed into prose without island controls', () => {
+    render(<MarkdownRenderer content={'Before <span style="color:red">inline HTML</span> after.'} />)
+
+    expect(screen.getByText('inline HTML')).toHaveAttribute('style', expect.stringMatching(/color:\s*red/i))
+    expect(screen.queryByRole('button', { name: 'View HTML source' })).not.toBeInTheDocument()
+  })
+
+  it('sandboxes a complete HTML document pasted directly into Markdown', () => {
+    render(
+      <MarkdownRenderer
+        content={'<!doctype html>\n<html><body><h1>Document</h1><script>document.title="isolated"</script></body></html>'}
+      />,
+    )
+
+    const frame = screen.getByTitle('HTML preview')
+    expect(frame).toHaveAttribute('sandbox', 'allow-scripts')
+    expect(frame.getAttribute('srcdoc')).toContain('<h1>Document</h1>')
+    expect(frame.getAttribute('srcdoc')).toContain('<script>document.title="isolated"</script>')
+  })
+
+  it('blocks raw HTML submission, active content, and unsafe media behavior', () => {
+    const { container } = render(
+      <MarkdownRenderer
+        content={'<form action="https://example.com"><button>Send</button></form><video autoplay src="data:text/html,bad" controls></video>'}
+      />,
+    )
+
+    const form = container.querySelector('form')
+    const button = screen.getByRole('button', { name: 'Send' })
+    const video = container.querySelector('video')
+    expect(form).not.toHaveAttribute('action')
+    expect(button).toHaveAttribute('type', 'button')
+    expect(button).toHaveClass('markdown-html-control')
+    expect(video).not.toHaveAttribute('autoplay')
+    expect(video).not.toHaveAttribute('src')
+    const submit = new Event('submit', { bubbles: true, cancelable: true })
+    expect(form?.dispatchEvent(submit)).toBe(false)
+  })
+
+  it('upgrades an executable HTML fragment pasted directly into Markdown to a sandbox', () => {
+    const content = `<section class="ripple-field">
+      <style>.ripple-field { height: 380px; }</style>
+      <canvas></canvas>
+      <script>document.currentScript.closest('.ripple-field').dataset.ready = 'true'</script>
+    </section>`
+    const { container } = render(<MarkdownRenderer content={content} />)
+
+    const frame = screen.getByTitle('HTML preview')
+    expect(frame).toHaveAttribute('sandbox', 'allow-scripts')
+    expect(frame.getAttribute('srcdoc')).toContain('<section class="ripple-field">')
+    expect(frame.getAttribute('srcdoc')).toContain("dataset.ready = 'true'")
+    expect(container.querySelector('.ripple-field')).not.toBeInTheDocument()
+  })
+
+  it('runs complete HTML code fences only inside an isolated sandbox preview', () => {
+    render(<MarkdownRenderer content={'```html\n<button onclick="document.body.dataset.clicked=1">Run</button><script>document.title="artifact"</script>\n```'} />)
+
+    const frame = screen.getByTitle('HTML preview')
+    expect(frame).toHaveAttribute('sandbox', 'allow-scripts')
+    expect(frame.getAttribute('sandbox')).not.toContain('allow-same-origin')
+    expect(frame.getAttribute('srcdoc')).toContain('Content-Security-Policy')
+    expect(frame.getAttribute('srcdoc')).toContain('background:transparent')
+    expect(frame.getAttribute('srcdoc')).toContain('<script>document.title="artifact"</script>')
+    expect(document.title).not.toBe('artifact')
+
+    fireEvent.click(screen.getByRole('button', { name: 'View HTML source' }))
+    expect(screen.getByTestId('code-block')).toHaveTextContent('html:<button')
+    fireEvent.click(screen.getByRole('button', { name: 'Preview HTML' }))
+    expect(screen.getByTitle('HTML preview')).toBeInTheDocument()
+  })
+
+  it('updates a canonical HTML preview theme without reloading its document', async () => {
+    const view = render(<MarkdownRenderer content={'```html\n<div>themed</div>\n```'} />)
+    const lightFrame = screen.getByTitle('HTML preview') as HTMLIFrameElement
+    const initialSrcDoc = lightFrame.getAttribute('srcdoc')
+    const postMessage = vi.spyOn(lightFrame.contentWindow!, 'postMessage')
+    expect(lightFrame).toHaveStyle({ colorScheme: 'light' })
+    expect(lightFrame.getAttribute('srcdoc')).toContain('color-scheme:light')
+
+    themeMock.resolvedTheme = 'dark'
+    view.rerender(<MarkdownRenderer content={'```html\n<div>themed</div>\n```'} className="theme-dark" />)
+
+    await waitFor(() => {
+      expect(screen.getByTitle('HTML preview')).toHaveStyle({ colorScheme: 'dark' })
+      expect(postMessage).toHaveBeenCalledWith({ type: 'opencode-html-theme', theme: 'dark' }, '*')
+    })
+    expect(screen.getByTitle('HTML preview')).toBe(lightFrame)
+    expect(lightFrame.getAttribute('srcdoc')).toBe(initialSrcDoc)
+  })
+
+  it('renders incomplete streaming HTML fences without enabling scripts yet', () => {
+    render(
+      <MarkdownRenderer
+        content={'```html\n<div onclick="window.bad=1">growing preview</div><script>window.bad=2'}
+        isStreaming
+      />,
+    )
+
+    const frame = screen.getByTitle('HTML preview')
+    expect(frame).toHaveAttribute('sandbox', 'allow-scripts')
+    expect(frame.getAttribute('srcdoc')).toContain('opencode-html-stream')
+    expect(frame.getAttribute('srcdoc')).toContain('scriptQueue')
+    expect(frame.getAttribute('srcdoc')).toContain('data-opencode-script-executed')
+    expect(frame.getAttribute('srcdoc')).not.toContain('window.bad')
+    expect(screen.queryByTestId('code-block')).not.toBeInTheDocument()
+  })
+
+  it('enables each user script as soon as that script closes during streaming', async () => {
+    const view = render(<MarkdownRenderer content={'```html\n<section><div>live</div>'} isStreaming />)
+    const frame = screen.getByTitle('HTML preview') as HTMLIFrameElement
+    const postMessage = vi.spyOn(frame.contentWindow!, 'postMessage')
+
+    view.rerender(
+      <MarkdownRenderer
+        content={'```html\n<section><div>live</div><script>document.body.dataset.ready="yes"</script>'}
+        isStreaming
+      />,
+    )
+
+    await waitFor(() => {
+      expect(postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ complete: false, scriptCount: 1 }),
+        '*',
+      )
+    })
+    expect(screen.getByTitle('HTML preview')).toBe(frame)
+  })
+
+  it('patches one stable iframe while growing and swaps to a canonical document on completion', async () => {
+    const view = render(<MarkdownRenderer content={'```html\n<div>one</div>'} isStreaming />)
+    const frame = screen.getByTitle('HTML preview') as HTMLIFrameElement
+    const initialSrcDoc = frame.getAttribute('srcdoc')
+    const postMessage = vi.spyOn(frame.contentWindow!, 'postMessage')
+
+    view.rerender(<MarkdownRenderer content={'```html\n<div>one</div><p>two</p>'} isStreaming />)
+    await waitFor(() => {
+      expect(postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ html: '<div>one</div><p>two</p>', complete: false }),
+        '*',
+      )
+    })
+    expect(screen.getByTitle('HTML preview')).toBe(frame)
+    expect(frame.getAttribute('srcdoc')).toBe(initialSrcDoc)
+
+    view.rerender(<MarkdownRenderer content={'```html\n<div>one</div><p>two</p>\n```'} isStreaming />)
+    await waitFor(() => {
+      expect(postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ html: '<div>one</div><p>two</p>', complete: true }),
+        '*',
+      )
+    })
+    const frames = screen.getAllByTitle('HTML preview') as HTMLIFrameElement[]
+    const canonicalFrame = frames.find(candidate => candidate !== frame)
+    expect(canonicalFrame).toBeInTheDocument()
+    fireEvent.load(canonicalFrame!)
+    expect(screen.getByTitle('HTML preview')).toBe(canonicalFrame)
   })
 
   it('keeps external markdown links isolated from the app webview', () => {
@@ -651,10 +907,13 @@ $$`
     render(<MarkdownRenderer content={'```mermaid\ngraph TD\n  A-->B\n```'} />)
 
     const diagram = await screen.findByRole('img', { name: 'Mermaid diagram' })
+    const zoomIn = screen.getByRole('button', { name: 'Zoom in diagram' })
 
     expect(screen.queryByRole('button', { name: 'Enable diagram pan' })).not.toBeInTheDocument()
+    expect(zoomIn).toHaveClass('h-8', 'w-8')
+    expect(zoomIn).not.toHaveClass('markdown-html-control')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Zoom in diagram' }))
+    fireEvent.click(zoomIn)
     expect(diagram).toHaveStyle({ transform: 'translate(0px, 0px) scale(1.15)' })
 
     fireEvent.pointerDown(diagram, { button: 0, clientX: 10, clientY: 20, pointerId: 1, pointerType: 'mouse' })

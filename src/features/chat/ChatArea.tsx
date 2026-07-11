@@ -1079,7 +1079,7 @@ const PageBlock = memo(function PageBlock({
             className={`w-full ${messageMaxWidthClass} mx-auto ${messagePaddingClass} ${verticalPaddingClass} transition-[max-width] duration-300 ease-in-out`}
           >
             <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-              <div className={`min-w-0 group ${!isUser ? 'w-full' : ''} flex flex-col gap-2`}>
+              <div className={`message-renderer-shell min-w-0 group ${!isUser ? 'w-full' : ''} flex flex-col gap-2`}>
                 {row.messages.map(message => (
                   <RenderedMessageItem
                     key={message.info.id}

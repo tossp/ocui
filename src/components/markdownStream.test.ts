@@ -126,6 +126,48 @@ c &= d
 $$`)
   })
 
+  it('keeps HTML block identity when streaming completes', () => {
+    const markdown = '<details><summary>More</summary><input value="draft"></details>'
+
+    expect(splitMarkdownStream(markdown, true)[0].key).toBe(splitMarkdownStream(markdown, false)[0].key)
+  })
+
+  it('keeps Markdown nested in block HTML inside one DOM island', () => {
+    const markdown = `<details>
+<summary>More</summary>
+
+**bold**
+
+| A | B |
+|---|---|
+| 1 | 2 |
+
+</details>`
+    const blocks = splitMarkdownStream(markdown, false)
+
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0].mode).toBe('full')
+    expect(blocks[0].src).toContain('**bold**')
+    expect(blocks[0].src).toContain('| A | B |')
+  })
+
+  it('keeps a doctype and its HTML document in one block', () => {
+    const markdown = '<!doctype html>\n<html><body><h1>Hello</h1></body></html>'
+    const blocks = splitMarkdownStream(markdown, false)
+
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0].src).toBe(markdown)
+  })
+
+  it('keeps an HTML fence key stable when the stream closes', () => {
+    const open = splitMarkdownStream('```html\n<div>live</div>', true)
+    const complete = splitMarkdownStream('```html\n<div>live</div>\n```', true)
+    const settled = splitMarkdownStream('```html\n<div>live</div>\n```', false)
+
+    expect(open[0].key).toBe(complete[0].key)
+    expect(complete[0].key).toBe(settled[0].key)
+  })
+
   it('projects appended open code fences without rebuilding stable blocks', () => {
     const first = projectMarkdownStream(undefined, 'before\n\n```ts\nconst x = 1', true)
     const next = projectMarkdownStream(first, 'before\n\n```ts\nconst x = 12', true)

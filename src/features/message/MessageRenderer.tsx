@@ -116,6 +116,7 @@ function useEntryGrowAnimation(created: number) {
 
 /** 默认预览 8 行 */
 const COLLAPSE_PREVIEW_LINES = 8
+const USER_HTML_ARTIFACT_PATTERN = /(?:```(?:html|htm)\b|<!doctype\s+html\b|<html\b|<style\b|<script\b|<canvas\b|\son[a-z]+\s*=)/i
 
 // 折叠状态缓存：消息是否溢出
 const overflowStateCache = new Map<string, boolean>()
@@ -163,11 +164,12 @@ const CollapsibleUserText = memo(function CollapsibleUserText({
     }
   }, [text, overflowCacheKey])
 
-  const showCollapse = collapseEnabled && isOverflow
-  const isCollapsed = collapseEnabled && !expanded
+  const hasHtmlArtifact = renderMarkdown && USER_HTML_ARTIFACT_PATTERN.test(text)
+  const showCollapse = collapseEnabled && !hasHtmlArtifact && isOverflow
+  const isCollapsed = collapseEnabled && !hasHtmlArtifact && !expanded
 
   return (
-    <div className="px-4 py-2.5 bg-bg-300 rounded-2xl max-w-full">
+    <div className={`px-4 py-2.5 bg-bg-300 rounded-2xl max-w-full ${hasHtmlArtifact ? 'w-full max-w-2xl' : ''}`}>
       <div className="relative">
         <div
           ref={contentRef}
@@ -276,9 +278,14 @@ const UserMessageView = memo(function UserMessageView({
 
   const hasSystemContext = syntheticParts.length > 0
   const messageText = textParts.map(p => p.text).join('')
+  const hasUserHtmlArtifact = renderUserMarkdown && USER_HTML_ARTIFACT_PATTERN.test(messageText)
 
   return (
-    <div ref={wrapperRef} className="flex flex-col items-end group">
+    <div
+      ref={wrapperRef}
+      data-user-html-artifact={hasUserHtmlArtifact ? '' : undefined}
+      className={`flex flex-col items-end group ${hasUserHtmlArtifact ? 'w-full' : ''}`}
+    >
       <div className="flex flex-col gap-1 items-end w-full">
         {/* 消息文本 */}
         {messageText && (

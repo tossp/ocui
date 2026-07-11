@@ -24,6 +24,7 @@ import {
   PanelBottom,
   Image,
   Copy,
+  Code2,
   Brain,
   ExternalLink,
   X,
@@ -129,6 +130,7 @@ export const PanelRightIcon = wrap(PanelRight)
 export const PanelBottomIcon = wrap(PanelBottom)
 export const ImageIcon = wrap(Image)
 export const CopyIcon = wrap(Copy)
+export const CodeIcon = wrap(Code2)
 export const AgentIcon = wrap(Brain)
 export const ExpandIcon = wrap(ExternalLink)
 export const CloseIcon = wrap(X)

@@ -97,6 +97,22 @@ describe('CodeBlock', () => {
     expect(screen.getByText('ts')).toBeInTheDocument()
   })
 
+  it('composes a preview action into the existing code block chrome', () => {
+    const { container } = render(
+      <CodeBlock
+        code="<button>Run</button>"
+        language="html"
+        headerActions={<button aria-label="Preview HTML">preview</button>}
+      />,
+    )
+
+    const shell = container.firstElementChild
+    expect(shell).toContainElement(screen.getByText('html'))
+    expect(shell).toContainElement(screen.getByRole('button', { name: 'Preview HTML' }))
+    expect(shell).toContainElement(screen.getByRole('button', { name: 'Copy to clipboard' }))
+    expect(container.querySelector('pre')).toBeInTheDocument()
+  })
+
   it('renders current plain code while highlight is deferred', () => {
     render(<CodeBlock code="const value = 1" language="ts" deferHighlight />)
 
