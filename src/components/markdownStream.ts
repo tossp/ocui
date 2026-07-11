@@ -68,7 +68,8 @@ function getLanguage(value: string | undefined) {
 }
 
 function appendReferenceDefinitions(src: string, referenceDefinitions: string) {
-  if (!referenceDefinitions) return src
+  const trimmed = src.trim()
+  if (!referenceDefinitions || (trimmed.startsWith('$$') && trimmed.endsWith('$$'))) return src
   return `${src.replace(/\s+$/, '')}\n\n${referenceDefinitions}`
 }
 

@@ -421,6 +421,8 @@ $$ \begin{aligned} \nabla \cdot \vec{E} &= \rho / \varepsilon_0 \ \nabla \cdot \
     const { container } = render(<MarkdownRenderer content={content} />)
 
     expect(container.querySelectorAll('.katex-display')).toHaveLength(2)
+    expect(container.querySelector('.katex-error')).not.toBeInTheDocument()
+    expect(container.querySelectorAll('.katex-display')[1]?.querySelectorAll('mtr')).toHaveLength(4)
   })
 
   it('renders multiple one-line display math blocks while streaming', () => {
@@ -431,6 +433,63 @@ $$ \begin{aligned} \nabla \cdot \vec{E} &= \rho / \varepsilon_0 \ \nabla \cdot \
     const { container } = render(<MarkdownRenderer content={content} isStreaming />)
 
     expect(container.querySelectorAll('.katex-display')).toHaveLength(2)
+    expect(container.querySelector('.katex-error')).not.toBeInTheDocument()
+    expect(container.querySelectorAll('.katex-display')[1]?.querySelectorAll('mtr')).toHaveLength(4)
+  })
+
+  it('repairs collapsed row separators in a one-line aligned formula', () => {
+    const content = String.raw`$$ \begin{aligned} \nabla \times \mathbf{E} &= -\frac{\partial \mathbf{B}}{\partial t} \ \nabla \times \mathbf{H} &= \mathbf{J} + \frac{\partial \mathbf{D}}{\partial t} \end{aligned} $$`
+    const { container } = render(<MarkdownRenderer content={content} />)
+
+    expect(container.querySelector('.katex-error')).not.toBeInTheDocument()
+    expect(container.querySelectorAll('.katex-display mtr')).toHaveLength(2)
+  })
+
+  it('keeps aligned display math intact when the document has reference links', () => {
+    const content = String.raw`[GitHub][1]
+
+[1]: https://github.com
+
+$$
+\begin{aligned}
+\nabla \times \mathbf{E} &= -\frac{\partial \mathbf{B}}{\partial t} \\
+\nabla \times \mathbf{H} &= \mathbf{J} + \frac{\partial \mathbf{D}}{\partial t}
+\end{aligned}
+$$`
+    const { container } = render(<MarkdownRenderer content={content} />)
+
+    expect(screen.getByRole('link', { name: 'GitHub' })).toHaveAttribute('href', 'https://github.com')
+    expect(container.querySelector('.katex-error')).not.toBeInTheDocument()
+    expect(container.querySelectorAll('.katex-display mtr')).toHaveLength(2)
+  })
+
+  it('renders GitHub-style markdown alerts separately from blockquotes', () => {
+    const content = [
+      '> [!NOTE]',
+      '> Note body with **formatting**.',
+      '',
+      '> [!TIP]',
+      '> Tip body.',
+      '',
+      '> [!IMPORTANT]',
+      '> Important body.',
+      '',
+      '> [!WARNING]',
+      '> Warning body.',
+      '',
+      '> [!CAUTION]',
+      '> Caution body.',
+      '',
+      '> Plain quote.',
+    ].join('\n')
+    const { container } = render(<MarkdownRenderer content={content} />)
+
+    expect(container.querySelectorAll('[data-markdown-alert]')).toHaveLength(5)
+    expect(container.querySelector('[data-markdown-alert="note"]')).toHaveTextContent('Note body with formatting.')
+    expect(container.querySelector('[data-markdown-alert="warning"]')).toHaveClass('border-l-warning-100')
+    expect(container.querySelector('[data-markdown-alert="caution"]')).toHaveClass('border-l-danger-100')
+    expect(container.querySelectorAll('blockquote')).toHaveLength(1)
+    expect(container.querySelector('blockquote')).toHaveTextContent('Plain quote.')
   })
 
   it('renders sanitized raw HTML content', () => {

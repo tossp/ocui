@@ -104,6 +104,28 @@ describe('splitMarkdownStream', () => {
     expect(first[0].key).toBe(next[0].key)
   })
 
+  it('does not append reference definitions to standalone display math blocks', () => {
+    const markdown = String.raw`[docs][1]
+
+$$
+\begin{aligned}
+a &= b \\
+c &= d
+\end{aligned}
+$$
+
+[1]: https://example.com`
+    const blocks = splitMarkdownStream(markdown, false)
+    const mathBlock = blocks.find(block => block.src.trimStart().startsWith('$$'))
+
+    expect(mathBlock?.src.trim()).toBe(String.raw`$$
+\begin{aligned}
+a &= b \\
+c &= d
+\end{aligned}
+$$`)
+  })
+
   it('projects appended open code fences without rebuilding stable blocks', () => {
     const first = projectMarkdownStream(undefined, 'before\n\n```ts\nconst x = 1', true)
     const next = projectMarkdownStream(first, 'before\n\n```ts\nconst x = 12', true)

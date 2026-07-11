@@ -70,9 +70,22 @@ function isEscapedAt(text: string, index: number): boolean {
   return slashCount % 2 === 1
 }
 
+function normalizeAlignedMath(source: string): string {
+  return source.replace(/\\begin\{aligned\}([\s\S]*?)\\end\{aligned\}/g, (environment, body: string) => {
+    if ((body.match(/&/g)?.length ?? 0) < 2) return environment
+
+    // Tolerate model output that collapses an aligned row break from `\\` to `\ `.
+    const normalizedBody = body.replace(
+      /(^|[^\\])\\([ \t\r\n]+)(?=\\[A-Za-z])/g,
+      (_match, prefix: string, whitespace: string) => `${prefix}\\\\${whitespace}`,
+    )
+    return `\\begin{aligned}${normalizedBody}\\end{aligned}`
+  })
+}
+
 function renderKatexHtml(source: string, displayMode: boolean): string {
   try {
-    return katex.renderToString(source, {
+    return katex.renderToString(displayMode ? normalizeAlignedMath(source) : source, {
       displayMode,
       throwOnError: false,
       strict: false,
@@ -236,6 +249,34 @@ function getDisplayMathSource(text: string): string | null {
   return trimmed.slice(2, -2).trim()
 }
 
+const MARKDOWN_ALERTS = {
+  NOTE: {
+    label: 'Note',
+    className: 'border-accent-secondary-100/35 border-l-accent-secondary-100 bg-accent-secondary-100/10',
+    labelClassName: 'text-accent-secondary-100',
+  },
+  TIP: {
+    label: 'Tip',
+    className: 'border-success-100/35 border-l-success-100 bg-success-bg/45',
+    labelClassName: 'text-success-100',
+  },
+  IMPORTANT: {
+    label: 'Important',
+    className: 'border-accent-main-100/35 border-l-accent-main-100 bg-accent-main-100/10',
+    labelClassName: 'text-accent-main-100',
+  },
+  WARNING: {
+    label: 'Warning',
+    className: 'border-warning-100/35 border-l-warning-100 bg-warning-bg/45',
+    labelClassName: 'text-warning-100',
+  },
+  CAUTION: {
+    label: 'Caution',
+    className: 'border-danger-100/35 border-l-danger-100 bg-danger-bg/45',
+    labelClassName: 'text-danger-100',
+  },
+} as const
+
 function createMarkdownHtmlRenderer(isReasoning: boolean) {
   const renderer = new marked.Renderer()
 
@@ -325,7 +366,16 @@ function createMarkdownHtmlRenderer(isReasoning: boolean) {
     return `<a href="${escapeAttribute(href)}" target="_blank" rel="noopener noreferrer" class="inline-block max-w-full align-top"${titleAttr}><img src="${escapeAttribute(href)}" alt="${escapeAttribute(text || '')}"${imgTitleAttr}${dimensionsAttr} loading="eager" decoding="async" class="block max-w-full rounded-md"></a>`
   }
 
-  renderer.blockquote = function ({ tokens }) {
+  renderer.blockquote = function ({ tokens, text }) {
+    const alertMatch = /^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\][ \t]*(?:\n|$)/i.exec(text)
+    if (alertMatch) {
+      const kind = alertMatch[1].toUpperCase() as keyof typeof MARKDOWN_ALERTS
+      const alert = MARKDOWN_ALERTS[kind]
+      const body = marked.parse(text.slice(alertMatch[0].length), { renderer, async: false }) as string
+      const spacingClass = isReasoning ? 'my-2 px-3 py-2' : 'my-4 px-4 py-3'
+      return `<aside data-markdown-alert="${kind.toLowerCase()}" class="${spacingClass} first:mt-0 last:mb-0 rounded-md border border-l-4 not-italic ${alert.className}"><p class="mb-1 font-semibold ${alert.labelClassName}">${alert.label}</p><div class="text-text-300 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">${body}</div></aside>`
+    }
+
     const className = isReasoning
       ? 'border-l-2 border-text-500/30 pl-3 py-0.5 my-2 first:mt-0 last:mb-0 text-text-400'
       : 'border-l-2 border-accent-main-100/60 pl-4 py-1 my-4 first:mt-0 last:mb-0 text-text-300 italic'
