@@ -130,6 +130,8 @@ const DEFAULT_QUEUE_FOLLOWUP_MESSAGES = false
 const DEFAULT_MANUAL_TERMINAL_TITLES = false
 const DEFAULT_EXTERNAL_FILE_DROP_MODE: ExternalFileDropMode = 'upload-first'
 const DEFAULT_OUTLINE_CURRENT_HIGHLIGHT = true
+/** 连续助手消息时，仅在回合末尾显示分叉/复制按钮 */
+const DEFAULT_ACTIONS_ON_LATEST_ASSISTANT_ONLY = true
 
 export interface ThemeState {
   /** 当前选中的主题风格 ID */
@@ -182,6 +184,8 @@ export interface ThemeState {
   externalFileDropMode: ExternalFileDropMode
   /** 是否在对话历史导航中高亮当前对话位置 */
   outlineCurrentHighlight: boolean
+  /** 连续助手消息时，仅在回合末尾显示分叉/复制按钮 */
+  actionsOnLatestAssistantOnly: boolean
 }
 
 export type ThemeBackup = ThemeState
@@ -215,6 +219,7 @@ const STORAGE_KEY_QUEUE_FOLLOWUP_MESSAGES = 'queue-followup-messages'
 const STORAGE_KEY_MANUAL_TERMINAL_TITLES = 'manual-terminal-titles'
 const STORAGE_KEY_EXTERNAL_FILE_DROP_MODE = 'external-file-drop-mode'
 const STORAGE_KEY_OUTLINE_CURRENT_HIGHLIGHT = 'outline-current-highlight'
+const STORAGE_KEY_ACTIONS_ON_LATEST_ASSISTANT_ONLY = 'actions-on-latest-assistant-only'
 
 // ============================================
 // DOM Style Element IDs
@@ -344,6 +349,12 @@ class ThemeStore {
         ? DEFAULT_OUTLINE_CURRENT_HIGHLIGHT
         : savedOutlineCurrentHighlight === 'true'
 
+    const savedActionsOnLatestAssistantOnly = localStorage.getItem(STORAGE_KEY_ACTIONS_ON_LATEST_ASSISTANT_ONLY)
+    const actionsOnLatestAssistantOnly =
+      savedActionsOnLatestAssistantOnly === null
+        ? DEFAULT_ACTIONS_ON_LATEST_ASSISTANT_ONLY
+        : savedActionsOnLatestAssistantOnly === 'true'
+
     this.state = {
       presetId: normalizedPreset,
       colorMode: savedMode,
@@ -370,6 +381,7 @@ class ThemeStore {
       manualTerminalTitles,
       externalFileDropMode,
       outlineCurrentHighlight,
+      actionsOnLatestAssistantOnly,
     }
   }
 
@@ -453,6 +465,10 @@ class ThemeStore {
   }
   get outlineCurrentHighlight() {
     return this.state.outlineCurrentHighlight
+  }
+
+  get actionsOnLatestAssistantOnly() {
+    return this.state.actionsOnLatestAssistantOnly
   }
 
   /** 获取当前主题预设（内置主题返回对象，自定义返回 undefined） */
@@ -735,6 +751,13 @@ class ThemeStore {
     this.emit()
   }
 
+  setActionsOnLatestAssistantOnly(enabled: boolean) {
+    if (this.state.actionsOnLatestAssistantOnly === enabled) return
+    this.state = { ...this.state, actionsOnLatestAssistantOnly: enabled }
+    localStorage.setItem(STORAGE_KEY_ACTIONS_ON_LATEST_ASSISTANT_ONLY, String(enabled))
+    this.emit()
+  }
+
   // ---- Theme Application ----
 
   /** 初始化：应用当前主题到 DOM */
@@ -982,6 +1005,10 @@ function normalizeThemeBackup(raw: unknown): ThemeBackup {
       typeof parsed?.outlineCurrentHighlight === 'boolean'
         ? parsed.outlineCurrentHighlight
         : DEFAULT_OUTLINE_CURRENT_HIGHLIGHT,
+    actionsOnLatestAssistantOnly:
+      typeof parsed?.actionsOnLatestAssistantOnly === 'boolean'
+        ? parsed.actionsOnLatestAssistantOnly
+        : DEFAULT_ACTIONS_ON_LATEST_ASSISTANT_ONLY,
   }
 }
 
@@ -1025,4 +1052,8 @@ export function importThemeBackup(raw: unknown): void {
   localStorage.setItem(STORAGE_KEY_MANUAL_TERMINAL_TITLES, String(backup.manualTerminalTitles))
   localStorage.setItem(STORAGE_KEY_EXTERNAL_FILE_DROP_MODE, backup.externalFileDropMode)
   localStorage.setItem(STORAGE_KEY_OUTLINE_CURRENT_HIGHLIGHT, String(backup.outlineCurrentHighlight))
+  localStorage.setItem(
+    STORAGE_KEY_ACTIONS_ON_LATEST_ASSISTANT_ONLY,
+    String(backup.actionsOnLatestAssistantOnly),
+  )
 }

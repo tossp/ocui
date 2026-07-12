@@ -402,9 +402,11 @@ const AssistantMessageView = memo(function AssistantMessageView({
 }) {
   const { t } = useTranslation('message')
   const { parts, isStreaming, info } = message
-  const { stepFinishDisplay, completedAtFormat } = useTheme()
+  const { stepFinishDisplay, completedAtFormat, actionsOnLatestAssistantOnly } = useTheme()
   // 整轮最新 assistant 才允许显示 step 完成信息（latestOnly 时中间 assistant 全隐藏）
   const allowStepFinishOnMessage = !stepFinishDisplay.latestOnly || isTurnLatestAssistant
+  // 分叉/复制：默认只在回合末尾助手消息显示，避免连续多条打断阅读
+  const showMessageActions = !actionsOnLatestAssistantOnly || isTurnLatestAssistant
 
   const wrapperRef = useEntryGrowAnimation(info.time.created)
 
@@ -573,7 +575,7 @@ const AssistantMessageView = memo(function AssistantMessageView({
         </div>
       )}
 
-      {hasCopyableText && (
+      {showMessageActions && hasCopyableText && (
         <div className="flex items-center gap-1 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 [@media(any-pointer:coarse)]:opacity-100 transition-opacity">
           <ForkActionButton message={message} onFork={onFork} forkMessageId={forkMessageId} />
           <CopyButton text={fullText} position="static" />

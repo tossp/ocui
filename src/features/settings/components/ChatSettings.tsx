@@ -14,6 +14,8 @@ export function ChatSettings() {
     setExternalFileDropMode,
     outlineCurrentHighlight,
     setOutlineCurrentHighlight,
+    actionsOnLatestAssistantOnly,
+    setActionsOnLatestAssistantOnly,
     renderUserMarkdown,
     setRenderUserMarkdown,
   } = useTheme()
@@ -46,6 +48,10 @@ export function ChatSettings() {
 
   const handleOutlineHighlightToggle = () => {
     setOutlineCurrentHighlight(!outlineCurrentHighlight)
+  }
+
+  const handleActionsOnLatestOnlyToggle = () => {
+    setActionsOnLatestAssistantOnly(!actionsOnLatestAssistantOnly)
   }
 
   return (
@@ -106,6 +112,14 @@ export function ChatSettings() {
           onClick={handleOutlineHighlightToggle}
         >
           <Toggle enabled={outlineCurrentHighlight} onChange={handleOutlineHighlightToggle} />
+        </SettingRow>
+
+        <SettingRow
+          label={t('chat.actionsOnLatestAssistantOnly')}
+          description={t('chat.actionsOnLatestAssistantOnlyDesc')}
+          onClick={handleActionsOnLatestOnlyToggle}
+        >
+          <Toggle enabled={actionsOnLatestAssistantOnly} onChange={handleActionsOnLatestOnlyToggle} />
         </SettingRow>
 
         <div>

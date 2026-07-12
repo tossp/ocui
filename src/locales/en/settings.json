@@ -94,6 +94,8 @@
     "renderUserMarkdownDesc": "Render sent user messages as Markdown when enabled; keep plain text when disabled",
     "outlineCurrentHighlight": "Highlight Current Position",
     "outlineCurrentHighlightDesc": "Mark the user prompt that owns the current viewport in the right-side history rail",
+    "actionsOnLatestAssistantOnly": "Actions on latest reply only",
+    "actionsOnLatestAssistantOnlyDesc": "In a turn with multiple assistant messages, show fork and copy only on the last one",
     "descriptiveToolSteps": "Descriptive Steps",
     "descriptiveToolStepsDesc": "Replace plain step counts with tool-aware summaries and show a steps line even for single tool calls",
     "inlineToolRequests": "Inline Tool Requests",

@@ -226,6 +226,10 @@ export function useTheme() {
     themeStore.setOutlineCurrentHighlight(enabled)
   }, [])
 
+  const setActionsOnLatestAssistantOnly = useCallback((enabled: boolean) => {
+    themeStore.setActionsOnLatestAssistantOnly(enabled)
+  }, [])
+
   return {
     // 日夜模式（向后兼容）
     mode: state.colorMode,
@@ -328,5 +332,9 @@ export function useTheme() {
     // 对话历史导航当前位置高亮
     outlineCurrentHighlight: state.outlineCurrentHighlight,
     setOutlineCurrentHighlight,
+
+    // 连续助手消息仅在末尾显示分叉/复制
+    actionsOnLatestAssistantOnly: state.actionsOnLatestAssistantOnly,
+    setActionsOnLatestAssistantOnly,
   }
 }

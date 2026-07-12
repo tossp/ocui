@@ -94,6 +94,8 @@
     "renderUserMarkdownDesc": "开启后，用户发送的消息会按 Markdown 渲染；关闭时保持纯文本显示",
     "outlineCurrentHighlight": "高亮当前对话位置",
     "outlineCurrentHighlightDesc": "在右侧历史导航条中标出当前视口所属的用户提示词",
+    "actionsOnLatestAssistantOnly": "仅末尾显示操作按钮",
+    "actionsOnLatestAssistantOnlyDesc": "一轮对话里连续多条助手消息时，只在最后一条显示分叉和复制按钮",
     "descriptiveToolSteps": "描述型步骤",
     "descriptiveToolStepsDesc": "把普通 steps 计数改成带工具描述的摘要，并让单工具调用也显示步骤描述",
     "inlineToolRequests": "工具内嵌请求",
