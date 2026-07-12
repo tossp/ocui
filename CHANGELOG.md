@@ -1,5 +1,10 @@
 # Changelog
 
+## [v0.6.28] - 2026-07-12
+
+- fix: use accent color for HTML source control icon (7eb3c26)
+- fix: persist model visibility with current hidden keys (4650043)
+
 ## [v0.6.27] - 2026-07-11
 
 - fix: scroll HTML previews like code results (483fa01)
