@@ -438,16 +438,28 @@ export function reconcileStableChatPages(options: {
   }
 
   if (prefixMessages.length > 0) {
+    // 纯 prepend：已有页对象尽量保持引用不变，只在更老一侧挂新页。
+    // 不改写 currentOldestPage（connect 会换新对象），避免视口内页重组抖动。
     let prependedOlderPages = buildStableChatPages(prefixMessages, allocateKey, pageMessageCount, maxRenderWeight)
     const currentOldestPage = nextPages.at(-1)
     const prefixBoundaryPage = prependedOlderPages[0]
-    const connection =
-      prefixBoundaryPage && currentOldestPage
-        ? connectAssistantPageBoundary(prefixBoundaryPage, currentOldestPage)
-        : null
-    if (connection) {
-      nextPages = [...nextPages.slice(0, -1), connection.newerPage]
-      prependedOlderPages = [connection.olderPage, ...prependedOlderPages.slice(1)]
+    if (prefixBoundaryPage && currentOldestPage) {
+      const olderBoundaryRow = prefixBoundaryPage.rows.at(-1)
+      const newerBoundaryRow = currentOldestPage.rows[0]
+      if (
+        olderBoundaryRow?.messages[0]?.info.role === 'assistant' &&
+        newerBoundaryRow?.messages[0]?.info.role === 'assistant'
+      ) {
+        const olderRows = prefixBoundaryPage.rows.slice()
+        olderRows[olderRows.length - 1] = buildMessageGroupRow(olderBoundaryRow.messages, {
+          continuesFromPrevious: olderBoundaryRow.continuesFromPrevious,
+          continuesToNext: true,
+        })
+        prependedOlderPages = [
+          { ...buildChatPage(olderRows), key: prefixBoundaryPage.key },
+          ...prependedOlderPages.slice(1),
+        ]
+      }
     }
     nextPages = [...nextPages, ...prependedOlderPages]
   }

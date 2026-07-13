@@ -96,19 +96,68 @@ function sameVisibleEntry(a: VisibleMessageEntry, b: VisibleMessageEntry) {
   )
 }
 
+function sourceIdsOverlap(a: readonly string[], b: readonly string[]) {
+  if (a.length === 0 || b.length === 0) return false
+  if (a.length <= b.length) return a.every(id => b.includes(id))
+  return b.every(id => a.includes(id))
+}
+
+/**
+ * 合并 tool 链在 prepend 更老消息后，可见 message.id 可能从链头换成更老的头。
+ * 这里沿用旧链的可见 id，避免 DOM key / page 序列被整段打散。
+ */
+function stabilizeMergedVisibleEntries(
+  previous: VisibleMessageEntry[] | undefined,
+  next: VisibleMessageEntry[],
+): VisibleMessageEntry[] {
+  if (!previous?.length) return next
+
+  let changed = false
+  const entries = next.map(entry => {
+    if (entry.sourceIds.length <= 1) return entry
+
+    const previousEntry = previous.find(
+      candidate =>
+        candidate.sourceIds.length > 1 &&
+        (candidate.message.info.id === entry.message.info.id || sourceIdsOverlap(candidate.sourceIds, entry.sourceIds)),
+    )
+    if (!previousEntry) return entry
+    if (previousEntry.message.info.id === entry.message.info.id) return entry
+
+    changed = true
+    return {
+      sourceIds: entry.sourceIds,
+      message: {
+        ...entry.message,
+        info: previousEntry.message.info,
+        parts: entry.message.parts,
+        isStreaming: entry.message.isStreaming,
+      },
+    }
+  })
+
+  return changed ? entries : next
+}
+
 function reuseVisibleMessageEntries(
   previous: VisibleMessageEntry[] | undefined,
   next: VisibleMessageEntry[],
 ): VisibleMessageEntry[] {
-  if (!previous || previous.length !== next.length) return next
-  let changed = false
-  const entries = next.map((entry, index) => {
-    const previousEntry = previous[index]
-    if (sameVisibleEntry(previousEntry, entry)) return previousEntry
-    changed = true
+  const stabilized = stabilizeMergedVisibleEntries(previous, next)
+  if (!previous?.length) return stabilized
+
+  // 按 message id 复用，prepend/append 后旧条目仍可保住引用，避免整表页重建
+  const previousById = new Map(previous.map(entry => [entry.message.info.id, entry]))
+  let contentChanged = previous.length !== stabilized.length
+  const entries = stabilized.map((entry, index) => {
+    if (previous[index]?.message.info.id !== entry.message.info.id) contentChanged = true
+    const previousEntry = previousById.get(entry.message.info.id)
+    if (previousEntry && sameVisibleEntry(previousEntry, entry)) return previousEntry
+    contentChanged = true
     return entry
   })
-  return changed ? entries : previous
+  // 内容都复用了也要检查顺序；顺序变了必须返回新数组，不能直接丢回 previous
+  return !contentChanged ? previous : entries
 }
 
 function visibleMessagesFromEntries(previous: Message[] | undefined, entries: VisibleMessageEntry[]) {

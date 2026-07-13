@@ -181,6 +181,20 @@ describe('buildVisibleMessageEntries', () => {
     expect(getVisibleMessageForkTargetId(nextEntry)).toBe('assistant-2')
   })
 
+  it('stabilizes merged visible message id when older tool history is prepended', () => {
+    const first = createAssistantMessage('assistant-1', [createToolPart('tool-1', 'assistant-1')])
+    const second = createAssistantMessage('assistant-2', [createToolPart('tool-2', 'assistant-2')])
+    const previous = buildChatPageViewModel([first, second])
+    const older = createAssistantMessage('assistant-older', [createToolPart('tool-older', 'assistant-older')])
+    const next = buildChatPageViewModel([older, first, second], previous)
+
+    expect(previous.visibleMessages[0].info.id).toBe('assistant-1')
+    expect(next.visibleMessages[0].info.id).toBe('assistant-1')
+    expect(next.visibleMessageEntries[0].sourceIds).toEqual(['assistant-older', 'assistant-1', 'assistant-2'])
+    expect(next.visibleMessages[0].parts).toHaveLength(3)
+    expect(next.pageRecords.map(page => page.key)).toEqual(previous.pageRecords.map(page => page.key))
+  })
+
   it('keeps aborted assistant messages that already have renderable parts', () => {
     const message = createAssistantMessage(
       'assistant-aborted-with-tool',
@@ -936,8 +950,81 @@ describe('reconcileStableChatPages', () => {
     })
 
     expect(nextPages).toHaveLength(3)
-    expect(nextPages[1].rows[0].continuesFromPrevious).toBe(true)
+    // 已有页引用保持不变；continuation 只标在新 prepend 的老页上
+    expect(nextPages[0]).toBe(currentPages[0])
+    expect(nextPages[1]).toBe(currentPages[1])
     expect(nextPages[2].rows[0].continuesToNext).toBe(true)
+  })
+
+  it('does not rebuild existing pages when older turns are prepended', () => {
+    const currentMessages = Array.from({ length: 8 }, (_unused, index) => [
+      createUserMessage(`user-${index + 2}`, (index + 2) * 2),
+      createAssistantMessage(`assistant-${index + 2}`, [], (index + 2) * 2 + 1, (index + 2) * 2 + 2),
+    ]).flat()
+    const currentPages = reconcileStableChatPages({
+      currentPages: [],
+      nextMessages: currentMessages,
+      allocateKey: alloc,
+      pageMessageCount: 4,
+    })
+    const olderMessages = [
+      createUserMessage('user-0', 0),
+      createAssistantMessage('assistant-0', [], 1, 2),
+      createUserMessage('user-1', 3),
+      createAssistantMessage('assistant-1', [], 4, 5),
+    ]
+
+    const nextPages = reconcileStableChatPages({
+      currentPages,
+      nextMessages: [...olderMessages, ...currentMessages],
+      allocateKey: alloc,
+      pageMessageCount: 4,
+    })
+
+    expect(nextPages.length).toBeGreaterThan(currentPages.length)
+    expect(nextPages.slice(0, currentPages.length).map(page => page.key)).toEqual(currentPages.map(page => page.key))
+    for (let index = 0; index < currentPages.length; index++) {
+      expect(nextPages[index]).toBe(currentPages[index])
+    }
+  })
+
+  it('keeps existing page object identity through view model when older turns are prepended', () => {
+    const currentMessages = Array.from({ length: 8 }, (_unused, index) => [
+      {
+        ...createUserMessage(`user-${index + 2}`, (index + 2) * 2),
+        parts: [createTextPart(`user-text-${index + 2}`, `user-${index + 2}`, `prompt ${index + 2}`)],
+      },
+      createAssistantMessage(
+        `assistant-${index + 2}`,
+        [createTextPart(`text-${index + 2}`, `assistant-${index + 2}`, `answer ${index + 2}`)],
+        (index + 2) * 2 + 1,
+        (index + 2) * 2 + 2,
+      ),
+    ]).flat()
+    const previous = buildChatPageViewModel(currentMessages)
+    const olderMessages = [
+      {
+        ...createUserMessage('user-0', 0),
+        parts: [createTextPart('user-text-0', 'user-0', 'older prompt 0')],
+      },
+      createAssistantMessage('assistant-0', [createTextPart('text-0', 'assistant-0', 'older answer 0')], 1, 2),
+      {
+        ...createUserMessage('user-1', 3),
+        parts: [createTextPart('user-text-1', 'user-1', 'older prompt 1')],
+      },
+      createAssistantMessage('assistant-1', [createTextPart('text-1', 'assistant-1', 'older answer 1')], 4, 5),
+    ]
+
+    const next = buildChatPageViewModel([...olderMessages, ...currentMessages], previous)
+
+    expect(next.pageRecords.length).toBeGreaterThan(previous.pageRecords.length)
+    for (const page of previous.pageRecords) {
+      expect(next.pageRecords.find(candidate => candidate.key === page.key)).toBe(page)
+    }
+    // 旧消息对象引用保持，避免下游整页 refresh
+    for (const message of previous.visibleMessages) {
+      expect(next.visibleMessages.find(candidate => candidate.info.id === message.info.id)).toBe(message)
+    }
   })
 })
 

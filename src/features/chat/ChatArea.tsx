@@ -971,11 +971,14 @@ export const ChatArea = memo(
               ),
             )}
 
+            {/* 加载指示不占文档流高度，避免 history prepend 时顶栏插拔抖动 */}
             {visibleMessages.length > 0 && isLoadingMore && (
-              <div className="flex justify-center py-3 shrink-0">
-                <div className="flex items-center gap-2 text-text-400 text-[length:var(--fs-sm)]">
-                  <span className="w-3.5 h-3.5 border-2 border-text-400/30 border-t-text-400 rounded-full animate-spin" />
-                  {t('chatArea.loadingHistory')}
+              <div className="relative shrink-0 h-0 overflow-visible pointer-events-none" aria-hidden="true">
+                <div className="absolute left-0 right-0 top-2 z-10 flex justify-center">
+                  <div className="flex items-center gap-2 rounded-full bg-bg-100/90 px-3 py-1.5 text-text-400 text-[length:var(--fs-sm)] shadow-sm">
+                    <span className="w-3.5 h-3.5 border-2 border-text-400/30 border-t-text-400 rounded-full animate-spin" />
+                    {t('chatArea.loadingHistory')}
+                  </div>
                 </div>
               </div>
             )}
