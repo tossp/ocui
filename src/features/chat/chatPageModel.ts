@@ -921,14 +921,10 @@ export function buildProcessTimeline(
     const finalOutside =
       !turnIsActive && finalAssistant && messageHasFinal(finalAssistant) ? finalAssistant : undefined
 
-    // 空回合（无 assistant）：等 user 入场生长真正结束后再挂 Working
-    // 一旦有 assistant / 过程内容，立即挂壳，不再等
-    const isEmptyActiveShell = turnIsActive && children.length === 0
-    const allowEmptyShell = !isEmptyActiveShell || isUserEntryReady(userId)
-
-    // 进行中（含刚发送空回合）或有过程内容 → 挂壳
+    // 进行中或有过程内容 → 挂壳
+    // 空回合 active 已要求 entry-ready（emptyTurnArmed），无需再叠一层 allowEmptyShell
     // 纯 final 正文、无过程 → 直接平铺，不挂空壳
-    if ((children.length > 0 || turnIsActive) && allowEmptyShell) {
+    if (children.length > 0 || turnIsActive) {
       items.push({
         kind: 'process-shell',
         key: `process-shell:${userId}`,

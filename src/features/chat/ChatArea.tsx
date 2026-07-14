@@ -39,6 +39,7 @@ import {
 } from './chatPageModel'
 import { useTheme } from '../../hooks/useTheme'
 import { useAutoScroll } from './virtual/useAutoScroll'
+import { useEmptyWorkingShellGate } from './virtual/useEmptyWorkingShellGate'
 
 const NOOP = () => {}
 const ROW_ESTIMATE = 60
@@ -343,52 +344,8 @@ export const ChatArea = memo(
         [turnLatestAssistantIdsProp, visibleMessages],
       )
 
-      // 空 Working 壳：等 user 入场生长完成 + 额外停顿后再挂。
-      // 有 assistant 时 buildProcessTimeline 会立刻挂壳，不走这个闸门。
-      // idle 时清空闸门，避免「中断空回合」在下次发送时被 streaming 抢先重开。
-      const emptyShellReadyRef = useRef(new Set<string>())
-      const emptyShellTimersRef = useRef(new Map<string, number>())
-      const streamingRef = useRef(isStreaming)
-      streamingRef.current = isStreaming
-      const [emptyShellReadyVersion, setEmptyShellReadyVersion] = useState(0)
-
-      const clearEmptyShellGate = useCallback(() => {
-        for (const timer of emptyShellTimersRef.current.values()) window.clearTimeout(timer)
-        emptyShellTimersRef.current.clear()
-        if (emptyShellReadyRef.current.size > 0) {
-          emptyShellReadyRef.current.clear()
-          setEmptyShellReadyVersion(v => v + 1)
-        }
-      }, [])
-
-      const handleEntryGrowComplete = useCallback((messageId: string) => {
-        // 只在 session 仍 busy 时武装空壳；idle 后的回调（历史 remount）忽略
-        if (!streamingRef.current) return
-        if (emptyShellReadyRef.current.has(messageId)) {
-          setEmptyShellReadyVersion(v => v + 1)
-          return
-        }
-        if (emptyShellTimersRef.current.has(messageId)) return
-        const timer = window.setTimeout(() => {
-          emptyShellTimersRef.current.delete(messageId)
-          // timer 到期时若已 idle，不再武装
-          if (!streamingRef.current) return
-          emptyShellReadyRef.current.add(messageId)
-          setEmptyShellReadyVersion(v => v + 1)
-        }, EMPTY_WORKING_SHELL_EXTRA_DELAY_MS)
-        emptyShellTimersRef.current.set(messageId, timer)
-      }, [])
-
-      useEffect(() => {
-        if (!isStreaming) clearEmptyShellGate()
-      }, [isStreaming, clearEmptyShellGate])
-
-      useEffect(() => {
-        return () => {
-          for (const timer of emptyShellTimersRef.current.values()) window.clearTimeout(timer)
-          emptyShellTimersRef.current.clear()
-        }
-      }, [])
+      // 空 Working 壳闸门：入场完成 + 额外停顿；idle 清空；有 assistant 立刻挂
+      const emptyShellGate = useEmptyWorkingShellGate(isStreaming, EMPTY_WORKING_SHELL_EXTRA_DELAY_MS)
 
       // 过程折叠：按 user 回合建时间线；关闭时退回「一行一条消息」
       const timeline = useMemo<ProcessTimelineItem[]>(() => {
@@ -404,12 +361,11 @@ export const ChatArea = memo(
           sessionIsStreaming: isStreaming,
           messageHasProcess: messageHasProcessContent,
           messageHasFinal: messageHasFinalContent,
-          // 空壳闸门：入场完成 + 额外停顿后才 true；有 assistant 的回合不查这个
-          isUserEntryReady: id => emptyShellReadyRef.current.has(id),
+          isUserEntryReady: emptyShellGate.isReady,
         })
-        // emptyShellReadyVersion：额外延迟到期后强制重算，挂上 Working 壳
+        // emptyShellGate.version：额外延迟到期后强制重算，挂上 Working 壳
         // eslint-disable-next-line react-hooks/exhaustive-deps
-      }, [processCollapseEnabled, visibleMessages, turnDurationMap, isStreaming, emptyShellReadyVersion])
+      }, [processCollapseEnabled, visibleMessages, turnDurationMap, isStreaming, emptyShellGate.version, emptyShellGate.isReady])
 
       const messageIdToTimelineIndex = useMemo(() => {
         const map = new Map<string, number>()
@@ -903,7 +859,7 @@ export const ChatArea = memo(
                     turnLatestAssistantIds={turnLatestAssistantIds}
                     allowStreamingLayoutAnimation={allowStreamingLayoutAnimation}
                     measureElement={virtualizer.measureElement as (el: HTMLElement | null) => void}
-                    onEntryGrowComplete={handleEntryGrowComplete}
+                    onEntryGrowComplete={emptyShellGate.onEntryGrowComplete}
                   />
                 )
               })}
