@@ -22,6 +22,8 @@ const {
   pendingPermissionRequestsMock,
   handlePermissionReplyMock,
   refreshPendingRequestsMock,
+  useSessionStateMock,
+  activeSessionStatusMap,
 } = vi.hoisted(() => ({
   createSessionMock: vi.fn(),
   summarizeSessionMock: vi.fn(),
@@ -44,6 +46,8 @@ const {
     (_requestId: string, _reply: string, _directory?: string, _sessionId?: string) => Promise.resolve(true),
   ),
   refreshPendingRequestsMock: vi.fn((_sessionIds?: string | string[], _directory?: string) => Promise.resolve()),
+  useSessionStateMock: vi.fn((_sessionId: string | null) => null as null | { isStreaming: boolean; messages: unknown[] }),
+  activeSessionStatusMap: {} as Record<string, { type: string; attempt?: number; message?: string; next?: number }>,
 }))
 
 const autoApproveState = vi.hoisted(() => ({
@@ -62,7 +66,7 @@ vi.mock('../store', () => ({
     handlePartUpdated: vi.fn(),
   },
   useSessionFamily: (sessionId: string | null) => useSessionFamilyMock(sessionId),
-  useSessionState: () => null,
+  useSessionState: (sessionId: string | null) => useSessionStateMock(sessionId),
   autoApproveStore: {
     getPaneFullAutoMode: (paneId: string) => getPaneFullAutoModeMock(paneId),
     onFullAutoChange: (listener: unknown) => onFullAutoChangeMock(listener),
@@ -81,7 +85,7 @@ vi.mock('../store', () => ({
     registerChildSession: vi.fn(),
     getSessionAndDescendants: vi.fn(() => []),
   },
-  useActiveSessionStore: () => ({ statusMap: {} }),
+  useActiveSessionStore: () => ({ statusMap: activeSessionStatusMap }),
 }))
 
 vi.mock('../hooks', () => ({
@@ -182,7 +186,11 @@ describe('useChatSession handleCommand', () => {
     useSessionFamilyMock.mockReset()
     handlePermissionReplyMock.mockReset()
     refreshPendingRequestsMock.mockReset()
+    useSessionStateMock.mockReset()
     pendingPermissionRequestsMock.length = 0
+    for (const key of Object.keys(activeSessionStatusMap)) {
+      delete activeSessionStatusMap[key]
+    }
 
     registerSessionConsumerMock.mockReturnValue(vi.fn())
     getPaneFullAutoModeMock.mockReturnValue('off')
@@ -191,6 +199,7 @@ describe('useChatSession handleCommand', () => {
     shouldAutoApproveMock.mockReturnValue(false)
     claimAutoReplyMock.mockReturnValue(true)
     useSessionFamilyMock.mockReturnValue([])
+    useSessionStateMock.mockReturnValue(null)
     handlePermissionReplyMock.mockResolvedValue(true)
     refreshPendingRequestsMock.mockResolvedValue(undefined)
     autoApproveState.approvePendingOnFullAuto = false
@@ -379,4 +388,115 @@ describe('useChatSession handleCommand', () => {
       expect(sendNotificationMock).not.toHaveBeenCalled()
     },
   )
+})
+
+describe('useChatSession busy UI signal', () => {
+  beforeEach(() => {
+    createSessionMock.mockReset()
+    summarizeSessionMock.mockReset()
+    executeCommandMock.mockReset()
+    getSelectableAgentsMock.mockReset()
+    registerSessionConsumerMock.mockReset()
+    updateConsumerSessionIdMock.mockReset()
+    sendNotificationMock.mockReset()
+    isSystemEnabledMock.mockReset()
+    errorHandlerMock.mockReset()
+    getPaneFullAutoModeMock.mockReset()
+    onFullAutoChangeMock.mockReset()
+    autoApproveSubscribeMock.mockReset()
+    shouldAutoApproveMock.mockReset()
+    claimAutoReplyMock.mockReset()
+    releaseAutoReplyMock.mockReset()
+    useSessionFamilyMock.mockReset()
+    handlePermissionReplyMock.mockReset()
+    refreshPendingRequestsMock.mockReset()
+    useSessionStateMock.mockReset()
+    pendingPermissionRequestsMock.length = 0
+    for (const key of Object.keys(activeSessionStatusMap)) {
+      delete activeSessionStatusMap[key]
+    }
+
+    registerSessionConsumerMock.mockReturnValue(vi.fn())
+    getPaneFullAutoModeMock.mockReturnValue('off')
+    onFullAutoChangeMock.mockReturnValue(vi.fn())
+    autoApproveSubscribeMock.mockReturnValue(vi.fn())
+    shouldAutoApproveMock.mockReturnValue(false)
+    claimAutoReplyMock.mockReturnValue(true)
+    useSessionFamilyMock.mockReturnValue([])
+    useSessionStateMock.mockReturnValue(null)
+    handlePermissionReplyMock.mockResolvedValue(true)
+    refreshPendingRequestsMock.mockResolvedValue(undefined)
+    autoApproveState.approvePendingOnFullAuto = false
+    getSelectableAgentsMock.mockResolvedValue([{ name: 'build', mode: 'primary', hidden: false }])
+    isSystemEnabledMock.mockImplementation((type: string) => type !== 'permission')
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('keeps UI isStreaming true from session.status when message streaming is false', () => {
+    useSessionStateMock.mockReturnValue({ isStreaming: false, messages: [] })
+    activeSessionStatusMap['session-1'] = { type: 'busy' }
+
+    const { result } = renderHook(() =>
+      useChatSession({
+        paneId: 'pane-1',
+        chatAreaRef: { current: null },
+        currentModel: { id: 'model-1', providerId: 'provider-1', variants: [] } as never,
+        refetchModels: vi.fn(async () => {}),
+        sessionId: 'session-1',
+        navigateToSession: vi.fn(),
+        navigateHome: vi.fn(),
+      }),
+    )
+
+    expect(result.current.isStreaming).toBe(true)
+    expect(result.current.messageIsStreaming).toBe(false)
+  })
+
+  it('keeps UI isStreaming true while session is in retry between agent steps', () => {
+    useSessionStateMock.mockReturnValue({ isStreaming: false, messages: [] })
+    activeSessionStatusMap['session-1'] = {
+      type: 'retry',
+      attempt: 1,
+      message: 'retrying',
+      next: Date.now() + 1000,
+    }
+
+    const { result } = renderHook(() =>
+      useChatSession({
+        paneId: 'pane-1',
+        chatAreaRef: { current: null },
+        currentModel: { id: 'model-1', providerId: 'provider-1', variants: [] } as never,
+        refetchModels: vi.fn(async () => {}),
+        sessionId: 'session-1',
+        navigateToSession: vi.fn(),
+        navigateHome: vi.fn(),
+      }),
+    )
+
+    expect(result.current.isStreaming).toBe(true)
+    expect(result.current.messageIsStreaming).toBe(false)
+    expect(result.current.retryStatus?.attempt).toBe(1)
+  })
+
+  it('falls back to message streaming when session status is idle', () => {
+    useSessionStateMock.mockReturnValue({ isStreaming: true, messages: [] })
+
+    const { result } = renderHook(() =>
+      useChatSession({
+        paneId: 'pane-1',
+        chatAreaRef: { current: null },
+        currentModel: { id: 'model-1', providerId: 'provider-1', variants: [] } as never,
+        refetchModels: vi.fn(async () => {}),
+        sessionId: 'session-1',
+        navigateToSession: vi.fn(),
+        navigateHome: vi.fn(),
+      }),
+    )
+
+    expect(result.current.isStreaming).toBe(true)
+    expect(result.current.messageIsStreaming).toBe(true)
+  })
 })
