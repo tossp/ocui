@@ -80,15 +80,12 @@ function mergeWithLocalStreamingMessages(
   const localById = new Map(localState.messages.map(message => [message.info.id, message]))
   const apiIds = new Set(apiMessages.map(m => m.info.id))
 
-  // 同 message：流式/未完成时 part 文本不回退（服务端快照可能短暂更短）
+  // 同 message：仅未定稿时 part 文本不回退；incoming 已 completed 则强制服务端
   const mergedApi = apiMessages.map(apiMessage => {
     const local = localById.get(apiMessage.info.id)
     if (!local) return apiMessage
-    const preserve =
-      localState.isStreaming ||
-      local.isStreaming ||
-      messageTimeIncomplete(local.info.time) ||
-      messageTimeIncomplete(apiMessage.info.time)
+    if (!messageTimeIncomplete(apiMessage.info.time)) return apiMessage
+    const preserve = local.isStreaming || messageTimeIncomplete(local.info.time) || localState.isStreaming
     if (!preserve) return apiMessage
     return {
       ...apiMessage,

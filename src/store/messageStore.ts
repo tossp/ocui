@@ -56,11 +56,15 @@ function messageIsIncomplete(message: { isStreaming?: boolean; info: { time?: { 
   return completed == null
 }
 
+/**
+ * 仅未定稿时保护更长 live；incoming/本地已 completed 则强制服务端，不再 preserve。
+ */
 function shouldPreserveLiveParts(
-  message: { isStreaming?: boolean; info: { time?: { completed?: number } } },
-  sessionStreaming: boolean,
+  previous: { isStreaming?: boolean; info: { time?: { completed?: number } } },
+  incoming?: { isStreaming?: boolean; info: { time?: { completed?: number } } },
 ) {
-  return sessionStreaming || messageIsIncomplete(message)
+  if (incoming && !messageIsIncomplete(incoming)) return false
+  return messageIsIncomplete(previous)
 }
 
 class MessageStore {
@@ -427,12 +431,12 @@ class MessageStore {
     const state = this.ensureSession(sessionId)
     const previousMessages = state.messages
     const previousById = new Map(previousMessages.map(message => [message.info.id, message]))
-    const sessionWasStreaming = state.isStreaming
 
     state.messages = apiMessages.map(apiMessage => {
       const next = toUIMessage(apiMessage)
       const previous = previousById.get(next.info.id)
-      if (!previous || !shouldPreserveLiveParts(previous, sessionWasStreaming)) return next
+      // 定稿（completed）强制采用服务端；仅流式/未完成时不回退更长 live
+      if (!previous || !shouldPreserveLiveParts(previous, next)) return next
       return {
         ...next,
         parts: mergePartsPreferLiveText(previous.parts, next.parts),
@@ -575,8 +579,8 @@ class MessageStore {
 
     if (existingPartIndex >= 0) {
       const existing = newParts[existingPartIndex]
-      // 流式中 updated 可能短暂落后于本地 delta：兼容前缀时不回退
-      newParts[existingPartIndex] = shouldPreserveLiveParts(oldMessage, state.isStreaming)
+      // 未定稿：兼容前缀时不回退；已 completed：强制服务端定稿
+      newParts[existingPartIndex] = shouldPreserveLiveParts(oldMessage)
         ? mergePartPreferLiveText(existing, incoming)
         : incoming
     } else {

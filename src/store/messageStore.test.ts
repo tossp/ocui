@@ -230,6 +230,48 @@ describe('messageStore', () => {
     })
   })
 
+  it('adopts completed server text even when local live text was longer', () => {
+    messageStore.setMessages('session-1', [
+      {
+        info: {
+          ...createAssistantMessage('message-1'),
+          time: { created: 1 },
+        },
+        parts: [createTextPart('part-message-1', 'message-1', 'hello world extra')],
+      },
+    ])
+    messageStore.setStreaming('session-1', true)
+    const live = messageStore.getSessionState('session-1')?.messages[0]
+    if (live) live.isStreaming = true
+
+    // 定稿：completed 快照强制采用服务端，不再 preserve
+    const completed = createMessageWithParts('message-1', 'hello world')
+    if (completed.info.role === 'assistant') {
+      completed.info.time = { created: 1, completed: 99 }
+    }
+    messageStore.setMessages('session-1', [completed])
+
+    expect(messageStore.getSessionState('session-1')?.messages[0].parts[0]).toMatchObject({
+      text: 'hello world',
+    })
+  })
+
+  it('forces completed message part updates from the server', () => {
+    const completed = createMessageWithParts('message-1', 'hello world extra')
+    if (completed.info.role === 'assistant') {
+      completed.info.time = { created: 1, completed: 10 }
+    }
+    messageStore.setMessages('session-1', [completed])
+
+    messageStore.handlePartUpdated({
+      ...createTextPart('part-message-1', 'message-1', 'hello world'),
+    })
+
+    expect(messageStore.getSessionState('session-1')?.messages[0].parts[0]).toMatchObject({
+      text: 'hello world',
+    })
+  })
+
   it('flushes mutable part deltas for multiple sessions in the same frame', () => {
     const rafCallbacks: Array<(time: number) => void> = []
     vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => {
