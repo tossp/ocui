@@ -1257,6 +1257,7 @@ const MarkdownDomBlock = memo(function MarkdownDomBlock({
   isLive?: boolean
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null)
+  const appliedHtmlRef = useRef<string | null>(null)
   const deferredSrc = useDeferredValue(src)
   const renderSrc = isLive ? deferredSrc : src
   const html = useMemo(() => getCachedHtml(renderSrc, isReasoning), [isReasoning, renderSrc])
@@ -1280,6 +1281,9 @@ const MarkdownDomBlock = memo(function MarkdownDomBlock({
   useLayoutEffect(() => {
     const root = rootRef.current
     if (!root) return
+    // html 未变则跳过 DOM morph，避免父树重渲时白干活
+    if (appliedHtmlRef.current === html) return
+    appliedHtmlRef.current = html
     if (!root.hasChildNodes()) {
       root.innerHTML = html
       decorateMarkdownDom(root)

@@ -96,7 +96,8 @@ function createAxisThumb(axis: 'v' | 'h', vp: HTMLElement, parent: HTMLElement):
     }
   }
 
-  const update = () => {
+  let updateRaf: number | null = null
+  const updateNow = () => {
     const vpRect = vp.getBoundingClientRect()
     const parentRect = parent.getBoundingClientRect()
 
@@ -141,6 +142,14 @@ function createAxisThumb(axis: 'v' | 'h', vp: HTMLElement, parent: HTMLElement):
       thumb.style.left = `${vpRect.left - parentRect.left + thumbX}px`
       thumb.style.bottom = `${parentRect.bottom - vpRect.bottom}px`
     }
+  }
+  // 同帧多次 scroll/resize 合并为一次布局读，避免流式贴底时连环 getBoundingClientRect
+  const update = () => {
+    if (updateRaf !== null) return
+    updateRaf = requestAnimationFrame(() => {
+      updateRaf = null
+      updateNow()
+    })
   }
 
   // 拖拽
@@ -195,6 +204,8 @@ function createAxisThumb(axis: 'v' | 'h', vp: HTMLElement, parent: HTMLElement):
     thumb.removeEventListener('pointerdown', onThumbDown)
     thumb.removeEventListener('pointerenter', onThumbEnter)
     thumb.removeEventListener('pointerleave', onThumbLeave)
+    if (updateRaf !== null) cancelAnimationFrame(updateRaf)
+    updateRaf = null
     if (fadeTimer) clearTimeout(fadeTimer)
     thumb.remove()
   }
@@ -395,13 +406,19 @@ export function initOverlayScrollbars() {
 
   window.addEventListener('resize', debounceScan, { passive: true })
 
+  // 嵌套滚动会改变 sibling thumb 相对定位；每帧最多全量刷新一次，避免流式贴底时 N×getBoundingClientRect
+  let globalScrollRaf: number | null = null
   document.addEventListener(
     'scroll',
     () => {
-      for (const e of entries.values()) {
-        e.v?.update()
-        e.h?.update()
-      }
+      if (globalScrollRaf !== null) return
+      globalScrollRaf = requestAnimationFrame(() => {
+        globalScrollRaf = null
+        for (const e of entries.values()) {
+          e.v?.update()
+          e.h?.update()
+        }
+      })
     },
     { capture: true, passive: true },
   )

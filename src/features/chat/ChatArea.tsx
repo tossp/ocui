@@ -310,7 +310,7 @@ export const ChatArea = memo(
         messages, visibleMessages: visibleMessagesProp,
         forkTargetIdMap: forkTargetIdMapProp, turnDurationMap: turnDurationMapProp,
         turnLatestAssistantIds: turnLatestAssistantIdsProp,
-        sessionId, isStreaming = false, allowStreamingLayoutAnimation = true,
+        sessionId, isStreaming = false, allowStreamingLayoutAnimation = false,
         loadState = 'idle', loadError, connectionError, onOpenSettings,
         hasMoreHistory = false, onLoadMore, onUndo, onFork, canUndo,
         registerMessage, retryStatus = null, bottomPadding = 0,
