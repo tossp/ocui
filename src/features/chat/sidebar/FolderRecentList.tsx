@@ -748,20 +748,23 @@ function PinnedFolderSection({
 
 function UnavailablePinnedSessionItem({ entry }: { entry: PinnedSessionEntry }) {
   const { t } = useTranslation(['commands'])
+  const title = entry.title || entry.sessionId.slice(0, 12) + '...'
+  // 对齐 minimal SessionListItem：单行布局，只把文字改灰
   return (
-    <div className="group relative flex items-start pl-[6px] pr-3 py-1.5 rounded-md border border-transparent opacity-75">
-      <div className="flex-1 min-w-0 mr-1 group-hover:mr-7 transition-[margin] duration-200">
-        <p className="text-[length:var(--fs-sm)] truncate font-medium text-text-300" title={entry.title}>
-          {entry.title || entry.sessionId.slice(0, 12) + '...'}
-        </p>
-        <div className="flex items-center mt-1 h-4 text-[length:var(--fs-xxs)] text-text-400 gap-1 overflow-hidden">
-          <span className="shrink-0 opacity-60">{t('sessions.unavailable')}</span>
-        </div>
+    <div className="group relative flex items-center gap-2 px-2 py-1.5 select-none text-text-500">
+      <span className="relative shrink-0 flex items-center justify-center size-5" />
+      <div className="flex min-w-0 flex-1 items-center gap-1.5 pr-0 group-hover:pr-8 transition-[padding] duration-200">
+        <span className="min-w-0 flex-1 truncate text-[length:var(--fs-sm)] text-text-500" title={title}>
+          {title}
+        </span>
+        <span className="shrink-0 text-[length:var(--fs-xxs)] text-text-500 group-hover:hidden">
+          {t('sessions.unavailable')}
+        </span>
       </div>
       <button
         type="button"
         onClick={() => pinnedSessionsStore.unpin(entry.sessionId)}
-        className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded text-accent-main-100 hover:text-accent-main-200 opacity-0 group-hover:opacity-100 transition-colors"
+        className="absolute right-2 z-10 p-1 rounded text-accent-main-100 hover:text-accent-main-200 opacity-0 group-hover:opacity-100 transition-opacity"
         title={t('sessions.unpin')}
         aria-label={t('sessions.unpin')}
       >

@@ -28,6 +28,7 @@ import { useLayoutStore, useMessageStore, childSessionStore } from '../../../sto
 import { useBusySessions, useBusyCount } from '../../../store/activeSessionStore'
 import { notificationStore, useNotifications, useUnreadNotificationCount } from '../../../store/notificationStore'
 import { pinnedSessionsStore } from '../../../store/pinnedSessionsStore'
+import { serverStore } from '../../../store/serverStore'
 import type { NotificationEntry } from '../../../store/notificationStore'
 import {
   updateSession,
@@ -294,7 +295,6 @@ export function SidePanel({
   )
   // 缓存通过 API 拉取的 session 数据（sessions 列表中不存在的）
   const [fetchedSessions, setFetchedSessions] = useState<Record<string, ApiSession>>({})
-  const [unavailablePinnedSessionIds, setUnavailablePinnedSessionIds] = useState<Set<string>>(() => new Set())
 
   // 为 active sessions 构建 sessionId -> ApiSession 的查找表
   const sessionLookup = useMemo(() => {
@@ -335,13 +335,16 @@ export function SidePanel({
         .filter((session): session is ApiSession => Boolean(session)),
     [pinnedEntries, sessionLookup],
   )
+  // 当前 lookup 里没有的置顶：灰色展示，始终可取消
   const unavailablePinnedEntries = useMemo(
-    () =>
-      pinnedEntries.filter(
-        entry => unavailablePinnedSessionIds.has(entry.sessionId) && !sessionLookup.has(entry.sessionId),
-      ),
-    [pinnedEntries, sessionLookup, unavailablePinnedSessionIds],
+    () => pinnedEntries.filter(entry => !sessionLookup.has(entry.sessionId)),
+    [pinnedEntries, sessionLookup],
   )
+
+  // 切服务器时清空跨目录 fetch 缓存，避免串服
+  useEffect(() => {
+    return serverStore.onServerChange(() => setFetchedSessions({}))
+  }, [])
 
   // 异步拉取不在 lookup 中的 active/notification/pinned/selected session
   useEffect(() => {
@@ -353,16 +356,6 @@ export function SidePanel({
     if (selectedSessionId && !sessionLookup.has(selectedSessionId)) {
       allNeeded.push({ sessionId: selectedSessionId, directory: currentDirectory || '' })
     }
-
-    setUnavailablePinnedSessionIds(prev => {
-      if (prev.size === 0) return prev
-      let changed = false
-      const next = new Set(prev)
-      for (const entry of pinnedEntries) {
-        if (sessionLookup.has(entry.sessionId) && next.delete(entry.sessionId)) changed = true
-      }
-      return changed ? next : prev
-    })
 
     const missing = allNeeded.filter(entry => !sessionLookup.has(entry.sessionId))
     if (missing.length === 0) return
@@ -381,21 +374,10 @@ export function SidePanel({
                   directory: session.directory || entry.directory,
                   title: session.title || session.id.slice(0, 12) + '...',
                 })
-                setUnavailablePinnedSessionIds(prev => {
-                  if (!prev.has(session.id)) return prev
-                  const next = new Set(prev)
-                  next.delete(session.id)
-                  return next
-                })
               }
             }
           } catch {
-            if (!cancelled && entry.pinned) {
-              setUnavailablePinnedSessionIds(prev => {
-                if (prev.has(entry.sessionId)) return prev
-                return new Set(prev).add(entry.sessionId)
-              })
-            }
+            // 拉失败则继续留在 unavailablePinnedEntries
           }
         }),
       )
@@ -1281,6 +1263,8 @@ export function SidePanel({
                   inlineChildSessions={inlineChildSessions}
                   onSelectChildSession={handleSelectActive}
                   pinnedDividerAfterIds={pinnedDividerAfterIds}
+                  unavailablePinnedEntries={unavailablePinnedEntries}
+                  availablePinnedCount={resolvedPinnedSessions.length}
                   isEditMode={isEditMode}
                   selectedSessionIds={selectedSessionIds}
                   onToggleSessionSelection={toggleSessionSelection}

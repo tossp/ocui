@@ -2,8 +2,11 @@
 // PinnedSessionsStore — 置顶对话状态管理
 // ============================================
 //
-// 跨工作区持久化的置顶会话列表。
+// 按服务器隔离的置顶会话列表（跨工作区持久化）。
 // 存储 { sessionId, directory, title } 以便未加载 session 详情时也能渲染。
+
+import { serverStorage } from '../utils/perServerStorage'
+import { serverStore } from './serverStore'
 
 export interface PinnedSessionEntry {
   sessionId: string
@@ -11,29 +14,58 @@ export interface PinnedSessionEntry {
   title: string
 }
 
+// 新：srv:{serverId}:opencode-pinned-sessions（serverStorage）
+// 旧：localStorage 全局 opencode-pinned-sessions（一次性迁到当前 active server）
 const STORAGE_KEY = 'opencode-pinned-sessions'
+
+function parseEntries(raw: unknown): PinnedSessionEntry[] {
+  if (!Array.isArray(raw)) return []
+  return raw.filter(
+    (item): item is PinnedSessionEntry =>
+      typeof item === 'object' &&
+      item !== null &&
+      typeof (item as PinnedSessionEntry).sessionId === 'string' &&
+      typeof (item as PinnedSessionEntry).directory === 'string' &&
+      typeof (item as PinnedSessionEntry).title === 'string',
+  )
+}
+
+function loadEntries(): PinnedSessionEntry[] {
+  // 已有 per-server key 时直接用（含空数组）
+  if (serverStorage.get(STORAGE_KEY) !== null) {
+    return parseEntries(serverStorage.getJSON<unknown>(STORAGE_KEY))
+  }
+
+  // 一次性迁移：旧全局列表归到当前 active server
+  try {
+    const legacyRaw = localStorage.getItem(STORAGE_KEY)
+    if (legacyRaw) {
+      const migrated = parseEntries(JSON.parse(legacyRaw))
+      serverStorage.setJSON(STORAGE_KEY, migrated)
+      localStorage.removeItem(STORAGE_KEY)
+      return migrated
+    }
+  } catch {
+    // ignore migration failures
+  }
+
+  return []
+}
 
 class PinnedSessionsStore {
   private entries: PinnedSessionEntry[] = []
   private listeners = new Set<() => void>()
 
   constructor() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY)
-      if (raw) {
-        const parsed = JSON.parse(raw)
-        if (Array.isArray(parsed)) {
-          this.entries = parsed.filter(
-            (item): item is PinnedSessionEntry =>
-              typeof item.sessionId === 'string' &&
-              typeof item.directory === 'string' &&
-              typeof item.title === 'string',
-          )
-        }
-      }
-    } catch {
-      this.entries = []
-    }
+    this.reload()
+    serverStore.onServerChange(() => {
+      this.reload()
+      this.emit()
+    })
+  }
+
+  private reload() {
+    this.entries = loadEntries()
   }
 
   isPinned(sessionId: string): boolean {
@@ -78,11 +110,7 @@ class PinnedSessionsStore {
   }
 
   private persist() {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.entries))
-    } catch {
-      /* ignore persistence failures */
-    }
+    serverStorage.setJSON(STORAGE_KEY, this.entries)
   }
 
   subscribe = (fn: () => void): (() => void) => {

@@ -10,7 +10,7 @@ import { notificationStore, useHasUnreadCompletedNotification } from '../../stor
 import { SessionChildrenSlot } from '../chat/sidebar/SessionChildrenSlot'
 import type { ApiSession } from '../../api'
 import { startInternalDrag } from '../../lib/internalDragCore'
-import { pinnedSessionsStore } from '../../store/pinnedSessionsStore'
+import { pinnedSessionsStore, type PinnedSessionEntry } from '../../store/pinnedSessionsStore'
 
 interface SessionListProps {
   sessions: ApiSession[]
@@ -36,6 +36,10 @@ interface SessionListProps {
   inlineChildSessions?: Map<string, ApiSession[]>
   onSelectChildSession?: (session: ApiSession) => void
   pinnedDividerAfterIds?: Set<string>
+  /** 拉不到的置顶（灰色展示，可取消） */
+  unavailablePinnedEntries?: PinnedSessionEntry[]
+  /** SidePanel 排好的可用置顶数量（flat 列表里用来定位插入点） */
+  availablePinnedCount?: number
   // ---- 编辑模式 ----
   isEditMode?: boolean
   selectedSessionIds?: Set<string>
@@ -69,6 +73,8 @@ export function SessionList({
   inlineChildSessions,
   onSelectChildSession,
   pinnedDividerAfterIds,
+  unavailablePinnedEntries = [],
+  availablePinnedCount = 0,
   isEditMode = false,
   selectedSessionIds,
   onToggleSessionSelection,
@@ -77,6 +83,9 @@ export function SessionList({
   const { preferTouchUi } = useInputCapabilities()
   const listRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const hasUnavailablePinned = unavailablePinnedEntries.length > 0
+  // SidePanel 把可用置顶排在 sessions[0..availablePinnedCount)；不可用接在这段后面
+  const lastAvailablePinnedIndex = availablePinnedCount > 0 ? availablePinnedCount - 1 : -1
 
   const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; sessionId: string | null }>({
     isOpen: false,
@@ -178,11 +187,11 @@ export function SessionList({
         ref={listRef}
         className={`flex-1 overflow-y-auto custom-scrollbar px-2 ${isCompact ? 'pb-3 space-y-2' : 'pb-4 space-y-4'}`}
       >
-        {isLoading && sessions.length === 0 ? (
+        {isLoading && sessions.length === 0 && !hasUnavailablePinned ? (
           <div className="flex items-center justify-center py-8">
             <LoadingSpinner />
           </div>
-        ) : sessions.length === 0 ? (
+        ) : sessions.length === 0 && !hasUnavailablePinned ? (
           <div className="flex flex-col items-center justify-center py-12 text-text-400 opacity-60">
             <p className="text-[length:var(--fs-sm)]">
               {search ? t('common:noMatchesFound') : t('sessions.noChatsYet')}
@@ -190,73 +199,92 @@ export function SessionList({
           </div>
         ) : showGroups ? (
           // Grouped View
-          SESSION_GROUP_ORDER.map(group => {
-            const groupSessions = groupedSessions[group]
-            if (groupSessions.length === 0) return null
-            return (
-              <div key={group}>
-                <h3 className="px-3 mb-1.5 mt-2 text-[length:var(--fs-xxs)] font-bold text-text-400/60 uppercase tracking-widest select-none">
-                  {t(`sessions.groups.${group}`)}
-                </h3>
-                <div className={isEditMode ? 'space-y-0' : 'space-y-0.5'}>
-                  {groupSessions.map((session, index) => {
-                    const isChecked = selectedSessionIds?.has(session.id) ?? false
-                    const prevChecked =
-                      isEditMode && index > 0 && (selectedSessionIds?.has(groupSessions[index - 1].id) ?? false)
-                    const nextChecked =
-                      isEditMode &&
-                      index < groupSessions.length - 1 &&
-                      (selectedSessionIds?.has(groupSessions[index + 1].id) ?? false)
-                    return (
-                    <div key={session.id}>
-                      <SessionListItem
-                        session={session}
-                        isSelected={session.id === selectedId}
-                        onSelect={() => onSelect(session)}
-                        onDelete={() => setDeleteConfirm({ isOpen: true, sessionId: session.id })}
-                        onRename={newTitle => onRename(session.id, newTitle)}
-                        preferTouchUi={preferTouchUi}
-                        density={density}
-                        showStats={showStats}
-                        showDirectory={showDirectory}
-                        isEditMode={isEditMode}
-                        isChecked={isChecked}
-                        checkedPrev={prevChecked}
-                        checkedNext={nextChecked}
-                        onToggleCheck={
-                          onToggleSessionSelection
-                            ? options => onToggleSessionSelection(session.id, options)
-                            : undefined
-                        }
-                      />
-                      {onSelectChildSession &&
-                        (expandedChildSessionIds?.has(session.id) || inlineChildSessions?.has(session.id)) && (
-                          <SessionChildrenSlot
-                            parentSession={session}
-                            selectedSessionId={selectedId}
-                            fetchAll={expandedChildSessionIds?.has(session.id)}
-                            children={inlineChildSessions?.get(session.id)}
-                            onSelect={onSelectChildSession}
-                            isEditMode={isEditMode}
-                            selectedSessionIds={selectedSessionIds}
-                            onToggleSessionSelection={onToggleSessionSelection}
-                          />
-                        )}
-                    </div>
-                    )
-                  })}
-                </div>
+          <>
+            {hasUnavailablePinned && (
+              <div className={`${isEditMode ? 'space-y-0' : 'space-y-0.5'} mt-1`}>
+                {unavailablePinnedEntries.map(entry => (
+                  <UnavailablePinnedSessionItem key={entry.sessionId} entry={entry} density={density} />
+                ))}
+                {sessions.length > 0 && <div className="mx-3 my-1.5 h-px bg-border-200/45" />}
               </div>
-            )
-          })
+            )}
+            {SESSION_GROUP_ORDER.map(group => {
+              const groupSessions = groupedSessions[group]
+              if (groupSessions.length === 0) return null
+              return (
+                <div key={group}>
+                  <h3 className="px-3 mb-1.5 mt-2 text-[length:var(--fs-xxs)] font-bold text-text-400/60 uppercase tracking-widest select-none">
+                    {t(`sessions.groups.${group}`)}
+                  </h3>
+                  <div className={isEditMode ? 'space-y-0' : 'space-y-0.5'}>
+                    {groupSessions.map((session, index) => {
+                      const isChecked = selectedSessionIds?.has(session.id) ?? false
+                      const prevChecked =
+                        isEditMode && index > 0 && (selectedSessionIds?.has(groupSessions[index - 1].id) ?? false)
+                      const nextChecked =
+                        isEditMode &&
+                        index < groupSessions.length - 1 &&
+                        (selectedSessionIds?.has(groupSessions[index + 1].id) ?? false)
+                      return (
+                        <div key={session.id}>
+                          <SessionListItem
+                            session={session}
+                            isSelected={session.id === selectedId}
+                            onSelect={() => onSelect(session)}
+                            onDelete={() => setDeleteConfirm({ isOpen: true, sessionId: session.id })}
+                            onRename={newTitle => onRename(session.id, newTitle)}
+                            preferTouchUi={preferTouchUi}
+                            density={density}
+                            showStats={showStats}
+                            showDirectory={showDirectory}
+                            isEditMode={isEditMode}
+                            isChecked={isChecked}
+                            checkedPrev={prevChecked}
+                            checkedNext={nextChecked}
+                            onToggleCheck={
+                              onToggleSessionSelection
+                                ? options => onToggleSessionSelection(session.id, options)
+                                : undefined
+                            }
+                          />
+                          {onSelectChildSession &&
+                            (expandedChildSessionIds?.has(session.id) || inlineChildSessions?.has(session.id)) && (
+                              <SessionChildrenSlot
+                                parentSession={session}
+                                selectedSessionId={selectedId}
+                                fetchAll={expandedChildSessionIds?.has(session.id)}
+                                children={inlineChildSessions?.get(session.id)}
+                                onSelect={onSelectChildSession}
+                                isEditMode={isEditMode}
+                                selectedSessionIds={selectedSessionIds}
+                                onToggleSessionSelection={onToggleSessionSelection}
+                              />
+                            )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
+          </>
         ) : (
-          // Flat View
+          // Flat View：可用置顶前缀 → 不可用置顶 → 分隔线 → 其余
           <div className={`${isEditMode ? 'space-y-0' : 'space-y-0.5'} mt-1`}>
+            {lastAvailablePinnedIndex < 0 && hasUnavailablePinned && (
+              <>
+                {unavailablePinnedEntries.map(entry => (
+                  <UnavailablePinnedSessionItem key={entry.sessionId} entry={entry} density={density} />
+                ))}
+                {sessions.length > 0 && <div className="mx-3 my-1.5 h-px bg-border-200/45" />}
+              </>
+            )}
             {sessions.map((session, index) => {
               const inlineChildren = inlineChildSessions?.get(session.id)
               const shouldFetchAll = expandedChildSessionIds?.has(session.id)
               const hasChildren = shouldFetchAll || (inlineChildren && inlineChildren.length > 0)
               const showPinnedDivider = pinnedDividerAfterIds?.has(session.id)
+              const showUnavailableAfter = hasUnavailablePinned && index === lastAvailablePinnedIndex
               const isChecked = selectedSessionIds?.has(session.id) ?? false
               const prevChecked =
                 isEditMode && index > 0 && (selectedSessionIds?.has(sessions[index - 1].id) ?? false)
@@ -297,6 +325,10 @@ export function SessionList({
                       onToggleSessionSelection={onToggleSessionSelection}
                     />
                   )}
+                  {showUnavailableAfter &&
+                    unavailablePinnedEntries.map(entry => (
+                      <UnavailablePinnedSessionItem key={entry.sessionId} entry={entry} density={density} />
+                    ))}
                   {showPinnedDivider && <div className="mx-3 my-1.5 h-px bg-border-200/45" />}
                 </div>
               )
@@ -862,6 +894,51 @@ export function SessionListItem({
           </button>
         </div>
       )}
+    </div>
+  )
+}
+
+// ============================================
+// Unavailable pinned (gray title, unpin only)
+// ============================================
+
+function UnavailablePinnedSessionItem({
+  entry,
+  density = 'default',
+}: {
+  entry: PinnedSessionEntry
+  density?: 'default' | 'compact' | 'minimal'
+}) {
+  const { t } = useTranslation(['commands'])
+  const title = entry.title || entry.sessionId.slice(0, 12) + '...'
+  const isCompact = density === 'compact'
+  const padding = isCompact ? 'pl-[6px] pr-3 py-2' : 'px-3 py-2.5'
+
+  return (
+    <div className={`group relative flex items-start ${padding} border border-transparent`}>
+      <div className="flex-1 min-w-0 mr-1 group-hover:mr-8 transition-[margin] duration-200">
+        <p
+          className={`${isCompact ? 'text-[length:var(--fs-md)]' : 'text-[length:var(--fs-base)]'} truncate font-medium text-text-500`}
+          title={title}
+        >
+          {title}
+        </p>
+        <div className={`flex items-center ${isCompact ? 'mt-1' : 'mt-1.5'} h-4 text-[length:var(--fs-xxs)] text-text-500`}>
+          <span>{t('sessions.unavailable')}</span>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={e => {
+          e.stopPropagation()
+          pinnedSessionsStore.unpin(entry.sessionId)
+        }}
+        className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-accent-main-100 hover:text-accent-main-200 opacity-0 group-hover:opacity-100 transition-colors"
+        title={t('sessions.unpin')}
+        aria-label={t('sessions.unpin')}
+      >
+        <PinIcon className="w-3.5 h-3.5" />
+      </button>
     </div>
   )
 }
