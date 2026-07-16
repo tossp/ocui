@@ -13,7 +13,8 @@
   "chatArea": {
     "loadingSession": "Loading session...",
     "loadingHistory": "Loading history...",
-    "dropFolderToAddProject": "Drop a folder to add a project"
+    "dropFolderToAddProject": "Add as project",
+    "dropFolderToAddProjectHint": "Drop a folder here"
   },
   "emptyState": {
     "title": "Start a new conversation",

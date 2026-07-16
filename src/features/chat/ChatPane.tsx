@@ -15,6 +15,7 @@ import { OutlineIndex } from '../../components/OutlineIndex'
 import { PaneHeader } from './PaneHeader'
 import { PaneDropOverlay, resolveDropZone, type DropZone, type PaneDropOverlayHandle } from './PaneDropOverlay'
 import { useFolderProjectDrop } from './useFolderProjectDrop'
+import { FolderProjectDropOverlay } from './FolderProjectDropOverlay'
 import { useChatSession, useModels, useModelSelection } from '../../hooks'
 import { useServerStore } from '../../hooks/useServerStore'
 import { useCancelHint } from '../../hooks/useCancelHint'
@@ -1005,13 +1006,7 @@ export const ChatPane = memo(function ChatPane({
         )}
         {chatContent}
         <PaneDropOverlay ref={overlayRef} />
-        {isFolderDropActive && (
-          <div className="absolute inset-0 z-[5] pointer-events-none flex items-center justify-center bg-accent-main-100/5 backdrop-blur-[1px]">
-            <span className="rounded-xl border border-accent-main-100/40 bg-bg-100/90 px-4 py-2 text-[length:var(--fs-base)] font-medium text-accent-main-100 shadow-sm">
-              {t('chatArea.dropFolderToAddProject')}
-            </span>
-          </div>
-        )}
+        <FolderProjectDropOverlay active={isFolderDropActive} />
       </div>
     </SessionNavigationContext.Provider>
   )

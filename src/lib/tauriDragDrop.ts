@@ -10,7 +10,7 @@ export interface DroppedPathInfo {
   name: string
 }
 
-function getDropClientPoints(position: TauriDropPosition): Array<{ x: number; y: number }> {
+export function getTauriDropClientPoints(position: TauriDropPosition): Array<{ x: number; y: number }> {
   const directPoint = { x: position.x, y: position.y }
   const scale = window.devicePixelRatio || 1
   if (scale === 1) return [directPoint]
@@ -24,7 +24,7 @@ export function isTauriDropPointInsideElement(
 ): boolean {
   if (!element) return false
   const rect = element.getBoundingClientRect()
-  return getDropClientPoints(position).some(
+  return getTauriDropClientPoints(position).some(
     ({ x, y }) => x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom,
   )
 }

@@ -10,8 +10,8 @@
  *   expensive ChatPane subtree — only this tiny overlay re-renders.
  *
  * Visual:
- * - Pure visual highlight (no text labels). Follows VS Code / JetBrains
- *   conventions where the mouse is the user's focal point during a drag.
+ * - Pure visual highlight (no text labels). The mouse is the user's
+ *   focal point during a drag, so labels stay out of the way.
  *
  * Hit testing:
  * - Center rectangle: inner 40% x 40% of the pane → replace session
@@ -34,8 +34,18 @@ export interface PaneDropOverlayHandle {
   setZone(zone: DropZone | null): void
 }
 
-/** Inner half-size of the central replace zone, normalized */
-const CENTER_HALF = 0.2
+/** Inner half-size of the central hit zone, normalized (40%×40% 判定) */
+export const PANE_CENTER_HALF = 0.2
+
+/**
+ * 中心区视觉框（比 hit 略大，与历史 session drop 一致：20% 边距 / 60% 宽高）
+ */
+export const PANE_CENTER_STYLE = {
+  left: '20%',
+  top: '20%',
+  width: '60%',
+  height: '60%',
+} as const
 
 /**
  * Resolve which drop zone a normalized point falls into.
@@ -47,7 +57,7 @@ export function resolveDropZone(point: DropPoint | null): DropZone | null {
   if (xRel < 0 || xRel > 1 || yRel < 0 || yRel > 1) return null
 
   // Center rectangle wins first
-  if (Math.abs(xRel - 0.5) < CENTER_HALF && Math.abs(yRel - 0.5) < CENTER_HALF) {
+  if (Math.abs(xRel - 0.5) < PANE_CENTER_HALF && Math.abs(yRel - 0.5) < PANE_CENTER_HALF) {
     return 'center'
   }
 
@@ -93,7 +103,7 @@ const DropZoneVisual = memo(function DropZoneVisual({ zone }: { zone: DropZone }
   const highlightStyle: React.CSSProperties = (() => {
     switch (zone) {
       case 'center':
-        return { left: '20%', top: '20%', width: '60%', height: '60%' }
+        return { ...PANE_CENTER_STYLE }
       case 'left':
         return { left: 0, top: 0, width: '50%', height: '100%' }
       case 'right':
