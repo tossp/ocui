@@ -70,6 +70,20 @@ function sessionCacheKey(sessionId: string, processCollapseEnabled: boolean): st
   return `${sessionId}:${processCollapseEnabled ? 'process' : 'flat'}`
 }
 
+/** 流式热行 index：末 1～2 行，避免 virtual range 边界卸载正在生成的行 */
+export function getStreamingHotIndexes(count: number, isStreaming: boolean): number[] {
+  if (!isStreaming || count <= 0) return []
+  if (count === 1) return [0]
+  return [count - 2, count - 1]
+}
+
+/** 合并 range 与 pin index（resize pin + 流式热行） */
+export function mergeVirtualRangeIndexes(base: number[], ...pinnedGroups: number[][]): number[] {
+  const pinned = pinnedGroups.flat()
+  if (pinned.length === 0) return base
+  return [...new Set([...pinned, ...base])].sort((a, b) => a - b)
+}
+
 // ─── 接口定义（保持不变） ───────────────────────────────────────
 
 interface ChatAreaProps {
@@ -457,6 +471,9 @@ export const ChatArea = memo(
       const resizePinnedRef = useRef<number[]>([])
       const resizePinFrame = useRef<number | undefined>(undefined)
       const resizeAnchorScheduled = useRef(false)
+      /** 流式热行 pin：ref 更新，不碰贴底/SSE 路径 */
+      const hotPinnedRef = useRef<number[]>([])
+      hotPinnedRef.current = getStreamingHotIndexes(timeline.length, isStreaming)
 
       // 冷启动估在底部：有 cache 用 cache 总高，否则 estimate*count + paddingEnd。
       // 不用 MAX_SAFE_INTEGER（单列 range 不会向前扩，只会渲染最后一项）。
@@ -494,8 +511,7 @@ export const ChatArea = memo(
         directDomUpdatesMode: 'transform',
         rangeExtractor: (range) => {
           const indexes = defaultRangeExtractor({ ...range, overscan: renderOverscan })
-          if (resizePinnedRef.current.length === 0) return indexes
-          return [...new Set([...resizePinnedRef.current, ...indexes])].sort((a, b) => a - b)
+          return mergeVirtualRangeIndexes(indexes, resizePinnedRef.current, hotPinnedRef.current)
         },
       })
 

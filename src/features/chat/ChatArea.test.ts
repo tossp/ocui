@@ -15,6 +15,7 @@ import {
   reuseProcessTimelineItems,
   seedMeasuredPageHeightsFromPreviousPages,
 } from './chatPageModel'
+import { getStreamingHotIndexes, mergeVirtualRangeIndexes } from './ChatArea'
 import { buildVisibleMessageEntries, getVisibleMessageForkTargetId } from './chatAreaVisibility'
 import { buildChatPageViewModel } from './useChatPageViewModel'
 import type { Message, MessageError, Part, ToolPart, ReasoningPart } from '../../types/message'
@@ -450,6 +451,20 @@ describe('buildTurnLatestAssistantIdSet', () => {
     expect(latest.has('assistant-1')).toBe(false)
     expect(latest.has('assistant-2')).toBe(true)
     expect(latest.has('assistant-3')).toBe(true)
+  })
+})
+
+describe('streaming virtual range helpers', () => {
+  it('pins the last one or two timeline indexes while streaming', () => {
+    expect(getStreamingHotIndexes(0, true)).toEqual([])
+    expect(getStreamingHotIndexes(5, false)).toEqual([])
+    expect(getStreamingHotIndexes(1, true)).toEqual([0])
+    expect(getStreamingHotIndexes(5, true)).toEqual([3, 4])
+  })
+
+  it('merges pinned indexes into the virtual range without duplicates', () => {
+    expect(mergeVirtualRangeIndexes([1, 2, 3], [], [])).toEqual([1, 2, 3])
+    expect(mergeVirtualRangeIndexes([1, 2, 3], [8, 9], [3, 9])).toEqual([1, 2, 3, 8, 9])
   })
 })
 
