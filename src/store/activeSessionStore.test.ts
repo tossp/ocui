@@ -44,4 +44,51 @@ describe('activeSessionStore scoped refresh handling', () => {
       description: 'Need approval',
     })
   })
+
+  it('reuses the busySessions array reference when content is unchanged', () => {
+    activeSessionStore.initialize({
+      root: { type: 'busy' },
+    })
+    activeSessionStore.setSessionMeta('root', 'Root', '/repo')
+
+    const first = activeSessionStore.getBusySessionsSnapshot()
+    activeSessionStore.mergeStatusRefresh({
+      root: { type: 'busy' },
+    })
+    const second = activeSessionStore.getBusySessionsSnapshot()
+
+    expect(second).toBe(first)
+    expect(second).toEqual([
+      {
+        sessionId: 'root',
+        status: { type: 'busy' },
+        title: 'Root',
+        directory: '/repo',
+        pendingAction: undefined,
+      },
+    ])
+  })
+
+  it('replaces the busySessions array reference when status content changes', () => {
+    activeSessionStore.initialize({
+      root: { type: 'busy' },
+    })
+    const first = activeSessionStore.getBusySessionsSnapshot()
+
+    activeSessionStore.updateStatus('root', {
+      type: 'retry',
+      attempt: 1,
+      message: 'retrying',
+      next: 1000,
+    })
+    const second = activeSessionStore.getBusySessionsSnapshot()
+
+    expect(second).not.toBe(first)
+    expect(second[0]?.status).toEqual({
+      type: 'retry',
+      attempt: 1,
+      message: 'retrying',
+      next: 1000,
+    })
+  })
 })

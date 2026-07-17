@@ -383,21 +383,30 @@ export function SidePanel({
 
   // 异步拉取不在 lookup 中的 active/notification/pinned/selected session
   useEffect(() => {
-    if (!missingSessionsKey) return
-
+    const neededIds = new Set<string>()
     const missing: Array<{ sessionId: string; directory?: string; pinned?: boolean }> = []
-    for (const token of missingSessionsKey.split('|')) {
-      const [sessionId, directory, pinned] = token.split('\0')
-      if (!sessionId) continue
-      if (sessionLookup.has(sessionId)) continue
-      if (inflightSessionIdsRef.current.has(sessionId)) continue
-      if (failedSessionIdsRef.current.has(sessionId)) continue
-      missing.push({
-        sessionId,
-        directory: directory || undefined,
-        pinned: pinned === '1',
-      })
+
+    if (missingSessionsKey) {
+      for (const token of missingSessionsKey.split('|')) {
+        const [sessionId, directory, pinned] = token.split('\0')
+        if (!sessionId) continue
+        neededIds.add(sessionId)
+        if (sessionLookup.has(sessionId)) continue
+        if (inflightSessionIdsRef.current.has(sessionId)) continue
+        if (failedSessionIdsRef.current.has(sessionId)) continue
+        missing.push({
+          sessionId,
+          directory: directory || undefined,
+          pinned: pinned === '1',
+        })
+      }
     }
+
+    // 不再需要的失败记录清掉，session 再次出现时允许重试
+    for (const sessionId of [...failedSessionIdsRef.current]) {
+      if (!neededIds.has(sessionId)) failedSessionIdsRef.current.delete(sessionId)
+    }
+
     if (missing.length === 0) return
 
     for (const entry of missing) {
