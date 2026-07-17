@@ -496,7 +496,8 @@ export const ChatArea = memo(
         initialMeasurementsCache: initialCacheRef.current,
         estimateSize: (index) => estimateTimelineItemSize(timeline[index]),
         getItemKey: (i) => timeline[i]?.key ?? `removed:${i}`,
-        paddingEnd: spacerHeight,
+        // 输入框占位放在消息区外（retry/error 之后），避免重试提示被压到输入框下面
+        paddingEnd: 0,
         scrollEndThreshold: 80,
         // 预写 total height，避免浏览器把新 offset clamp 到旧高度（oc 同款）
         scrollToFn: (offset, options, instance) => {
@@ -566,8 +567,11 @@ export const ChatArea = memo(
               resizeAnchorScheduled.current = false
               if (!shouldAnchorBottom()) return
               if (!(virtualizer as any).isAtEnd?.(80)) return
-              autoMarkAuto(scrollRef.current)
-              virtualizer.scrollToEnd()
+              const el = scrollRef.current
+              if (!el) return
+              autoMarkAuto(el)
+              const max = Math.max(0, el.scrollHeight - el.clientHeight)
+              if (max - el.scrollTop >= 2) el.scrollTop = max
             })
           }
         }
@@ -672,10 +676,13 @@ export const ChatArea = memo(
       }, [autoSetContentRef, virtualizer, computeScrollState])
 
       const pinToBottom = useCallback(() => {
-        if (timeline.length === 0) return
-        autoMarkAuto(scrollRef.current)
-        virtualizer.scrollToEnd()
-      }, [autoMarkAuto, virtualizer, timeline.length])
+        // 必须滚到整页底（含 retry/error + 输入框 spacer），不能只 scrollToEnd 虚拟消息区
+        const el = scrollRef.current
+        if (!el) return
+        autoMarkAuto(el)
+        const max = Math.max(0, el.scrollHeight - el.clientHeight)
+        if (max - el.scrollTop >= 2) el.scrollTop = max
+      }, [autoMarkAuto])
 
       // ── 事件处理 ──
       const onScroll = useCallback(() => {
@@ -734,6 +741,19 @@ export const ChatArea = memo(
         if (!shouldAnchorBottom() || prependLoading.current) return
         pinToBottom()
       }, [timeline.length, pinToBottom])
+
+      // retry/error 出现消失、输入框高度变 → 底部 footer 高度变，贴底时要跟着滚
+      // 否则重试条进出后 scrollTop 停在旧位置，看起来没贴底
+      const footerPinKey = `${retryStatus ? 'r' : ''}|${loadError || connectionError ? 'e' : ''}|${spacerHeight}`
+      useLayoutEffect(() => {
+        if (!shouldAnchorBottom() || prependLoading.current) return
+        pinToBottom()
+        // 展开重试详情等会在下一帧才量完高度
+        const frame = requestAnimationFrame(() => {
+          if (shouldAnchorBottom()) pinToBottom()
+        })
+        return () => cancelAnimationFrame(frame)
+      }, [footerPinKey, pinToBottom])
 
       // 用户返回底部时重新贴底
       const userScrolledInit = useRef(false)
@@ -910,6 +930,8 @@ export const ChatArea = memo(
               })}
             </div>
 
+            {/* 顺序必须是：消息 → 重试/错误提示 → 输入框占位。
+                旧 Virtuoso Footer 就是这样；换 virtualizer 后 paddingEnd 在前、提示在后，会叠到输入框下。 */}
             {retryStatus && (
               <div className={`w-full ${maxWidthClass} mx-auto ${paddingClass}`}>
                 <div className="flex justify-start">
@@ -938,6 +960,8 @@ export const ChatArea = memo(
                 </div>
               </div>
             )}
+
+            <div style={{ height: spacerHeight }} aria-hidden="true" />
           </div>
         </div>
       )
