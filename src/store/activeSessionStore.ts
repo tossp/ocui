@@ -50,6 +50,30 @@ interface ActiveSessionState {
 
 type Subscriber = () => void
 
+function isSameBusySessions(a: ActiveSessionEntry[], b: ActiveSessionEntry[]): boolean {
+  if (a === b) return true
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    const left = a[i]
+    const right = b[i]
+    if (left.sessionId !== right.sessionId) return false
+    if (left.title !== right.title || left.directory !== right.directory) return false
+    if (left.pendingAction?.type !== right.pendingAction?.type) return false
+    if (left.pendingAction?.description !== right.pendingAction?.description) return false
+    if (left.status.type !== right.status.type) return false
+    if (left.status.type === 'retry' && right.status.type === 'retry') {
+      if (
+        left.status.attempt !== right.status.attempt ||
+        left.status.message !== right.status.message ||
+        left.status.next !== right.status.next
+      ) {
+        return false
+      }
+    }
+  }
+  return true
+}
+
 // ============================================
 // Store
 // ============================================
@@ -101,7 +125,10 @@ class ActiveSessionStore {
           pendingAction: pending ? { type: pending.type, description: pending.description } : undefined,
         } as ActiveSessionEntry
       })
-    this.cachedBusySessions = entries
+    // 内容不变时复用旧数组引用，避免 useBusySessions 订阅方因引用抖动重渲染
+    if (!isSameBusySessions(this.cachedBusySessions, entries)) {
+      this.cachedBusySessions = entries
+    }
     this.cachedBusyCount = entries.length
   }
 

@@ -295,6 +295,9 @@ export function SidePanel({
   )
   // 缓存通过 API 拉取的 session 数据（sessions 列表中不存在的）
   const [fetchedSessions, setFetchedSessions] = useState<Record<string, ApiSession>>({})
+  // 防止 busySessions 等数组引用抖动时 cancel+重拉，导致 /session 风暴
+  const inflightSessionIdsRef = useRef(new Set<string>())
+  const failedSessionIdsRef = useRef(new Set<string>())
 
   // 为 active sessions 构建 sessionId -> ApiSession 的查找表
   const sessionLookup = useMemo(() => {
@@ -343,53 +346,84 @@ export function SidePanel({
 
   // 切服务器时清空跨目录 fetch 缓存，避免串服
   useEffect(() => {
-    return serverStore.onServerChange(() => setFetchedSessions({}))
+    return serverStore.onServerChange(() => {
+      setFetchedSessions({})
+      inflightSessionIdsRef.current.clear()
+      failedSessionIdsRef.current.clear()
+    })
   }, [])
+
+  // 需要补全的 session 集合：用内容 key 稳定，避免 busySessions 数组引用抖动触发重拉
+  const missingSessionsKey = useMemo(() => {
+    const byId = new Map<string, { sessionId: string; directory?: string; pinned?: boolean }>()
+    const add = (sessionId: string, directory?: string, pinned?: boolean) => {
+      if (sessionLookup.has(sessionId)) return
+      const existing = byId.get(sessionId)
+      if (existing) {
+        byId.set(sessionId, {
+          sessionId,
+          directory: existing.directory || directory,
+          pinned: existing.pinned || pinned,
+        })
+        return
+      }
+      byId.set(sessionId, { sessionId, directory, pinned })
+    }
+
+    for (const entry of busySessions) add(entry.sessionId, entry.directory)
+    for (const entry of notifications) add(entry.sessionId, entry.directory)
+    for (const entry of pinnedEntries) add(entry.sessionId, entry.directory, true)
+    if (selectedSessionId) add(selectedSessionId, currentDirectory || undefined)
+
+    return Array.from(byId.values())
+      .map(e => `${e.sessionId}\0${e.directory ?? ''}\0${e.pinned ? '1' : '0'}`)
+      .sort()
+      .join('|')
+  }, [busySessions, notifications, pinnedEntries, sessionLookup, selectedSessionId, currentDirectory])
 
   // 异步拉取不在 lookup 中的 active/notification/pinned/selected session
   useEffect(() => {
-    const allNeeded: Array<{ sessionId: string; directory?: string; pinned?: boolean }> = [
-      ...busySessions.map(e => ({ sessionId: e.sessionId, directory: e.directory })),
-      ...notifications.map(e => ({ sessionId: e.sessionId, directory: e.directory })),
-      ...pinnedEntries.map(e => ({ sessionId: e.sessionId, directory: e.directory, pinned: true })),
-    ]
-    if (selectedSessionId && !sessionLookup.has(selectedSessionId)) {
-      allNeeded.push({ sessionId: selectedSessionId, directory: currentDirectory || '' })
-    }
+    if (!missingSessionsKey) return
 
-    const missing = allNeeded.filter(entry => !sessionLookup.has(entry.sessionId))
+    const missing: Array<{ sessionId: string; directory?: string; pinned?: boolean }> = []
+    for (const token of missingSessionsKey.split('|')) {
+      const [sessionId, directory, pinned] = token.split('\0')
+      if (!sessionId) continue
+      if (sessionLookup.has(sessionId)) continue
+      if (inflightSessionIdsRef.current.has(sessionId)) continue
+      if (failedSessionIdsRef.current.has(sessionId)) continue
+      missing.push({
+        sessionId,
+        directory: directory || undefined,
+        pinned: pinned === '1',
+      })
+    }
     if (missing.length === 0) return
 
-    let cancelled = false
-    const fetchMissing = async () => {
-      const results: Record<string, ApiSession> = {}
-      await Promise.allSettled(
-        missing.map(async entry => {
-          try {
-            const session = await getSession(entry.sessionId, entry.directory)
-            if (!cancelled) {
-              results[session.id] = session
-              if (entry.pinned) {
-                pinnedSessionsStore.update(session.id, {
-                  directory: session.directory || entry.directory,
-                  title: session.title || session.id.slice(0, 12) + '...',
-                })
-              }
-            }
-          } catch {
-            // 拉失败则继续留在 unavailablePinnedEntries
+    for (const entry of missing) {
+      inflightSessionIdsRef.current.add(entry.sessionId)
+    }
+
+    void Promise.allSettled(
+      missing.map(async entry => {
+        try {
+          const session = await getSession(entry.sessionId, entry.directory)
+          inflightSessionIdsRef.current.delete(entry.sessionId)
+          setFetchedSessions(prev => (prev[session.id] ? prev : { ...prev, [session.id]: session }))
+          if (entry.pinned) {
+            pinnedSessionsStore.update(session.id, {
+              directory: session.directory || entry.directory,
+              title: session.title || session.id.slice(0, 12) + '...',
+            })
           }
-        }),
-      )
-      if (!cancelled && Object.keys(results).length > 0) {
-        setFetchedSessions(prev => ({ ...prev, ...results }))
-      }
-    }
-    fetchMissing()
-    return () => {
-      cancelled = true
-    }
-  }, [busySessions, notifications, pinnedEntries, sessionLookup, selectedSessionId, currentDirectory])
+        } catch {
+          inflightSessionIdsRef.current.delete(entry.sessionId)
+          // 失败只记一次，避免 SSE/busy 抖动时无限重试 /session
+          failedSessionIdsRef.current.add(entry.sessionId)
+        }
+      }),
+    )
+  }, [missingSessionsKey, sessionLookup])
 
   // ---- 子 session 展示数据 ----
   const rootSessionIds = useMemo(() => new Set(sessions.map(s => s.id)), [sessions])
