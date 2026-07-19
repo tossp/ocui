@@ -481,9 +481,9 @@ function SavedSnippetItem({
             : 'border-border-200/50 bg-bg-100/40 hover:border-border-300/60 hover:bg-bg-100/60'
         }`}
     >
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex min-h-7 items-center gap-2 flex-wrap">
             <span
               className={`text-[length:var(--fs-sm)] font-medium truncate ${
                 isActive ? 'text-accent-main-100' : 'text-text-100'
@@ -503,14 +503,14 @@ function SavedSnippetItem({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-1 shrink-0">
-          <Button variant="ghost" size="sm" onClick={onApply} disabled={isActive && !isDirty}>
+        <div className="flex shrink-0 flex-wrap items-center gap-1">
+          <Button variant="ghost" size="sm" className="!h-8" onClick={onApply} disabled={isActive && !isDirty}>
             {t('appearance.applyOverride')}
           </Button>
-          <Button variant="ghost" size="sm" onClick={onExport}>
+          <Button variant="ghost" size="sm" className="!h-8" onClick={onExport}>
             {t('common:download')}
           </Button>
-          <Button variant="ghost" size="sm" onClick={onDelete}>
+          <Button variant="ghost" size="sm" className="!h-8" onClick={onDelete}>
             {t('common:delete')}
           </Button>
         </div>
@@ -730,60 +730,67 @@ export function AppearanceSettings() {
         />
 
         <SettingField label={t('appearance.savedOverrides')} description={t('appearance.savedOverridesDesc')}>
-          <div className="flex flex-col gap-2 md:flex-row md:items-center">
-            <input
-              value={snippetName}
-              onChange={e => setSnippetDraft({ snippetId: activeSnippetId, name: e.target.value })}
-              placeholder={t('appearance.overrideNamePlaceholder')}
-              className={settingsFieldClass}
-            />
+          <div className="space-y-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <input
+                value={snippetName}
+                onChange={e => setSnippetDraft({ snippetId: activeSnippetId, name: e.target.value })}
+                placeholder={t('appearance.overrideNamePlaceholder')}
+                className={`${settingsFieldClass} sm:min-w-0 sm:flex-1`}
+              />
 
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={handleSaveNewSnippet}
-                disabled={!snippetName.trim() || !customCSS.trim()}
-              >
-                {t('appearance.saveAsNewOverride')}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleRenameSnippet}
-                disabled={!activeSnippet || !snippetName.trim() || snippetName.trim() === activeSnippet.name}
-              >
-                {t('appearance.renameOverride')}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleUpdateSnippet}
-                disabled={!activeSnippet || !hasUnsavedSnippetChanges}
-              >
-                {t('appearance.updateOverride')}
-              </Button>
+              <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="!h-8"
+                  onClick={handleSaveNewSnippet}
+                  disabled={!snippetName.trim() || !customCSS.trim()}
+                >
+                  {t('appearance.saveAsNewOverride')}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="!h-8"
+                  onClick={handleRenameSnippet}
+                  disabled={!activeSnippet || !snippetName.trim() || snippetName.trim() === activeSnippet.name}
+                >
+                  {t('appearance.renameOverride')}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="!h-8"
+                  onClick={handleUpdateSnippet}
+                  disabled={!activeSnippet || !hasUnsavedSnippetChanges}
+                >
+                  {t('appearance.updateOverride')}
+                </Button>
+              </div>
             </div>
+
+            {customCSSSnippets.length > 0 ? (
+              <div className="space-y-2">
+                {customCSSSnippets.map(snippet => (
+                  <SavedSnippetItem
+                    key={snippet.id}
+                    snippet={snippet}
+                    isActive={snippet.id === activeCustomCSSSnippetId}
+                    isDirty={snippet.id === activeCustomCSSSnippetId && hasUnsavedSnippetChanges}
+                    onApply={() => applyCustomCSSSnippet(snippet.id)}
+                    onExport={() => handleExportSnippet(snippet)}
+                    onDelete={() => handleDeleteSnippet(snippet)}
+                    t={t}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-lg border border-dashed border-border-200/50 px-3 py-3 text-[length:var(--fs-sm)] text-text-400">
+                {t('appearance.noSavedOverrides')}
+              </div>
+            )}
           </div>
-
-          {customCSSSnippets.length > 0 ? (
-            <div className="space-y-2 mt-2.5">
-              {customCSSSnippets.map(snippet => (
-                <SavedSnippetItem
-                  key={snippet.id}
-                  snippet={snippet}
-                  isActive={snippet.id === activeCustomCSSSnippetId}
-                  isDirty={snippet.id === activeCustomCSSSnippetId && hasUnsavedSnippetChanges}
-                  onApply={() => applyCustomCSSSnippet(snippet.id)}
-                  onExport={() => handleExportSnippet(snippet)}
-                  onDelete={() => handleDeleteSnippet(snippet)}
-                  t={t}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="text-[length:var(--fs-sm)] text-text-500 mt-2.5">{t('appearance.noSavedOverrides')}</div>
-          )}
         </SettingField>
       </SettingsSection>
 
