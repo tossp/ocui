@@ -47,7 +47,8 @@ class AutoApproveStore {
   private rulesMap = new Map<string, AutoApproveRule[]>()
 
   // 功能开关（存 localStorage，持久化）
-  private _enabled: boolean = false
+  // true = 前端临时记住规则；false = 交给后端始终允许
+  private _enabled: boolean = true
   private readonly STORAGE_KEY = 'opencode-auto-approve-enabled'
 
   // Full Auto 开启时是否追补已经等待中的权限（危险操作，默认关闭）
@@ -69,11 +70,11 @@ class AutoApproveStore {
     // 从 localStorage 读取开关状态
     try {
       const stored = serverStorage.get(this.STORAGE_KEY)
-      this._enabled = stored === 'true'
+      this._enabled = stored === null ? true : stored === 'true'
       const approvePendingStored = serverStorage.get(this.STORAGE_KEY_APPROVE_PENDING_ON_FULL_AUTO)
       this._approvePendingOnFullAuto = approvePendingStored === 'true'
     } catch {
-      this._enabled = false
+      this._enabled = true
       this._approvePendingOnFullAuto = false
     }
   }
@@ -88,11 +89,11 @@ class AutoApproveStore {
   reloadFromStorage(): void {
     try {
       const stored = serverStorage.get(this.STORAGE_KEY)
-      this._enabled = stored === 'true'
+      this._enabled = stored === null ? true : stored === 'true'
       const approvePendingStored = serverStorage.get(this.STORAGE_KEY_APPROVE_PENDING_ON_FULL_AUTO)
       this._approvePendingOnFullAuto = approvePendingStored === 'true'
     } catch {
-      this._enabled = false
+      this._enabled = true
       this._approvePendingOnFullAuto = false
     }
     // 切换服务器时清空规则并关闭 Full Auto

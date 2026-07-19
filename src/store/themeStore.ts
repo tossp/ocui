@@ -111,20 +111,20 @@ const DEFAULT_STEP_FINISH_DISPLAY: StepFinishDisplay = {
 
 const DEFAULT_COMPLETED_AT_FORMAT: CompletedAtFormat = 'time'
 
-const DEFAULT_REASONING_DISPLAY_MODE: ReasoningDisplayMode = 'capsule'
+const DEFAULT_REASONING_DISPLAY_MODE: ReasoningDisplayMode = 'markdown'
 const DEFAULT_RENDER_USER_MARKDOWN = false
 const DEFAULT_DIFF_STYLE: DiffStyle = 'markers'
-const DEFAULT_DESCRIPTIVE_TOOL_STEPS = false
-const DEFAULT_INLINE_TOOL_REQUESTS = false
+const DEFAULT_DESCRIPTIVE_TOOL_STEPS = true
+const DEFAULT_INLINE_TOOL_REQUESTS = true
 const DEFAULT_CODE_WORD_WRAP = false
 const DEFAULT_UI_FONT_SCALE = 0
 const DEFAULT_CODE_FONT_SCALE = 0
 
 /** 工具输出渲染风格：classic = 经典（input+output 分离），compact = 精简（只展示 output，header 更矮） */
 export type ToolCardStyle = 'classic' | 'compact'
-const DEFAULT_TOOL_CARD_STYLE: ToolCardStyle = 'classic'
-const DEFAULT_IMMERSIVE_MODE = false
-const DEFAULT_COMPACT_INLINE_PERMISSION = false
+const DEFAULT_TOOL_CARD_STYLE: ToolCardStyle = 'compact'
+const DEFAULT_IMMERSIVE_MODE = true
+const DEFAULT_COMPACT_INLINE_PERMISSION = true
 const DEFAULT_GLASS_EFFECT = true
 const DEFAULT_QUEUE_FOLLOWUP_MESSAGES = false
 const DEFAULT_MANUAL_TERMINAL_TITLES = false
@@ -330,7 +330,7 @@ class ThemeStore {
         : DEFAULT_TOOL_CARD_STYLE
 
     const savedImmersiveMode = localStorage.getItem(STORAGE_KEY_IMMERSIVE_MODE)
-    const immersiveMode = savedImmersiveMode === 'true' ? true : DEFAULT_IMMERSIVE_MODE
+    const immersiveMode = savedImmersiveMode === null ? DEFAULT_IMMERSIVE_MODE : savedImmersiveMode === 'true'
 
     const savedCompactInlinePermission = localStorage.getItem(STORAGE_KEY_COMPACT_INLINE_PERMISSION)
     const compactInlinePermission =
