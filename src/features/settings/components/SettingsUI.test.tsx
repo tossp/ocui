@@ -14,6 +14,7 @@ describe('Settings UI primitives', () => {
     )
 
     const toggle = screen.getByRole('switch', { name: 'Notifications' })
+    expect(toggle.closest('[data-setting-label]')).toHaveAttribute('data-setting-label', 'Notifications')
     expect(screen.queryByRole('button', { name: 'Notifications' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByText('Notifications'))
     expect(onRowClick).toHaveBeenCalledTimes(1)

@@ -3,6 +3,11 @@
   "subtitle": "Customize UI, behavior, and server setup",
   "closeSettings": "Close settings",
   "version": "OpenCodeUI v{{version}}",
+  "search": {
+    "placeholder": "Search settings",
+    "clear": "Clear settings search",
+    "noResults": "No matching settings"
+  },
   "tabs": {
     "servers": "Servers",
     "serversDesc": "Backend connections and fast active endpoint switching",

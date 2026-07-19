@@ -28,6 +28,8 @@ import { ServiceSettings } from './components/ServiceSettings'
 import { ServersSettings } from './components/ServersSettings'
 import { WorkspaceSettings } from './components/WorkspaceSettings'
 import { ConfigSettings } from './components/ConfigSettings'
+import { SettingsSearch } from './SettingsSearch'
+import { SETTINGS_SEARCH_DEFINITIONS, type SettingsSearchItem } from './settingsSearchCatalog'
 
 // ============================================
 // Types
@@ -98,6 +100,11 @@ const TAB_LABEL_KEYS: Record<SettingsTab, string> = {
   about: 'tabs.about',
 }
 
+const GROUP_DEFS: { labelKey: string; tabs: SettingsTab[] }[] = [
+  { labelKey: 'groups.core', tabs: ['servers', 'models', 'agent', 'chat', 'workspace', 'appearance', 'notifications'] },
+  { labelKey: 'groups.advanced', tabs: ['service', 'config', 'keybindings', 'about'] },
+]
+
 // ============================================
 // Tab Content Router
 // ============================================
@@ -136,10 +143,12 @@ function TabContent({ tab }: { tab: SettingsTab }) {
 // ============================================
 
 export function SettingsDialog({ isOpen, onClose, initialTab = 'servers' }: SettingsDialogProps) {
-  const { t } = useTranslation(['settings'])
+  const { t } = useTranslation(['settings', 'commands'])
   const isMobile = useIsMobile()
   const isTauriDesktop = isTauri() && !isMobile
   const scrollRef = useRef<HTMLDivElement>(null)
+  const highlightFrameRef = useRef<number | null>(null)
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const normalizeTab = useCallback((next: SettingsDialogProps['initialTab']): SettingsTab => {
     if (!next || next === 'general') return 'servers'
     return next
@@ -160,6 +169,36 @@ export function SettingsDialog({ isOpen, onClose, initialTab = 'servers' }: Sett
       })),
     [visibleTabIds, t],
   )
+
+  const groupedTabs = useMemo(
+    () =>
+      GROUP_DEFS.map(group => ({
+        label: t(group.labelKey),
+        tabs: group.tabs
+          .map(id => visibleTabs.find(visibleTab => visibleTab.id === id))
+          .filter((visibleTab): visibleTab is (typeof visibleTabs)[number] => visibleTab != null),
+      })).filter(group => group.tabs.length > 0),
+    [t, visibleTabs],
+  )
+
+  const searchItems = useMemo<SettingsSearchItem[]>(() => {
+    const tabsById = new Map(visibleTabs.map(visibleTab => [visibleTab.id, visibleTab]))
+    return SETTINGS_SEARCH_DEFINITIONS.flatMap(definition => {
+      const visibleTab = tabsById.get(definition.tab)
+      if (!visibleTab) return []
+      return [
+        {
+          id: `${definition.tab}:${definition.labelKey}:${definition.contextKey ?? ''}`,
+          tab: definition.tab,
+          label: t(definition.labelKey),
+          tabLabel: definition.contextKey ? `${visibleTab.label} · ${t(definition.contextKey)}` : visibleTab.label,
+          targetLabel: t(definition.targetKey ?? definition.labelKey),
+          fallbackLabel: definition.fallbackKey ? t(definition.fallbackKey) : undefined,
+          targetContext: definition.contextKey ? t(definition.contextKey) : undefined,
+        },
+      ]
+    })
+  }, [t, visibleTabs])
 
   useEffect(() => {
     if (!isOpen) return
@@ -190,6 +229,27 @@ export function SettingsDialog({ isOpen, onClose, initialTab = 'servers' }: Sett
     return () => cancelAnimationFrame(frameId)
   }, [isOpen, tab])
 
+  useEffect(
+    () => () => {
+      if (highlightFrameRef.current !== null) cancelAnimationFrame(highlightFrameRef.current)
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current)
+    },
+    [],
+  )
+
+  useEffect(() => {
+    if (isOpen) return
+    if (highlightFrameRef.current !== null) {
+      cancelAnimationFrame(highlightFrameRef.current)
+      highlightFrameRef.current = null
+    }
+    if (highlightTimerRef.current) {
+      clearTimeout(highlightTimerRef.current)
+      highlightTimerRef.current = null
+    }
+    scrollRef.current?.querySelector('.settings-search-highlight')?.classList.remove('settings-search-highlight')
+  }, [isOpen])
+
   // 切换 tab 时重置滚动位置
   const switchTab = useCallback((nextTab: SettingsTab) => {
     setTab(nextTab)
@@ -197,6 +257,51 @@ export function SettingsDialog({ isOpen, onClose, initialTab = 'servers' }: Sett
       scrollRef.current?.scrollTo({ top: 0 })
     })
   }, [])
+
+  const selectSearchItem = useCallback(
+    (item: SettingsSearchItem) => {
+      switchTab(item.tab)
+      if (highlightFrameRef.current !== null) cancelAnimationFrame(highlightFrameRef.current)
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current)
+
+      highlightFrameRef.current = requestAnimationFrame(() => {
+        highlightFrameRef.current = requestAnimationFrame(() => {
+          highlightFrameRef.current = null
+          const candidates = Array.from(scrollRef.current?.querySelectorAll<HTMLElement>('[data-setting-label]') ?? [])
+          const matchingTargets = candidates.filter(
+            candidate =>
+              candidate.dataset.settingLabel === item.targetLabel &&
+              (!item.targetContext || candidate.dataset.settingContext === item.targetContext),
+          )
+          const target =
+            matchingTargets[0] ??
+            candidates.find(candidate => candidate.dataset.settingLabel === item.fallbackLabel)
+          if (!target) return
+
+          scrollRef.current?.querySelector('.settings-search-highlight')?.classList.remove('settings-search-highlight')
+          target.scrollIntoView({ block: 'center', behavior: 'smooth' })
+          target.classList.add('settings-search-highlight')
+          const focusTarget = Array.from(
+            target.querySelectorAll<HTMLElement>(
+              'button:not(:disabled):not([tabindex="-1"]), input:not(:disabled):not([type="hidden"]):not([tabindex="-1"]), select:not(:disabled):not([tabindex="-1"]), textarea:not(:disabled):not([tabindex="-1"])',
+            ),
+          ).find(candidate => !candidate.closest('[hidden], .hidden, [aria-hidden="true"]'))
+          if (focusTarget) {
+            focusTarget.focus({ preventScroll: true })
+          } else {
+            target.tabIndex = -1
+            target.focus({ preventScroll: true })
+            target.addEventListener('blur', () => target.removeAttribute('tabindex'), { once: true })
+          }
+          highlightTimerRef.current = setTimeout(() => {
+            target.classList.remove('settings-search-highlight')
+            highlightTimerRef.current = null
+          }, 1800)
+        })
+      })
+    },
+    [switchTab],
+  )
 
   const handleTabKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -216,6 +321,15 @@ export function SettingsDialog({ isOpen, onClose, initialTab = 'servers' }: Sett
   )
 
   const activePanelId = `settings-panel-${tab}`
+  const search = (
+    <SettingsSearch
+      items={searchItems}
+      placeholder={t('search.placeholder')}
+      clearLabel={t('search.clear')}
+      noResultsLabel={t('search.noResults')}
+      onSelect={selectSearchItem}
+    />
+  )
 
   // 移动端：全屏体验，顶部 sticky tab
   if (isMobile) {
@@ -233,6 +347,7 @@ export function SettingsDialog({ isOpen, onClose, initialTab = 'servers' }: Sett
         <div className="flex min-h-0 flex-1 flex-col">
           {/* Sticky Tabs — 无标题、无线条，与桌面端设计语言一致 */}
           <div className="shrink-0 pt-2">
+            <div className="px-3 pb-2">{search}</div>
             <div
               role="tablist"
               aria-label={t('title')}
@@ -303,34 +418,47 @@ export function SettingsDialog({ isOpen, onClose, initialTab = 'servers' }: Sett
 
         {/* Left Nav — 与内容共享同一表面，仅靠留白和 active 胶囊区分 */}
         <nav
-          role="tablist"
-          aria-orientation="vertical"
           aria-label={t('title')}
           className="w-[204px] xl:w-[228px] shrink-0 pt-10 pr-3 pl-6 xl:pl-7 pb-3 flex flex-col min-h-0"
-          onKeyDown={handleTabKeyDown}
         >
-          <div className="flex-1 min-h-0 overflow-y-auto scrollbar-none space-y-0.5 pb-2">
-            {visibleTabs.map(vt => {
-              const active = vt.id === tab
-              return (
-                <button
-                  key={vt.id}
-                  id={`settings-tab-${vt.id}`}
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  aria-controls={`settings-panel-${vt.id}`}
-                  onClick={() => switchTab(vt.id)}
-                  tabIndex={active ? 0 : -1}
-                  className={`w-full min-h-8 flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[length:var(--fs-md)] font-medium transition-colors ${
-                    active ? 'bg-bg-200/70 text-text-100' : 'text-text-300 hover:bg-bg-200/40 hover:text-text-100'
-                  }`}
-                >
-                  <span className={active ? 'text-accent-main-100' : 'text-text-400'}>{vt.icon}</span>
-                  <span className="truncate">{vt.label}</span>
-                </button>
-              )
-            })}
+          <div className="mb-3 shrink-0">{search}</div>
+          <div
+            role="tablist"
+            aria-orientation="vertical"
+            aria-label={t('title')}
+            onKeyDown={handleTabKeyDown}
+            className="flex-1 min-h-0 overflow-y-auto scrollbar-none space-y-3.5 pb-2"
+          >
+            {groupedTabs.map(group => (
+              <div key={group.label}>
+                <div className="mb-1.5 px-2.5 text-[length:var(--fs-xxs)] font-semibold uppercase tracking-wider text-text-400/75">
+                  {group.label}
+                </div>
+                <div className="space-y-0.5">
+                  {group.tabs.map(vt => {
+                    const active = vt.id === tab
+                    return (
+                      <button
+                        key={vt.id}
+                        id={`settings-tab-${vt.id}`}
+                        type="button"
+                        role="tab"
+                        aria-selected={active}
+                        aria-controls={`settings-panel-${vt.id}`}
+                        onClick={() => switchTab(vt.id)}
+                        tabIndex={active ? 0 : -1}
+                        className={`w-full min-h-8 flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[length:var(--fs-md)] font-medium transition-colors ${
+                          active ? 'bg-bg-200/70 text-text-100' : 'text-text-300 hover:bg-bg-200/40 hover:text-text-100'
+                        }`}
+                      >
+                        <span className={active ? 'text-accent-main-100' : 'text-text-400'}>{vt.icon}</span>
+                        <span className="truncate">{vt.label}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
 
           {/* 版本号与菜单图标左边缘对齐，弱化为辅助信息 */}

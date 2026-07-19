@@ -157,6 +157,7 @@ function EventEnableRow({
       label={t(labelKey as `notifications.${string}`)}
       description={t(descKey as `notifications.${string}`)}
       icon={<span className={color}>{icon}</span>}
+      searchContext={t('notifications.notificationTypes')}
       onClick={() => notificationEventSettingsStore.setSystemEnabled(type, !eventConfig.systemEnabled)}
     >
       <Toggle
@@ -258,7 +259,11 @@ function EventSoundCard({
   }, [type])
 
   return (
-    <div className="relative rounded-lg border border-border-200/50 p-3 hover:border-border-300/60 transition-colors">
+    <div
+      data-setting-label={t(labelKey as `notifications.${string}`)}
+      data-setting-context={t('notifications.eventSounds')}
+      className="relative rounded-lg border border-border-200/50 p-3 hover:border-border-300/60 transition-colors"
+    >
       {/* 试听按钮 — 绝对定位右上角 */}
       <button
         type="button"

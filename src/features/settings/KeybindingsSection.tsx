@@ -140,6 +140,7 @@ function KeybindingRow({ config, onEdit, onReset, isKeyUsed, t }: KeybindingRowP
 
   return (
     <div
+      data-setting-label={config.label}
       className={`
       flex min-w-0 items-center h-9 px-3 rounded-md transition-colors group
       ${isEditing ? 'bg-accent-main-100/5 ring-1 ring-accent-main-100/20' : 'hover:bg-bg-100/60'}

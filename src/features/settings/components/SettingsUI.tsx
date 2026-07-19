@@ -139,6 +139,7 @@ export interface SettingRowProps {
   onClick?: () => void
   className?: string
   disabled?: boolean
+  searchContext?: string
 }
 
 export function SettingRow({
@@ -149,9 +150,12 @@ export function SettingRow({
   onClick,
   className,
   disabled,
+  searchContext,
 }: SettingRowProps) {
   return (
     <div
+      data-setting-label={typeof label === 'string' ? label : undefined}
+      data-setting-context={searchContext}
       className={`w-full
         ${onClick && !disabled ? 'cursor-pointer' : ''}
         ${disabled ? 'opacity-55' : ''}
@@ -195,7 +199,7 @@ export function SettingField({
   className?: string
 }) {
   return (
-    <div className={className || ''}>
+    <div data-setting-label={typeof label === 'string' ? label : undefined} className={className || ''}>
       <div className="flex items-center justify-between gap-3 min-h-[20px]">
         <div className="min-w-0 text-[length:var(--fs-md)] font-medium text-text-100 leading-snug">{label}</div>
         {actions && <div className="shrink-0 flex items-center gap-1.5">{actions}</div>}
@@ -223,7 +227,7 @@ export interface SettingsSectionProps {
 
 export function SettingsSection({ title, description, actions, children, className }: SettingsSectionProps) {
   return (
-    <section className={`flex flex-col gap-3.5 mb-8 last:mb-0 ${className || ''}`}>
+    <section data-setting-label={title} className={`flex flex-col gap-3.5 mb-8 last:mb-0 ${className || ''}`}>
       <div>
         {/* 标题与 actions 同一行垂直居中，描述单独在下一行，避免按钮和标题错位 */}
         <div className="flex items-center justify-between gap-3 min-h-[28px]">
@@ -257,7 +261,7 @@ export function SettingsSubgroup({
   className?: string
 }) {
   return (
-    <div className={className || ''}>
+    <div data-setting-label={title} className={className || ''}>
       {title && (
         <div className="mb-2.5 px-0.5">
           <div className="text-[length:var(--fs-sm)] font-medium text-text-100">{title}</div>
